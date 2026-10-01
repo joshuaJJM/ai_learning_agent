@@ -1,0 +1,14 @@
+# 运行时依赖（版本为实测通过的组合）
+fastapi==0.142.2
+uvicorn[standard]==0.54.0
+pydantic==2.13.5
+pydantic-settings==2.15.0
+httpx==0.28.1
+python-multipart==0.0.32
+
+# 仅部署脚本 tools/remote.py 需要
+paramiko==5.0.0
+
+# 开发/测试
+pytest==9.1.1
+pytest-asyncio==1.4.0

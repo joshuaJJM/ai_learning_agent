@@ -1,0 +1,130 @@
+{
+  "schema_version": "1.0",
+  "bank_id": "math.derivative.extremum",
+  "bank_name": "极值与最值单选题",
+  "language": "zh-CN",
+  "source": "内部编写示例",
+  "version": "1.0.0",
+  "updated_at": "2026-10-01",
+  "questions": [
+    {
+      "id": "math.derivative.extremum.0001",
+      "type": "single_choice",
+      "stem": "函数 f(x) = x^3 - 3x + 4 的极大值为（  ）",
+      "options": {
+        "A": "6",
+        "B": "2",
+        "C": "4",
+        "D": "-2"
+      },
+      "answer": "A",
+      "explanation": "f'(x) = 3x^2 - 3 = 3(x - 1)(x + 1)，令 f'(x) = 0 得 x = 1 或 x = -1。列表看符号：x < -1 时 f'(x) > 0（增），-1 < x < 1 时 f'(x) < 0（减），x > 1 时 f'(x) > 0（增）。所以 x = -1 处导数由正变负，取极大值，f(-1) = -1 + 3 + 4 = 6；x = 1 处导数由负变正，取极小值 f(1) = 1 - 3 + 4 = 2。选 A。B 是极小值；C 是 f(0) = 4 的值，与极值无关；D 是极小值的相反数。",
+      "knowledge_point_ids": ["math.derivative.extremum", "math.derivative.monotonicity"],
+      "tags": ["极大值", "导数变号"],
+      "source_ref": "example-authored",
+      "difficulty": 2
+    },
+    {
+      "id": "math.derivative.extremum.0002",
+      "type": "single_choice",
+      "stem": "函数 f(x) = x^3 - 3x + 4 的极小值为（  ）",
+      "options": {
+        "A": "6",
+        "B": "2",
+        "C": "4",
+        "D": "0"
+      },
+      "answer": "B",
+      "explanation": "由 f'(x) = 3(x - 1)(x + 1) = 0 得两个驻点 x = -1 和 x = 1。在 x = 1 的左侧 f'(x) < 0（函数递减），右侧 f'(x) > 0（函数递增），所以 x = 1 是极小值点，极小值为 f(1) = 1 - 3 + 4 = 2。选 B。A 是极大值 f(-1) = 6；C 是 f(0) = 4；D 是把极小值点的横坐标 1 与其纵坐标混淆后的错误结果。",
+      "knowledge_point_ids": ["math.derivative.extremum", "math.derivative.monotonicity"],
+      "tags": ["极小值", "导数变号"],
+      "source_ref": "example-authored",
+      "difficulty": 2
+    },
+    {
+      "id": "math.derivative.extremum.0003",
+      "type": "single_choice",
+      "stem": "函数 f(x) = x^3 - 3x^2 + 2 的极大值点为（  ）",
+      "options": {
+        "A": "x = 2",
+        "B": "x = 1",
+        "C": "x = 0",
+        "D": "x = -1"
+      },
+      "answer": "C",
+      "explanation": "注意题目问的是“极大值点”，要答横坐标，不是极大值。f'(x) = 3x^2 - 6x = 3x(x - 2)，令 f'(x) = 0 得 x = 0 或 x = 2。x < 0 时 f'(x) > 0（增），0 < x < 2 时 f'(x) < 0（减），x > 2 时 f'(x) > 0（增）。所以 x = 0 是极大值点，极大值 f(0) = 2；x = 2 是极小值点，极小值 f(2) = 8 - 12 + 2 = -2。选 C。A 是极小值点；B 是导函数的对称轴，不是极值点；D 不是驻点，因为 f'(-1) = 3 + 6 = 9 ≠ 0。",
+      "knowledge_point_ids": ["math.derivative.extremum", "math.derivative.monotonicity"],
+      "tags": ["极大值点", "极值点与极值区分"],
+      "source_ref": "example-authored",
+      "difficulty": 2
+    },
+    {
+      "id": "math.derivative.extremum.0004",
+      "type": "single_choice",
+      "stem": "已知函数 f(x) = x^3 - 3ax + 1 在 x = 1 处取得极值，则实数 a 的值为（  ）",
+      "options": {
+        "A": "0",
+        "B": "3",
+        "C": "-1",
+        "D": "1"
+      },
+      "answer": "D",
+      "explanation": "可导函数在极值点处导数为 0，这是必要条件。f'(x) = 3x^2 - 3a，由 f'(1) = 3 - 3a = 0 解得 a = 1。还需检验充分性：当 a = 1 时 f'(x) = 3x^2 - 3 = 3(x - 1)(x + 1)，在 x = 1 两侧导数由负变正，确实取极值（极小值），所以 a = 1 符合题意。选 D。A 相当于令 a = 0，此时 f'(x) = 3x^2 ≥ 0，函数在 R 上单调递增，没有极值点；B 是把 f'(x) 中的系数 3 直接当成了 a；C 是符号出错。",
+      "knowledge_point_ids": ["math.derivative.extremum", "math.derivative.basic"],
+      "tags": ["含参数", "极值必要条件", "检验"],
+      "source_ref": "example-authored",
+      "difficulty": 3
+    },
+    {
+      "id": "math.derivative.extremum.0005",
+      "type": "single_choice",
+      "stem": "函数 f(x) = e^x - x 的最小值为（  ）",
+      "options": {
+        "A": "1",
+        "B": "0",
+        "C": "e",
+        "D": "-1"
+      },
+      "answer": "A",
+      "explanation": "f'(x) = e^x - 1，令 f'(x) = 0 得 e^x = 1，即 x = 0。x < 0 时 e^x < 1，f'(x) < 0（递减）；x > 0 时 e^x > 1，f'(x) > 0（递增）。所以 x = 0 是极小值点，也是全局最小值点，最小值 f(0) = e^0 - 0 = 1。选 A。B 是把驻点的横坐标 0 当成了最小值；C 是把 e^1 与 e^0 混淆；D 是符号出错。",
+      "knowledge_point_ids": ["math.derivative.extremum", "math.derivative.monotonicity"],
+      "tags": ["最小值", "指数函数"],
+      "source_ref": "example-authored",
+      "difficulty": 2
+    },
+    {
+      "id": "math.derivative.extremum.0006",
+      "type": "single_choice",
+      "stem": "函数 f(x) = x·e^x 在区间 [-2, 0] 上的最大值为（  ）",
+      "options": {
+        "A": "-e^(-1)",
+        "B": "0",
+        "C": "-2e^(-2)",
+        "D": "e"
+      },
+      "answer": "B",
+      "explanation": "用乘积求导法则：f'(x) = e^x + x·e^x = (x + 1)e^x。e^x 恒大于 0，所以 f'(x) = 0 当且仅当 x = -1。在 [-2, -1) 上 x + 1 < 0，f'(x) < 0（递减）；在 (-1, 0] 上 f'(x) > 0（递增），所以 x = -1 是区间内的极小值点，最大值只能在端点处取得。计算端点：f(-2) = -2e^(-2)，f(0) = 0·e^0 = 0，故最大值为 0。选 B。A 是区间内的极小值 -e^(-1)；C 是左端点的函数值 -2e^(-2)；D 完全不在该区间的值域内。",
+      "knowledge_point_ids": ["math.derivative.extremum", "math.derivative.monotonicity"],
+      "tags": ["闭区间最值", "端点比较", "乘积求导"],
+      "source_ref": "example-authored",
+      "difficulty": 3
+    },
+    {
+      "id": "math.derivative.extremum.0007",
+      "type": "single_choice",
+      "stem": "函数 f(x) = x^3 - 3x^2 + 2 在区间 [0, 3] 上的最大值为（  ）",
+      "options": {
+        "A": "0",
+        "B": "-2",
+        "C": "2",
+        "D": "3"
+      },
+      "answer": "C",
+      "explanation": "f'(x) = 3x^2 - 6x = 3x(x - 2)，在 [0, 3] 上的驻点为 x = 0 和 x = 2。只需比较所有候选点处的函数值：f(0) = 2，f(2) = 8 - 12 + 2 = -2，f(3) = 27 - 27 + 2 = 2。所以最大值为 2。选 C。这里 x = 0 是极大值点且恰好是区间左端点，很容易被漏掉，只比较 f(2) 和 f(3) 就会出错；A 是误把边界 x = 3 与 x = 0 处的值混算；B 是区间上的最小值；D 是把端点的横坐标 3 当成了最大值。",
+      "knowledge_point_ids": ["math.derivative.extremum", "math.derivative.monotonicity"],
+      "tags": ["闭区间最值", "端点遗漏"],
+      "source_ref": "example-authored",
+      "difficulty": 3
+    }
+  ]
+}

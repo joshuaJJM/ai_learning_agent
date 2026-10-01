@@ -21,7 +21,14 @@ dist/
 data/
 *.db
 *.db-journal
+*.db-wal
+*.db-shm
 *.sqlite3
+
+# ---- 工具产生的临时垃圾 ----
+pip-unpack-*/
+zhiji-test-*/
+.pytest_tmp/
 
 # ---- 系统 / 编辑器 ----
 .DS_Store

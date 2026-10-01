@@ -1,0 +1,57 @@
+{
+  "schema_version": "1.0",
+  "updated_at": "2026-10-01",
+  "note": "黑客松 Demo 使用假数据展示图书与题库权限，不接真实支付。",
+  "books": [
+    {
+      "book_id": "book.derivative.basic",
+      "title": "高中数学·导数基础训练",
+      "publisher": "知迹教研组",
+      "cover_url": null,
+      "price_cents": 0,
+      "question_count": 22,
+      "description": "覆盖基础求导、解导数不等式与由导数符号判断单调性。适合刚学完导数的学生打基础。",
+      "subject": "mathematics",
+      "bank_ids": [
+        "math.derivative.basic",
+        "math.derivative.inequality",
+        "math.derivative.monotonicity"
+      ],
+      "knowledge_point_ids": [
+        "math.derivative.basic",
+        "math.derivative.inequality",
+        "math.derivative.monotonicity"
+      ],
+      "demo_serial": "ZHIJI-DERI-0001",
+      "owned_by_default": true
+    },
+    {
+      "book_id": "book.derivative.advanced",
+      "title": "高中数学·导数综合应用",
+      "publisher": "知迹教研组",
+      "cover_url": null,
+      "price_cents": 2000,
+      "question_count": 21,
+      "description": "极值、最值、含参讨论与方程根的分布。面向冲刺高分的学生。",
+      "subject": "mathematics",
+      "bank_ids": [
+        "math.derivative.extremum",
+        "math.derivative.comprehensive",
+        "math.function.monotonicity"
+      ],
+      "knowledge_point_ids": [
+        "math.derivative.extremum",
+        "math.derivative.comprehensive",
+        "math.function.monotonicity"
+      ],
+      "demo_serial": "ZHIJI-ADVD-0002",
+      "owned_by_default": false
+    }
+  ],
+  "subscription": {
+    "plan_name": "知迹会员",
+    "price_cents": 2000,
+    "period": "月",
+    "features": ["全部题库", "无限次试卷分析", "AI Tutor 不限次"]
+  }
+}

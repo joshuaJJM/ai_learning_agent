@@ -39,6 +39,23 @@ OUTCOME_SCORES: dict[str, float] = {
     "incorrect": 0.0,
 }
 
+# 对外契约用 correct / wrong / partial / unknown，
+# 内部掌握度模型用 correct / incorrect / partial / uncertain。
+# 这里做一次归一化，避免契约措辞变化污染算法。
+RESULT_ALIASES: dict[str, str] = {
+    "correct": "correct",
+    "partial": "partial",
+    "wrong": "incorrect",
+    "incorrect": "incorrect",
+    "unknown": "uncertain",
+    "uncertain": "uncertain",
+}
+
+
+def normalize_outcome(result: str) -> str:
+    return RESULT_ALIASES.get(result, "uncertain")
+
+
 # ---- 来源权重：考试最可信，Tutor 里的口头回答最不可信 ----
 SOURCE_WEIGHTS: dict[str, float] = {
     "exam": 1.00,
@@ -78,6 +95,9 @@ class EvidenceRecord:
     exam_id: str | None = None
     answer_excerpt: str | None = None
     reason: str | None = None
+    # 该证据的可信程度（0..1）。一道题若只是"顺带涉及"某个知识点，
+    # 它的相关度会调低这个值，从而少影响掌握度。
+    confidence: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -115,13 +135,16 @@ def evidence_weight(record: EvidenceRecord, now: datetime) -> float:
     age_days = max(0.0, (now - _as_utc(record.created_at)).total_seconds() / 86400.0)
     recency_w = max(RECENCY_FLOOR, math.exp(-age_days / RECENCY_TAU_DAYS))
     difficulty_w = 0.5 + min(1.0, max(0.0, record.difficulty))
-    return source_w * recency_w * difficulty_w
+    confidence_w = min(1.0, max(0.1, record.confidence))
+    return source_w * recency_w * difficulty_w * confidence_w
 
 
 def _mean_score(records: Sequence[EvidenceRecord]) -> float:
     if not records:
         return 0.0
-    return sum(OUTCOME_SCORES.get(r.outcome, 0.5) for r in records) / len(records)
+    return sum(
+        OUTCOME_SCORES.get(normalize_outcome(r.outcome), 0.5) for r in records
+    ) / len(records)
 
 
 def _trend(records: Sequence[EvidenceRecord]) -> tuple[str, float | None]:
@@ -157,7 +180,7 @@ def compute_mastery(
     beta = PRIOR_BETA
     total_weight = 0.0
     for record in items:
-        s = OUTCOME_SCORES.get(record.outcome, 0.5)
+        s = OUTCOME_SCORES.get(normalize_outcome(record.outcome), 0.5)
         w = evidence_weight(record, now)
         alpha += w * s
         beta += w * (1.0 - s)
@@ -167,7 +190,7 @@ def compute_mastery(
     confidence = 1.0 - math.exp(-total_weight / CONFIDENCE_W0)
     trend, recent_accuracy = _trend(items)
 
-    counts = Counter(r.outcome for r in items)
+    counts = Counter(normalize_outcome(r.outcome) for r in items)
 
     return MasteryEstimate(
         kp_id=kp_id,
@@ -192,7 +215,7 @@ def error_patterns(
     """从错误 / 部分正确的 Evidence 里提炼主要错误模式。"""
     counts: Counter[str] = Counter()
     for record in records:
-        if record.outcome in ("incorrect", "partial") and record.error_type:
+        if normalize_outcome(record.outcome) in ("incorrect", "partial") and record.error_type:
             counts[record.error_type] += 1
 
     total = sum(counts.values())

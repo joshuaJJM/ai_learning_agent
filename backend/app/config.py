@@ -25,8 +25,11 @@ class Settings(BaseSettings):
     # ---- LLM / VLM（OpenAI 兼容端点）----
     llm_base_url: str = "https://api.openai.com/v1"
     llm_api_key: str = ""
-    llm_model: str = "gpt-4o-mini"
-    vlm_model: str = "gpt-4o"
+    llm_model: str = "deepseek-ai/DeepSeek-V3.2"
+    vlm_model: str = "Qwen/Qwen3-VL-32B-Instruct"
+    # 主力模型不可用时的备选（实测 8B 版本识别这道题同样正确且更省）
+    vlm_fallback_model: str = "Qwen/Qwen3-VL-8B-Instruct"
+    llm_fallback_model: str = "Qwen/Qwen2.5-72B-Instruct"
     llm_timeout_seconds: float = 60.0
     # 部分自建端点不支持 response_format={"type":"json_object"}，可关掉。
     llm_json_mode: bool = True
@@ -35,6 +38,19 @@ class Settings(BaseSettings):
 
     # ---- 存储 ----
     database_path: str = "data/zhiji.db"
+
+    # ---- 服务监听 ----
+    app_host: str = "0.0.0.0"
+    app_port: int = 17283
+    # 对外可访问的基址，用于拼图片 URL 下发给客户端
+    public_base_url: str = "http://121.43.137.176:17283"
+
+    # ---- 远程部署（tools/remote.py 用）----
+    remote_host: str = "121.43.137.176"
+    remote_port: int = 22
+    remote_user: str = "hackathon"
+    remote_password: str = ""
+    remote_app_dir: str = "/home/hackathon/zhiji-backend"
 
     # ---- 演示可靠性 ----
     # LLM 调用失败时是否自动降级到 Mock（Level 2/3 fallback）。
