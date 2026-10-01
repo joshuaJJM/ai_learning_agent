@@ -1,0 +1,30 @@
+# ---- 密钥 / 凭证：绝对不要提交 ----
+api-key.txt
+.env
+backend/.env
+*.key
+*.pem
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+
+# ---- 运行时数据（学习数据属于学生本人，不入库）----
+data/
+*.db
+*.db-journal
+*.sqlite3
+
+# ---- 系统 / 编辑器 ----
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
