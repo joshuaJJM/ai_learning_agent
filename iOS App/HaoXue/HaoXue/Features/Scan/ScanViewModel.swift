@@ -21,7 +21,7 @@ final class ScanViewModel {
     private let mock = MockAnalysisService()
     private let preparation = ImagePreparationService()
 
-    init(baseURL: URL = URL(string: "http://121.43.137.176:17283")!) {
+    init(baseURL: URL = AppConfiguration.demoBackendURL) {
         live = LiveAnalysisService(baseURL: baseURL, client: APIClient(timeout: 60))
         isMock = ProcessInfo.processInfo.environment["HAOXUE_MOCK_MODE"] == "1"
     }

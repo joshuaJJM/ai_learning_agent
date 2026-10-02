@@ -11,7 +11,8 @@ enum NetworkError: Error, Equatable {
 
 // Semantic error codes; a future Backend DTO mapper owns envelope parsing.
 enum ServiceErrorCode: Equatable {
-    case invalidImage, analysisFailed, vlmTimeout, questionNotRecognized, sessionExpired, serverError
+    case invalidImage, analysisFailed, vlmTimeout, questionNotRecognized
+    case idempotencyConflict, sessionNotFound, sessionCompleted, internalError
     case unknown(String)
 
     init(rawValue: String) {
@@ -20,8 +21,10 @@ enum ServiceErrorCode: Equatable {
         case "ANALYSIS_FAILED": self = .analysisFailed
         case "VLM_TIMEOUT": self = .vlmTimeout
         case "QUESTION_NOT_RECOGNIZED": self = .questionNotRecognized
-        case "SESSION_EXPIRED": self = .sessionExpired
-        case "SERVER_ERROR": self = .serverError
+        case "IDEMPOTENCY_CONFLICT": self = .idempotencyConflict
+        case "SESSION_NOT_FOUND": self = .sessionNotFound
+        case "SESSION_COMPLETED": self = .sessionCompleted
+        case "INTERNAL_ERROR": self = .internalError
         default: self = .unknown(rawValue)
         }
     }

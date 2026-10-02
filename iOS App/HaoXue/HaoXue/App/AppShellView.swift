@@ -3,9 +3,10 @@ import SwiftUI
 struct AppShellView: View {
     let store: DemoScenarioStore
     @State private var showingTutor = false
+    private var usesMockTutor: Bool { ProcessInfo.processInfo.arguments.contains("-useMockTutor") }
 
     private func openTutor() {
-        store.startLesson()
+        if usesMockTutor { store.startLesson() }
         showingTutor = true
     }
 
@@ -22,7 +23,13 @@ struct AppShellView: View {
         }
         .tint(.blue)
         .fullScreenCover(isPresented: $showingTutor) {
-            TutorView(store: store, provider: MockQuestionProvider()) { showingTutor = false }
+            if usesMockTutor {
+                TutorView(store: store, provider: MockQuestionProvider()) { showingTutor = false }
+            } else {
+                RemoteTutorView(service: TutorRemoteService(baseURL: AppConfiguration.demoBackendURL)) {
+                    showingTutor = false
+                }
+            }
         }
     }
 }

@@ -108,11 +108,18 @@ Tutor Turn 至少需要：
 - completed；
 - optional knowledge change。
 
-当前 Hackathon Demo：
+Phase 3B 已确认的 iOS 依赖（以 backend OpenAPI / `docs/API.md` 为准）：
 
-- A-D 会真实上送；
-- “写下你的想法……”只保留 UI，不要求上送；
-- 自由输入可以暂时传 `none` / 不触发网络请求。
+- `POST /api/v1/tutor/sessions` 创建会话，`GET /api/v1/tutor/sessions/{id}` 恢复状态；
+- `POST /api/v1/tutor/sessions/{id}/turns` 传 `selected_key` 或 `text`，`stream: true` 时返回 SSE；
+- Tutor Session 是唯一教学状态权威，iOS 不调用 `/api/v1/ai/chat` 另建补救流程；
+- SSE 顺序是 `meta → delta* → turn → done`，`error` 仅用于开流后的错误；HTTP 非 2xx 是普通 JSON 错误体；
+- `delta.content` 仅作打字机展示，题目、选项、策略、`remedial_depth`、`answer_reveal` 均以 `turn` 为准；
+- 补救层级由服务端决定，最多 4 层，题库不足时可提前返回 `remedial_exhausted`；
+- 补救中 `answer_reveal` 为 `null`；结束时才显示服务端给出的正确答案和解析；
+- 进度使用服务端值，题目 ID 当作不透明字符串；
+- 后端目前会返回 `knowledge_changes`，但按当前开发安排，iOS 的 mastery 展示暂不接入，不能用 `difficulty` 代替；
+- SSE 的 `turn` / `done` 事件未包含完整 `evaluation` 与 `knowledge_changes`，iOS 在流结束后用同一个幂等键请求 JSON 回放，取得完整结果而不重复计分；掌握度显示仍待后端后续开发确认。
 
 ### G. Practice
 
@@ -153,15 +160,17 @@ PracticeQuestion
 
 ## 4. Error Contract
 
-后端最好统一返回机器可读错误码，例如：
+后端统一返回机器可读错误码，例如：
 
 ```text
 INVALID_IMAGE
 ANALYSIS_FAILED
 VLM_TIMEOUT
 QUESTION_NOT_RECOGNIZED
-SESSION_EXPIRED
-SERVER_ERROR
+SESSION_NOT_FOUND
+SESSION_COMPLETED
+IDEMPOTENCY_CONFLICT
+INTERNAL_ERROR
 ```
 
 前端不应通过匹配中文错误文案来判断逻辑。
@@ -170,7 +179,9 @@ SERVER_ERROR
 
 ## 5. Retry / Idempotency
 
-会改变数据的请求最好支持 client request id 或 idempotency key。
+Tutor 的创建会话和提交作答使用稳定的 `Idempotency-Key` / `client_request_id`。
+同一次逻辑提交的流式请求、JSON 回放和失败重试必须复用同一个键；
+`IDEMPOTENCY_CONFLICT` 等待一秒后原键重试。
 
 原因：
 

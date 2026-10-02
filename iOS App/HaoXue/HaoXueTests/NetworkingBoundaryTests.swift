@@ -112,5 +112,6 @@ struct NetworkingBoundaryTests {
     @Test func machineErrorsPreserveUnknownCodes() {
         #expect(ServiceErrorCode(rawValue: "NEW_ERROR") == .unknown("NEW_ERROR"))
         #expect(ServiceErrorCode(rawValue: "VLM_TIMEOUT") == .vlmTimeout)
+        #expect(ServiceErrorCode(rawValue: "IDEMPOTENCY_CONFLICT") == .idempotencyConflict)
     }
 }

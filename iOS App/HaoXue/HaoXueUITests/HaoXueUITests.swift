@@ -52,6 +52,7 @@ final class HaoXueUITests: XCTestCase {
     func testMockLearningUpdatesHomeAndStudy() {
         continueAfterFailure = false
         let app = XCUIApplication()
+        app.launchArguments.append("-useMockTutor")
         app.launch()
         XCTAssertTrue(app.staticTexts["导数与函数单调性"].waitForExistence(timeout: 5))
         app.buttons["开始下一步学习"].tap()
@@ -92,6 +93,7 @@ final class HaoXueUITests: XCTestCase {
     func testScratchpadDrawingPersistsThenClearsForNextQuestion() {
         continueAfterFailure = false
         let app = XCUIApplication()
+        app.launchArguments.append("-useMockTutor")
         app.launch()
         app.buttons["开始下一步学习"].tap()
         app.buttons["草稿本"].tap()

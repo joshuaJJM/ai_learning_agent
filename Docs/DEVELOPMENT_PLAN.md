@@ -116,6 +116,15 @@ phase-2: implement scan and image preparation flow
 
 ## Phase 3 — Tutor, Practice & Scratchpad
 
+### Phase 3B — Adaptive Tutor Backend Integration
+
+iOS 真实 Tutor 使用后端有状态 Session，而非在客户端构造第二套教学状态机。
+提交答案时使用 Tutor SSE 渲染文字，结构化 `turn` 决定下一题与补救层级；
+同键 JSON 回放补齐评价与知识变化字段，确保 Evidence 不会因重试重复写入。
+掌握度展示依当前开发安排暂缓，不能用题目难度代替。
+Mock Tutor 与 PencilKit 草稿本继续供测试和离线开发使用。
+正常运行不在后端失败时静默切换 Mock，Mock 仅由显式启动参数启用。
+
 ### 目标
 
 完成核心学习体验。

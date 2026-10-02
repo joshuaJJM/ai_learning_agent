@@ -39,7 +39,13 @@
 - [x] 会话展示掌握度 43% → 51%
 - [x] PencilKit 草稿本、笔/橡皮、清空确认及换题重置
 
-Phase 3B 的真实后端 Tutor、诊断与补救流程尚未开始。
+### Phase 3B — Adaptive Tutor Backend Integration
+
+- [x] 真实 Tutor Session 接入与服务端控制的 4 层补救
+- [x] Tutor turn SSE、结构化选项、同键 JSON 回放
+- [x] 服务端进度、答案揭示、取消与原键重试
+- [x] 草稿本在补救期间保留、进入下一道正式题时清空
+- [ ] 掌握度展示：按当前安排等待后端后续开发
 
 - [x] Tutor A-D
 - [x] Free Text UI only
