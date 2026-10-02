@@ -1,4 +1,4 @@
-﻿"""代码评审 8 项问题的回归测试。
+"""代码评审 8 项问题的回归测试。
 
 每条都对应一个具体的越权 / 数据污染 / 一致性缺陷，
 修完必须有测试钉住，否则很容易再退回去。
@@ -139,7 +139,10 @@ def test_practice_client_request_id_is_honoured(
         question.answer, client_request_id=request_id,
     )
     assert second.status_code == 200
-    assert second.json() == first.json()
+    # 命中幂等缓存同样是「回放」，必须标成 replayed；其余字段一字不差
+    assert second.json()["replayed"] is True
+    assert first.json()["replayed"] is False
+    assert second.json() | {"replayed": False} == first.json()
     assert _evidence_count(demo_user["user_id"]) == after_first
 
 
@@ -169,7 +172,10 @@ def test_tutor_retry_does_not_double_count(
         f"/api/v1/tutor/sessions/{session_id}/turns", headers=auth_headers, json=payload
     )
     assert second.status_code == 200
-    assert second.json() == first.json()
+    # 重试会被明确标成 replayed；其余字段必须与首次完全一致
+    assert second.json()["replayed"] is True
+    assert first.json()["replayed"] is False
+    assert second.json() | {"replayed": False} == first.json()
     assert _evidence_count(demo_user["user_id"]) == after_first
 
 

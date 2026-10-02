@@ -126,7 +126,11 @@ async def submit_answer(
     ):
         cached = repositories.get_idempotent_response(idem_key)
         if cached:
-            return PracticeAnswerResponse(**cached)
+            # 缓存里存的是首次的响应（replayed=False），回放时必须标成 true，
+            # 否则客户端无法区分「这是我刚提交的」和「这是重放的旧结果」。
+            # 练习的另一条回放路径（按 question_id 命中）本来就是 true，
+            # 两条路径的语义要一致。
+            return PracticeAnswerResponse(**{**cached, "replayed": True})
         # 占位还在：另一个请求正在处理同一件事
         raise ApiError(
             IDEMPOTENCY_CONFLICT, "同一个请求正在处理中，请稍后重试"

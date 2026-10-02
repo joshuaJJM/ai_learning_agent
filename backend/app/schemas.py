@@ -725,6 +725,14 @@ class TutorAnswerRequest(BaseModel):
     text: str | None = Field(default=None, description="自由输入作答")
     self_reported_confidence: Literal["sure", "guess", "unsure"] | None = None
     client_request_id: str | None = None
+    answering_turn_id: str | None = Field(
+        default=None,
+        description=(
+            "**强烈建议传**：你正在回答的那一轮的 `turn.turn_id`。"
+            "服务端据此识别重复提交（网络重试 / 手抖连点）并原样回放，"
+            "不再推进教学流程、不再重复写 Evidence。不传则没有这层保护。"
+        ),
+    )
     stream: bool = Field(
         default=False,
         description=(
@@ -744,6 +752,13 @@ class TutorTurnResponse(BaseModel):
     student_understanding: float
     knowledge_changes: list[KnowledgeChange] = Field(default_factory=list)
     next_action: NextAction | None = None
+    replayed: bool = Field(
+        default=False,
+        description=(
+            "true = 这一轮之前已经答过（重复提交被识别），返回的是当时的原样结果，"
+            "教学流程没有推进、也没有重复写 Evidence"
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------

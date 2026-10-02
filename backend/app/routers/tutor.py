@@ -136,21 +136,6 @@ async def get_session(
     return TutorSessionResponse(**tutor_service.session_response(session))
 
 
-def _turn_body(session_id: str, result: dict[str, Any]) -> dict[str, Any]:
-    session = result["session"]
-    return {
-        "tutor_session_id": session_id,
-        "evaluation": result["evaluation"],
-        "turn": result["turn"],
-        "phase": session["phase"],
-        "completed": session["completed"],
-        "progress": result["turn"]["progress"],
-        "student_understanding": session["student_understanding"],
-        "knowledge_changes": result["knowledge_changes"],
-        "next_action": session.get("next_action"),
-    }
-
-
 async def _stream_turn(
     body: dict[str, Any], request_id: str
 ) -> AsyncIterator[str]:
@@ -265,9 +250,10 @@ async def submit_turn(
         cached = repositories.get_idempotent_response(idem_key)
         if cached:
             # 重放：校验/计算都不用再做，直接按原来的方式回放
+            replayed = {**cached, "replayed": True}
             if payload.stream:
-                return _stream_response(cached, request_id)
-            return TutorTurnResponse(**cached)
+                return _stream_response(replayed, request_id)
+            return TutorTurnResponse(**replayed)
         raise ApiError(
             IDEMPOTENCY_CONFLICT, "同一个请求正在处理中，请稍后重试"
         )
@@ -281,6 +267,7 @@ async def submit_turn(
             selected_key=payload.selected_key,
             text=payload.text,
             self_reported_confidence=payload.self_reported_confidence,
+            answering_turn_id=payload.answering_turn_id,
         )
     except LookupError as exc:
         if idem_key:
@@ -291,9 +278,12 @@ async def submit_turn(
             repositories.release_idempotency(idem_key)
         raise ApiError(SESSION_COMPLETED, "这个 Session 已经完成了") from exc
 
-    body = _turn_body(session_id, result)
+    body = {**result["body"], "replayed": bool(result.get("replayed"))}
     if idem_key:
-        repositories.put_idempotent_response(idem_key, user["user_id"], endpoint, body)
+        # 缓存里不带 replayed —— 重放时由读取方标成 true
+        repositories.put_idempotent_response(
+            idem_key, user["user_id"], endpoint, result["body"]
+        )
 
     if payload.stream:
         return _stream_response(body, request_id)

@@ -695,6 +695,21 @@ async def _analyze_upload(
 # 提交作答
 # ---------------------------------------------------------------------------
 
+def turn_body(session: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+    """把内部结果组装成对外的响应体（JSON 与 SSE 共用同一份）。"""
+    return {
+        "tutor_session_id": session["tutor_session_id"],
+        "evaluation": result["evaluation"],
+        "turn": result["turn"],
+        "phase": session["phase"],
+        "completed": session["completed"],
+        "progress": result["turn"]["progress"],
+        "student_understanding": session["student_understanding"],
+        "knowledge_changes": result["knowledge_changes"],
+        "next_action": session.get("next_action"),
+    }
+
+
 def submit_answer(
     user_id: str,
     session_id: str,
@@ -702,12 +717,40 @@ def submit_answer(
     selected_key: str | None = None,
     text: str | None = None,
     self_reported_confidence: str | None = None,
+    answering_turn_id: str | None = None,
 ) -> dict[str, Any]:
     session = repositories.get_tutor_session(session_id)
     if session is None or session.get("user_id") != user_id:
         raise LookupError("session")
+
+    # ------------------------------------------------------------------
+    # 重放保护：客户端把「我正在回答哪一轮」的 turn_id 回传过来
+    # ------------------------------------------------------------------
+    #
+    # 练习接口靠 question_id 天然分辨重试；Tutor 没有这个东西 ——
+    # 客户端只说「我选了 A」，服务端无法区分「网络重试」和「真的答下一题」。
+    # 于是同一份作答连发两次会被当成两次作答，第二次还会消费掉下一轮，
+    # 学生根本没看见那道题就被记了 Evidence。
+    #
+    # 所以让客户端回显它正在回答的那一轮的 turn_id：
+    # 这一轮如果已经答过，直接原样回放，不再推进、不再写 Evidence。
+    #
+    # ⚠️ 顺序：必须在 completed 检查**之前**。
+    # 最后一轮答完时会话已经 completed，此时的重试应当拿到上次结果，
+    # 而不是被判成「会话已结束」。（练习那边踩过同样的坑。）
+    answered: dict[str, Any] = session.get("answered_turns") or {}
+    if answering_turn_id and answering_turn_id in answered:
+        return {
+            "replayed": True,
+            "session": session,
+            "body": answered[answering_turn_id],
+        }
+
     if session.get("completed"):
         raise RuntimeError("completed")
+
+    # 客户端正在回答的那一轮（用于处理完后登记「已答过」）
+    answered_turn_id = (session.get("history") or [{}])[-1].get("turn_id")
 
     plan = session["plan"]
     index = session.get("step_index", 0)
@@ -878,9 +921,14 @@ def submit_answer(
     if force_turn_type:
         turn["turn_type"] = force_turn_type
     record = _persist_turn(session, turn)
-    _save(session)
 
-    return {
+    # 显式先把 phase 刷新到最新，再组装响应体。
+    # （_save 也会做这件事，但它在下面才执行 —— 顺序反了的话
+    #   响应里的 phase 会是上一轮的旧值。）
+    session["phase"] = _phase_of(session)
+
+    result = {
+        "replayed": False,
         "session": session,
         "turn": record,
         "evaluation": {
@@ -898,6 +946,16 @@ def submit_answer(
             c.model_dump(mode="json") for c in evidence_changes
         ],
     }
+    body = turn_body(session, result)
+    result["body"] = body
+
+    # 登记「这一轮已经答过」——下次客户端拿同一个 turn_id 回来就直接回放
+    if answered_turn_id:
+        answered[answered_turn_id] = body
+        session["answered_turns"] = answered
+
+    _save(session)
+    return result
 
 
 def session_response(session: dict[str, Any]) -> dict[str, Any]:

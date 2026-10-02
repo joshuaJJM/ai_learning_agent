@@ -25,6 +25,17 @@ from .conftest import FIXTURE_IMAGE
 DEMO_KP = "math.derivative.monotonicity_applications"
 
 
+def _assert_replayed(second, first) -> None:
+    """回放的响应除了 `replayed` 标记，其余必须与首次一字不差。
+
+    缓存里存的是首次响应（replayed=False），读取方负责标成 True ——
+    客户端才能区分「这是我刚提交的」和「这是重放的旧结果」。
+    """
+    assert second["replayed"] is True
+    assert first["replayed"] is False
+    assert second | {"replayed": False} == first
+
+
 def _evidence_count(user_id: str) -> int:
     return db.count_docs("evidence", "user_id = ?", [user_id])
 
@@ -65,7 +76,7 @@ def test_body_client_request_id_still_works(
     second = client.post(url, headers=auth_headers, json=payload)
 
     assert first.status_code == second.status_code == 200
-    assert second.json() == first.json()
+    _assert_replayed(second.json(), first.json())
     assert _evidence_count(demo_user["user_id"]) == after_first
 
 
@@ -93,7 +104,7 @@ def test_practice_answer_header_only_is_idempotent(
 
     second = client.post(url, headers=headers, json=body)
     assert second.status_code == 200, second.text
-    assert second.json() == first.json(), "只发请求头也必须回放"
+    _assert_replayed(second.json(), first.json())
     assert _evidence_count(demo_user["user_id"]) == after_first, "不能重复计分"
 
 
@@ -114,7 +125,7 @@ def test_practice_answer_accepts_x_idempotency_key_too(
     after_first = _evidence_count(demo_user["user_id"])
     second = client.post(url, headers=headers, json=body)
 
-    assert second.json() == first.json()
+    _assert_replayed(second.json(), first.json())
     assert _evidence_count(demo_user["user_id"]) == after_first
 
 
@@ -138,7 +149,10 @@ def test_tutor_turn_header_only_is_idempotent(
 
     second = client.post(url, headers=headers, json={"selected_key": choice})
     assert second.status_code == 200
-    assert second.json() == first.json()
+    # 重试会被明确标成 replayed；其余字段必须与首次完全一致
+    assert second.json()["replayed"] is True
+    assert first.json()["replayed"] is False
+    assert second.json() | {"replayed": False} == first.json()
     assert _evidence_count(demo_user["user_id"]) == after_first
 
 

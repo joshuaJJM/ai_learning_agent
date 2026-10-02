@@ -816,16 +816,56 @@ POST /api/v1/tutor/sessions/{session_id}/turns
 
 ```json
 { "selected_key": "B", "text": null, "self_reported_confidence": "guess",
-  "client_request_id": "<可选幂等键>", "stream": false }
+  "client_request_id": "<可选幂等键>",
+  "answering_turn_id": "<强烈建议：你正在回答的那一轮的 turn.turn_id>",
+  "stream": false }
 ```
 
 - 选择题传 `selected_key`（`"A"`~`"D"`）
 - 开放题传 `text`
 - 「我不确定」传 `self_reported_confidence: "unsure"`
+- **`answering_turn_id` 强烈建议传** —— 见下面的「重复提交保护」
 - `stream: true` → 返回 SSE（见 §5.2.2）；缺省或 `false` → 维持下面的 JSON 契约
 
+#### 重复提交保护（`answering_turn_id`）
+
+练习接口靠 `question_id` 天然能分辨「网络重试」和「真的答下一题」——
+同一道题再提交一次，服务端原样回放上次结果。
+
+**Tutor 没有这个东西**：客户端只说「我选了 A」，服务端无法区分
+网络重试、手抖连点、还是用户真的在答下一题。后果是同一份作答被消费两次，
+第二次还会推进教学流程 —— 学生根本没看见那道题就被记了 Evidence。
+
+所以请把**你正在回答的那一轮的 `turn.turn_id` 回传**：
+
+```json
+// 上一轮你收到 turn.turn_id = "turn_9c1d"
+// 回答它时带上：
+{ "selected_key": "B", "answering_turn_id": "turn_9c1d" }
+```
+
+服务端据此判断这一轮是否已经答过：
+
+| 情况 | 行为 |
+|---|---|
+| 该 `turn_id` 没答过 | 正常处理 |
+| 该 `turn_id` 已答过 | **原样回放上次结果**，`replayed: true`，不再推进、不再写 Evidence |
+| 不传该字段 | 没有这层保护（会当成对下一轮的回答） |
+| 传了不认识的 id | 当成没答过，正常处理 |
+
+响应里的 `replayed` 字段告诉你这是不是回放：
+
+```json
+{ "tutor_session_id": "tut_5e8f", "replayed": true, "turn": { … }, … }
+```
+
+> 幂等键（`Idempotency-Key` / `client_request_id`）与 `answering_turn_id`
+> 是**两套互补**的机制，可以同时用：
+> 前者保护「同一个 HTTP 请求被重发」，后者保护「同一轮教学被重复作答」。
+> 建议两个都带上。
+
 返回 `TutorTurnResponse`：`evaluation` + 下一轮 `turn` + `phase` + `completed` +
-`knowledge_changes` + `next_action`。
+`knowledge_changes` + `next_action` + `replayed`。
 
 ```json
 {
