@@ -101,6 +101,83 @@ def mastery_of(user_id: str, kp_id: str) -> MasteryEstimate:
 
 
 # ---------------------------------------------------------------------------
+# 综合掌握度（一个大数字，给首页用）
+# ---------------------------------------------------------------------------
+
+def overall_mastery(user_id: str) -> dict[str, Any]:
+    """对所有知识点的综合掌握度，返回一个 0–99 的整数百分比。
+
+    本项目里 17 个标签与 17 个知识点**一一对应**（标签名就是知识点名），
+    所以「所有标签的掌握度平均」等价于「所有知识点的掌握度平均」。
+
+    算法（两步，刻意做得能一句话讲清）：
+
+      1. **置信度加权平均**：只统计有证据的知识点，但证据少的点发言权小。
+             raw = Σ(mastery_i × confidence_i) / Σ(confidence_i)
+         用 confidence 而不是简单平均，是因为一个只有 1 条证据的知识点
+         给出的掌握度本来就不可信，不该和练了 20 次的一样重。
+
+      2. **覆盖率折算**：光看平均值会误导 —— 只练了 1 个知识点、恰好答对，
+         平均值能到 65%，但那显然不代表「掌握了 65% 的知识体系」。
+             score = raw × (已练知识点数 / 总知识点数)
+
+    于是：
+        什么都没做            → 0
+        练了 5/17，平均 60%   → 60% × 5/17 ≈ 18
+        17 个全练，平均 60%   → 60
+
+    宁可偏低也不虚高 —— 这个数字是要给学生看的，虚高比偏低有害得多。
+    """
+    estimates = mastery_map(user_id)
+    total_points = len(estimates)
+    covered = [item for item in estimates.values() if item.total_weight > 0]
+
+    evidence_count = sum(item.evidence_count for item in covered)
+    if not covered or total_points == 0:
+        return {
+            "score": 0,
+            "percent": 0.0,
+            "weighted_mastery": 0.0,
+            "coverage": 0.0,
+            "covered_count": 0,
+            "point_count": total_points,
+            "evidence_count": 0,
+            "weakest": [],
+        }
+
+    weight_sum = sum(item.confidence for item in covered)
+    if weight_sum > 0:
+        raw = sum(item.mastery * item.confidence for item in covered) / weight_sum
+    else:
+        # 置信度全为 0 的极端情况（证据权重被时间衰减压到极低），退回简单平均
+        raw = sum(item.mastery for item in covered) / len(covered)
+
+    coverage = len(covered) / total_points
+    score = int(round(raw * coverage * 100))
+    score = max(0, min(99, score))  # 契约：两位数
+
+    weakest = sorted(covered, key=lambda item: item.mastery)[:3]
+    return {
+        "score": score,
+        "percent": round(raw * coverage, 4),
+        "weighted_mastery": round(raw, 4),
+        "coverage": round(coverage, 4),
+        "covered_count": len(covered),
+        "point_count": total_points,
+        "evidence_count": evidence_count,
+        "weakest": [
+            {
+                "knowledge_point_id": item.kp_id,
+                "name": (knowledge.get_point(item.kp_id).name
+                         if knowledge.get_point(item.kp_id) else item.kp_id),
+                "mastery": round(item.mastery, 4),
+            }
+            for item in weakest
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
 # 掌握度写入（唯一入口）
 # ---------------------------------------------------------------------------
 

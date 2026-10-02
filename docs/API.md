@@ -542,6 +542,65 @@ failed     → finished_at + duration_seconds + error
 
 ## 3. Knowledge State
 
+### 3.0 综合掌握度（首页那个大数字）
+
+```http
+GET /api/v1/knowledge/mastery-overview
+```
+
+无参数。返回一个**两位整数百分比**，直接显示即可：
+
+```json
+{
+  "score": 60,
+  "percent": 0.6045,
+  "weighted_mastery": 0.6045,
+  "coverage": 1.0,
+  "covered_count": 17,
+  "point_count": 17,
+  "evidence_count": 103,
+  "weakest": [
+    { "knowledge_point_id": "math.derivative.monotonicity_applications",
+      "name": "导数与函数性质综合应用", "mastery": 0.432 },
+    { "knowledge_point_id": "math.derivative.parity_symmetry",
+      "name": "奇偶性、对称性与周期性中的导数关系", "mastery": 0.441 },
+    { "knowledge_point_id": "math.derivative.tangent_extrema",
+      "name": "切线相关的最值问题", "mastery": 0.444 }
+  ]
+}
+```
+
+| 字段 | 含义 |
+|---|---|
+| `score` | **要显示的就是它**，0–99 的整数 |
+| `percent` | 精确值（0..1），需要更细的展示时用 |
+| `weighted_mastery` | 已练知识点的置信度加权平均，**未**折算覆盖率 |
+| `coverage` | 已练知识点占全部的比例 |
+| `covered_count` / `point_count` | 有证据的点数 / 总点数 |
+| `evidence_count` | 参与统计的证据条数 |
+| `weakest` | 掌握度最低的 3 个，可直接拿来做「该练什么」 |
+
+**算法**（两步，刻意做得能一句话讲清）：
+
+```
+1. 置信度加权平均：raw = Σ(mastery_i × confidence_i) / Σ(confidence_i)
+     只统计有证据的知识点；证据少的点发言权小
+2. 覆盖率折算：    score = round(raw × 已练点数 / 总点数 × 100)
+```
+
+为什么要有第 2 步 —— 光看平均值会误导：
+
+| 情形 | 只看平均 | 加覆盖率折算 |
+|---|---|---|
+| 什么都没做 | 50%（先验） | **0** |
+| 只练了 1 个知识点、恰好答对 | 65%（虚高） | **8** |
+| 练满 17 个、平均 60% | 60% | **60** |
+
+**宁可偏低也不虚高** —— 这个数字是给学生看的，虚高比偏低有害得多。
+
+> 本项目里 **17 个标签与 17 个知识点一一对应**（标签名就是知识点名），
+> 所以「所有标签的掌握度平均」等价于「所有知识点的掌握度平均」。
+
 ### 3.1 整棵树
 
 ```http

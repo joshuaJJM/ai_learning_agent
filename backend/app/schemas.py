@@ -449,6 +449,36 @@ class KnowledgeResponse(BaseModel):
     total_evidence: int
 
 
+class WeakestPointRef(BaseModel):
+    knowledge_point_id: str
+    name: str
+    mastery: float
+
+
+class MasteryOverviewResponse(BaseModel):
+    """综合掌握度 —— 一个给首页用的大数字。
+
+    `score` 是两位整数百分比（0–99），**直接显示即可**，不用再换算。
+    """
+
+    score: int = Field(
+        ge=0, le=99, description="两位数百分比，直接显示"
+    )
+    percent: float = Field(
+        description="精确值（0..1），需要更细的展示时用"
+    )
+    weighted_mastery: float = Field(
+        description="已练知识点的置信度加权平均掌握度，未折算覆盖率"
+    )
+    coverage: float = Field(description="已练知识点占全部的比例")
+    covered_count: int = Field(description="有证据的知识点数")
+    point_count: int = Field(description="知识点总数（= 标签总数）")
+    evidence_count: int = Field(description="参与统计的证据条数")
+    weakest: list[WeakestPointRef] = Field(
+        default_factory=list, description="掌握度最低的 3 个，可直接做「该练什么」"
+    )
+
+
 class EvidenceItem(BaseModel):
     """一条学习证据。
 
