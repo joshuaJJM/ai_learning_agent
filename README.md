@@ -135,6 +135,7 @@ diagnose ──答错→ remedial（更简单的问题）→ 讲解
 
 两份，互补：
 
+- **[docs/UPLOAD.md](docs/UPLOAD.md)** —— 上传接口的详细使用说明（含 Swift 示例、轮询、错误处理、常见坑）。
 - **[docs/API.md](docs/API.md)** —— 完整契约、逐字段说明与请求/响应示例。
   纯文本，可以直接读，也可以整份喂给 agent —— 不必去翻代码。
 - **<http://121.43.137.176:17283/docs>** —— 交互式 Swagger，可以直接发请求试。
