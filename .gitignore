@@ -41,6 +41,9 @@ data/
 pip-unpack-*/
 haoxue-test-*/
 .pytest_tmp/
+# pytest 的 tmp_path 默认落在 rootdir 下（已在 pytest.ini 里改到 .pytest_tmp/，
+# 这里再兜一层，防止有人不用 ini 直接跑）
+pytest-of-*/
 # 排查线上问题时临时写的一次性脚本 / 输出（用完即删，不该进仓库）
 backend/.status.sh
 backend/.status_out.txt
