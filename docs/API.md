@@ -28,11 +28,29 @@
 | `Authorization: Bearer <有效 token>` | 使用该用户 |
 | `Authorization: Bearer <无效 token>` | `401 UNAUTHORIZED`（**不会静默降级**，避免拼错 token 却拿到看起来正常的数据） |
 
-需要显式拿 token 时：
+需要显式拿 token 时，两个入口：
 
 ```http
 GET /api/v1/auth/demo-user
 → { "user_id": "user_ab12...", "access_token": "tok_9f3c...", "token_type": "Bearer", "is_demo": true, "created_at": "..." }
+```
+
+```http
+POST /api/v1/auth/guest
+{ "device_id": "可选，同一个 device_id 会复用已注册的游客", "display_name": "可选" }
+→ { "user_id": "user_ab12...", "access_token": "tok_9f3c...", "token_type": "Bearer", "is_demo": false, "created_at": "..." }
+```
+
+`/auth/demo-user` 永远返回同一个固定用户，适合联调；`/auth/guest` 按 `device_id`
+区分用户，适合在真机上让每个设备有自己的学习档案。Demo 阶段用哪个都行。
+
+### 元接口
+
+```http
+GET /                    # 服务名、版本、文档地址
+GET /health              # 健康检查
+GET /api/v1/health       # 同上（等价别名）
+                         # 返回 status / llm_mode / 题库题数 / 运行时长
 ```
 
 ### 统一错误格式
@@ -610,10 +628,15 @@ POST /api/v1/practice/sessions
 > 正确答案只在作答后下发——不要试图在客户端提前判定。
 
 ```http
-GET  /api/v1/practice/sessions/{session_id}/next
+GET  /api/v1/practice/sessions/{session_id}          # 读整组练习的状态与当前题
+GET  /api/v1/practice/sessions/{session_id}/next     # 只取下一题
 POST /api/v1/practice/sessions/{session_id}/answers
      { "question_id": "math.derivative.comprehensive.0004", "selected_key": "C" }
 ```
+
+`GET .../{session_id}` 返回与创建时同构的会话状态（含 `answered` / `correct` / `next_question`），
+适合离开页面后回来时恢复；`/next` 返回单个 `PracticeQuestion`，做完全部题目时返回
+`404 NO_QUESTIONS_AVAILABLE`。
 
 作答返回：
 

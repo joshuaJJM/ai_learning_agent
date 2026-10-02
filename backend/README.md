@@ -1,9 +1,9 @@
 # backend/ — 开发者速查
 
 > 项目总览、架构说明、部署步骤请见 **[根目录 README.md](../README.md)**。
-> 对外 API 契约（前端唯一需要看的）见 **[docs/API.md](../docs/API.md)**。
 
-在线试接口：<http://121.43.137.176:17283/docs>
+对外 API 契约：**[docs/API.md](../docs/API.md)**（完整字段与示例，纯文本好读、可直接喂给 agent），
+以及线上 <http://121.43.137.176:17283/docs>（Swagger，由 `app/schemas.py` 自动生成）。
 
 ---
 
@@ -28,7 +28,8 @@ cp .env.example .env                                    # 填 LLM_API_KEY
 
 | 需求 | 文件 |
 |---|---|
-| 加 / 改接口字段 | `app/schemas.py`（同时更新 `docs/API.md`） |
+| 加 / 改接口字段 | `app/schemas.py`，并同步 `docs/API.md`（`/docs` 会自动跟进） |
+| 确认文档没漏接口 | `tools/check_docs.py`（核对 `docs/API.md` 是否覆盖全部真实接口） |
 | 加新接口 | `app/routers/` + `app/services/`，并在 `app/routers/__init__.py` 注册 |
 | 加错误码 | `app/errors.py` |
 | 调掌握度算法 / 权重 | `app/mastery.py` 顶部的常量 |
@@ -70,7 +71,7 @@ app/
 ├── routers/           HTTP 层
 ├── services/          业务层（llm / knowledge / vlm / homework / tutor / practice / …）
 └── seed/              题库、教学脚本、图书、Demo 种子
-tools/                 probe_models / e2e_live / remote
+tools/                 probe_models / e2e_live / remote / check_docs
 tests/                 29 个测试
 ```
 

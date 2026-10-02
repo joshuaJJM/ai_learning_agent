@@ -1,7 +1,11 @@
 """对外 API 契约（Pydantic 模型）。
 
 **前端只依赖这一层。** VLM 用哪个模型、Mastery 怎么算、Prompt 怎么写，
-全部隐藏在 Service 层后面。改这里等于改契约，请同步更新 docs/API.md。
+全部隐藏在 Service 层后面。
+
+改这里就等于改契约。Swagger（`/docs`）由这些模型自动生成，
+但 **docs/API.md 是手写的详细说明，改字段时请一并更新** ——
+那份是给人/agent 直接读的（不必翻代码），Swagger 负责交互式调试。
 """
 
 from __future__ import annotations
@@ -51,6 +55,12 @@ NextActionKind = Literal[
 # ---------------------------------------------------------------------------
 
 class ErrorResponse(BaseModel):
+    """所有接口的统一错误体。
+
+    客户端只根据 `error_code` 做分支，不要解析 `message` 文案。
+    可能出现的 error_code 见 app/errors.py。
+    """
+
     error_code: str
     message: str
     request_id: str
@@ -73,6 +83,8 @@ class GuestAuthRequest(BaseModel):
 
 
 class GuestAuthResponse(BaseModel):
+    """匿名用户与访问令牌。之后请求带 `Authorization: Bearer <access_token>`。"""
+
     user_id: str
     access_token: str
     token_type: str = "Bearer"
@@ -96,6 +108,17 @@ class Choice(BaseModel):
 
 
 class NextAction(BaseModel):
+    """Agent 决定的下一步行动。
+
+    `action` 取值：
+      - `start_tutor`           去学这个薄弱点 → POST /tutor/sessions
+      - `continue_practice`     继续刷题巩固   → POST /practice/sessions
+      - `review_wrong_question` 重做错题       → 用 wrong_question_id
+      - `increase_difficulty`   提高难度       → POST /practice/sessions 并指定更高 difficulty
+      - `review_later` / `all_good`  当前没有紧急项
+    `cta_label` 是建议的按钮文案，可直接用。
+    """
+
     action: NextActionKind
     title: str
     reason: str
@@ -164,6 +187,8 @@ class HomeStats(BaseModel):
 
 
 class HomeResponse(BaseModel):
+    """首页聚合结果 —— 首页只需要请求这一个接口。"""
+
     user_id: str
     greeting: str
     next_action: NextAction
@@ -181,6 +206,13 @@ class HomeResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 class QuestionResult(BaseModel):
+    """单题的识别与判定结果。
+
+    注意 `correctness == "unknown"` 时 `correct_answer` 为 null：
+    这说明两个模型对答案有分歧，服务端拒绝采信，该题也未计入掌握度统计。
+    详见 warnings。
+    """
+
     question_id: str
     question_number: str
     question_type: str = "single_choice"
@@ -207,6 +239,13 @@ class AnalysisStage(BaseModel):
 
 
 class AnalysisProgress(BaseModel):
+    """分析进度，用于「可持续追踪的进度卡片」。
+
+    `stages` 是固定 5 段，每段带 `state`（done / active / pending），
+    直接渲染成勾选列表即可；`percent` 可驱动进度条。
+    实测整条流水线约 20–30 秒，建议 1 秒轮询一次。
+    """
+
     percent: float
     current_stage: str
     current_stage_key: str | None = None
@@ -256,6 +295,8 @@ class AnalysisDetailResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 class KnowledgeNode(BaseModel):
+    """知识树的一个节点。父节点的 mastery 由子节点按证据量加权聚合而来，不是独立存的数字。"""
+
     knowledge_point_id: str
     name: str
     description: str = ""
@@ -289,6 +330,12 @@ class KnowledgeResponse(BaseModel):
 
 
 class EvidenceItem(BaseModel):
+    """一条学习证据。
+
+    `result` 取值：`correct` | `partial` | `incorrect` | `unknown`。
+    这是 Knowledge State 的唯一事实来源 —— 每个百分比都能反查到撑起它的证据。
+    """
+
     evidence_id: str
     knowledge_point_id: str
     source_type: SourceType
@@ -318,6 +365,12 @@ class RecentPerformancePoint(BaseModel):
 
 
 class KnowledgeDetailResponse(BaseModel):
+    """Knowledge Detail 页面的全部数据。
+
+    `mastery_explanation` 是给用户看的一句话解释（「为什么是 43%」），
+    直接展示即可；`error_patterns` + `evidence` 支撑可点击的「查看证据」。
+    """
+
     knowledge_point_id: str
     name: str
     description: str
@@ -343,6 +396,8 @@ class KnowledgeDetailResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 class WrongQuestionDetail(BaseModel):
+    """错题详情。`can_start_tutor` 对应详情页的 Start Learning 按钮。"""
+
     wrong_question_id: str
     question_id: str
     question_number: str
@@ -409,6 +464,17 @@ class TutorProgress(BaseModel):
 
 
 class TutorTurn(BaseModel):
+    """Tutor 的一轮输出。按 `turn_type` 选择渲染方式，不要把 `text` 当成整段 Markdown。
+
+      - `concept_question`      概念选择题（配 choices）
+      - `simpler_question`      学生答错后换的更简单的问题
+      - `hint`                  提示条，同一题再试
+      - `explanation`           讲解卡片，`allow_free_text=false`，**不需要作答**
+      - `guided_practice`       分步引导
+      - `independent_practice`  独立练习（没有提示，产生的 Evidence 才算数）
+      - `summary`               总结卡片，此时 session 已 completed
+    """
+
     turn_id: str
     seq: int
     turn_type: TutorTurnType
@@ -423,6 +489,16 @@ class TutorTurn(BaseModel):
 
 
 class TutorEvaluation(BaseModel):
+    """对学生这次作答的判定，以及 Agent 因此选择的策略。
+
+    `strategy` 取值：
+      - `advance`     答对了，进入下一步
+      - `simplify`    **答错 → 换成更简单的问题**（Agent 改变教学策略）
+      - `hint`        同一步再试一次，给提示
+      - `re_explain`  连续错，重新讲
+      - `finish`      结束
+    """
+
     correctness: Correctness
     is_correct: bool
     chosen_key: str | None = None
@@ -608,6 +684,8 @@ class AiChatRequest(BaseModel):
 
 
 class AiChatResponse(BaseModel):
+    """标准 AI 直连的回答。`provider` 为 `mock` 说明未连上真实模型（回复是兜底文案）。"""
+
     reply: str
     model: str
     provider: str

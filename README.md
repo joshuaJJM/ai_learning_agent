@@ -125,8 +125,12 @@ diagnose ──答错→ remedial（更简单的问题）→ 讲解
 
 ## 对外接口
 
-完整契约见 **[docs/API.md](../docs/API.md)**，或直接打开线上的
-<http://121.43.137.176:17283/docs> 点着试。
+两份，互补：
+
+- **[docs/API.md](docs/API.md)** —— 完整契约、逐字段说明与请求/响应示例。
+  纯文本，可以直接读，也可以整份喂给 agent —— 不必去翻代码。
+- **<http://121.43.137.176:17283/docs>** —— 交互式 Swagger，可以直接发请求试。
+  由 `app/schemas.py` 的 Pydantic 模型自动生成，永远与代码同步。
 
 接口分八组：鉴权、首页聚合、作业分析、Knowledge State、错题库、AI Tutor、
 针对性练习、图书权限，另外有一个标准 AI 直连接口（发问题拿回答）和一组演示辅助接口。
@@ -207,6 +211,7 @@ backend/
 ├── tools/
 │   ├── probe_models.py       模型连通性探针
 │   ├── e2e_live.py           真实端到端联调（打真模型，23 项检查）
+│   ├── check_docs.py         核对 docs/API.md 是否覆盖全部接口
 │   └── remote.py             远程部署工具（paramiko）
 └── tests/                    29 个测试，覆盖完整 Demo 闭环
 ```
