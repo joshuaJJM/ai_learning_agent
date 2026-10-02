@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, status
 from .. import repositories
 from ..dependencies import current_user
 from ..errors import (
+    IDEMPOTENCY_CONFLICT,
     QUESTION_NOT_RECOGNIZED,
     SESSION_COMPLETED,
     SESSION_NOT_FOUND,
@@ -102,17 +103,24 @@ async def submit_turn(
     payload: TutorAnswerRequest,
     user: dict[str, Any] = Depends(current_user),
 ) -> TutorTurnResponse:
-    # 幂等：同一个 client_request_id 重试直接回放上次响应。
-    # 不加这层的话，重试会再追一条 turn 并**再写一次 Evidence**，掌握度被重复更新。
+    endpoint = f"POST /api/v1/tutor/sessions/{session_id}/turns"
     idem_key = (
         f"tutor:{user['user_id']}:{session_id}:{payload.client_request_id}"
         if payload.client_request_id
         else None
     )
-    if idem_key:
+
+    # **先占位再干活**：只「先查缓存」的话，两个并发请求会同时未命中，
+    # 于是各追一条 turn、各写一次 Evidence，掌握度被算两遍。
+    if idem_key and not repositories.reserve_idempotency(
+        idem_key, user["user_id"], endpoint
+    ):
         cached = repositories.get_idempotent_response(idem_key)
         if cached:
             return TutorTurnResponse(**cached)
+        raise ApiError(
+            IDEMPOTENCY_CONFLICT, "同一个请求正在处理中，请稍后重试"
+        )
 
     try:
         result = tutor_service.submit_answer(
@@ -123,8 +131,12 @@ async def submit_turn(
             self_reported_confidence=payload.self_reported_confidence,
         )
     except LookupError as exc:
+        if idem_key:
+            repositories.release_idempotency(idem_key)
         raise ApiError(SESSION_NOT_FOUND, "Tutor Session 不存在") from exc
     except RuntimeError as exc:
+        if idem_key:
+            repositories.release_idempotency(idem_key)
         raise ApiError(SESSION_COMPLETED, "这个 Session 已经完成了") from exc
 
     session = result["session"]
@@ -140,10 +152,5 @@ async def submit_turn(
         "next_action": session.get("next_action"),
     }
     if idem_key:
-        repositories.put_idempotent_response(
-            idem_key,
-            user["user_id"],
-            f"POST /api/v1/tutor/sessions/{session_id}/turns",
-            body,
-        )
+        repositories.put_idempotent_response(idem_key, user["user_id"], endpoint, body)
     return TutorTurnResponse(**body)

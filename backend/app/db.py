@@ -560,11 +560,31 @@ def _run_migrations(conn: Any) -> None:
         logging.getLogger("haoxue").info("数据库迁移已应用: %s", ", ".join(applied))
 
 
+def _per_user_max_batch(conn: Any) -> dict[str, int]:
+    """每个用户当前已分配的最大批次号（只看非 0 的）。"""
+    rows = conn.execute(
+        "SELECT user_id, MAX(batch_number) AS n FROM analyses "
+        "WHERE batch_number > 0 GROUP BY user_id"
+    ).fetchall()
+    result: dict[str, int] = {}
+    for row in rows:
+        try:
+            result[str(row["user_id"])] = int(row["n"] or 0)
+        except (KeyError, TypeError):
+            result[str(row[0])] = int(row[1] or 0)
+    return result
+
+
 def _backfill_batch_numbers(conn: Any) -> int:
     """给历史分析补批次号（迁移加列时默认全是 0）。
 
     必须在建 (user_id, batch_number) 唯一索引**之前**跑：
     同一用户的多行如果都是 0，唯一索引根本建不起来。
+
+    关键：新号要**从该用户已有的最大号之后接着编**。
+    列是后来加的，所以库里很可能已经混着两种情况 ——
+    加列前的老记录是 0，加列后新上传的已经拿到 1、2……
+    如果一律从 1 开始补，就会和已存在的 1 撞车，唯一索引建不起来。
     """
     rows = conn.execute(
         "SELECT user_id, analysis_id FROM analyses WHERE batch_number = 0 "
@@ -573,14 +593,15 @@ def _backfill_batch_numbers(conn: Any) -> int:
     if not rows:
         return 0
 
-    counters: dict[str, int] = {}
+    # 起点 = 该用户已分配的最大号（没有则 0）
+    counters = _per_user_max_batch(conn)
+    execute = getattr(conn, "execute")
     for row in rows:
         try:
             user_id, analysis_id = str(row["user_id"]), str(row["analysis_id"])
         except (KeyError, TypeError):
             user_id, analysis_id = str(row[0]), str(row[1])
         counters[user_id] = counters.get(user_id, 0) + 1
-        execute = getattr(conn, "execute")
         if _use_mysql():
             execute(
                 "UPDATE analyses SET batch_number = %s WHERE analysis_id = %s",
@@ -595,6 +616,20 @@ def _backfill_batch_numbers(conn: Any) -> int:
     return len(rows)
 
 
+def _duplicate_batch_groups(conn: Any) -> list[tuple[str, int, int]]:
+    rows = conn.execute(
+        "SELECT user_id, batch_number, COUNT(1) AS n FROM analyses "
+        "GROUP BY user_id, batch_number HAVING COUNT(1) > 1"
+    ).fetchall()
+    result: list[tuple[str, int, int]] = []
+    for row in rows:
+        try:
+            result.append((str(row["user_id"]), int(row["batch_number"]), int(row["n"])))
+        except (KeyError, TypeError):
+            result.append((str(row[0]), int(row[1]), int(row[2])))
+    return result
+
+
 def ensure_batch_uniqueness(conn: Any) -> None:
     """给 (user_id, batch_number) 加唯一约束（幂等，可重复调用）。
 
@@ -607,6 +642,18 @@ def ensure_batch_uniqueness(conn: Any) -> None:
         return
 
     backfilled = _backfill_batch_numbers(conn)
+
+    # 回填之后再确认一次：万一历史数据本身就有重复（例如手工导入过），
+    # 建索引会直接失败并让服务起不来。这里给出可读的报错而不是抛 SQL 异常。
+    duplicates = _duplicate_batch_groups(conn)
+    if duplicates:
+        import logging
+
+        logging.getLogger("haoxue").error(
+            "批次号存在重复，跳过唯一约束创建: %s", duplicates[:5]
+        )
+        return
+
     conn.execute(
         f"CREATE UNIQUE INDEX {index_name} ON analyses (user_id, batch_number)"
     )

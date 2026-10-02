@@ -638,19 +638,82 @@ def ensure_tag_scores(user_id: str, tags: Iterable[str]) -> int:
 # ---------------------------------------------------------------------------
 # 幂等
 # ---------------------------------------------------------------------------
+#
+# 顺序重试（同一个客户端重发）靠「先占位」解决，但**并发**重试必须靠原子性：
+#
+#   查缓存 → 干活 → 写缓存
+#
+# 这个顺序在两个请求同时到达时，双方都会看到「缓存未命中」，
+# 于是各写一次 Evidence、各动一次标签 —— 掌握度被算了两遍。
+#
+# 所以改成：
+#
+#   占位（原子 INSERT）→ 干活 → 用真正的响应覆盖占位
+#
+# 占位失败说明别人正在处理或已经处理完：
+#   - 已完成 → 直接回放缓存响应
+#   - 处理中 → 返回 409，让客户端稍后重试（好过静默重复计分）
+
+# 占位标记。真正的响应体里不会出现这个键，所以可以安全区分。
+_PENDING_MARKER = "__pending__"
+
 
 def get_idempotent_response(key: str) -> dict[str, Any] | None:
-    """幂等命中检查。
+    """读取**已完成**的幂等响应。占位中（还没干完）返回 None。
 
     列名用 `idem_key` 而不是 `key` —— `key` 是 MySQL 保留字。
-    走文档表接口，两种方言都不用特殊语法。
     """
-    return db.get_doc("idempotency", "idem_key", key)
+    doc = db.get_doc("idempotency", "idem_key", key)
+    if not doc or doc.get(_PENDING_MARKER):
+        return None
+    return doc
+
+
+def is_idempotency_pending(key: str) -> bool:
+    doc = db.get_doc("idempotency", "idem_key", key)
+    return bool(doc and doc.get(_PENDING_MARKER))
+
+
+def reserve_idempotency(key: str, user_id: str | None, endpoint: str) -> bool:
+    """原子占位。返回 True 表示占上了、可以开始干活。
+
+    靠 `idem_key` 主键的 INSERT 冲突保证原子性 —— 两种方言都有这个语义。
+    """
+    now = db.to_iso(db.utcnow())
+    try:
+        db.execute(
+            "INSERT INTO idempotency (idem_key, user_id, endpoint, created_at, doc) "
+            "VALUES (?, ?, ?, ?, ?)",
+            [
+                key,
+                user_id,
+                endpoint,
+                now,
+                json.dumps(
+                    {_PENDING_MARKER: True, "created_at": now}, ensure_ascii=False
+                ),
+            ],
+        )
+        return True
+    except Exception as exc:  # noqa: BLE001
+        if db.is_duplicate_error(exc):
+            try:
+                db.get_conn().rollback()
+            except Exception:  # noqa: BLE001
+                pass
+            return False
+        raise
+
+
+def release_idempotency(key: str) -> None:
+    """放弃占位（业务失败时调用），让客户端可以重试。"""
+    db.delete_doc("idempotency", "idem_key", key)
 
 
 def put_idempotent_response(
     key: str, user_id: str | None, endpoint: str, response: dict[str, Any]
 ) -> None:
+    """把占位记录覆盖成真正的响应。"""
     db.upsert_doc(
         "idempotency",
         "idem_key",

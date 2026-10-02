@@ -452,3 +452,172 @@ def test_batch_number_uploads_stay_unique(
         created.append(response.json()["batch_number"])
     assert len(created) == len(set(created))
     assert created == sorted(created)
+
+
+# ---------------------------------------------------------------------------
+# 复审追加：批次号回填不能和已分配的号撞车
+# ---------------------------------------------------------------------------
+
+def _insert_analysis_row(
+    user_id: str, analysis_id: str, batch_number: int, created: str
+) -> None:
+    from app import db
+
+    db.execute(
+        "INSERT INTO analyses (analysis_id, user_id, status, batch_number, "
+        "created_at, updated_at, doc) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [
+            analysis_id,
+            user_id,
+            "completed",
+            batch_number,
+            created,
+            created,
+            '{"analysis_id": "%s"}' % analysis_id,
+        ],
+    )
+
+
+def test_backfill_skips_numbers_already_taken(demo_user: dict) -> None:
+    """混合历史：加列前的老记录是 0，加列后新上传的已经拿到 1、2……
+
+    如果回填一律从 1 开始编号，就会和已存在的 1 撞车，唯一索引建不起来。
+    """
+    from app import db
+
+    user_id = "user_mixed_history_probe"
+    conn = db.get_conn()
+
+    # 退回到「刚加完列、还没建唯一索引」的状态
+    conn.execute("DROP INDEX IF EXISTS uk_analyses_batch")
+    conn.commit()
+
+    # 2 条已经分配过号的（1 和 2），3 条还是 0 的历史记录
+    _insert_analysis_row(user_id, "ana_mix_new1", 1, "2026-10-02T10:00:00+00:00")
+    _insert_analysis_row(user_id, "ana_mix_new2", 2, "2026-10-02T10:01:00+00:00")
+    _insert_analysis_row(user_id, "ana_mix_old1", 0, "2026-10-01T08:00:00+00:00")
+    _insert_analysis_row(user_id, "ana_mix_old2", 0, "2026-10-01T09:00:00+00:00")
+    _insert_analysis_row(user_id, "ana_mix_old3", 0, "2026-10-01T10:00:00+00:00")
+
+    # 这一步以前会因为 1 撞车而失败
+    db.ensure_batch_uniqueness(conn)
+
+    rows = db.query_all(
+        "SELECT analysis_id, batch_number FROM analyses WHERE user_id = ? "
+        "ORDER BY batch_number",
+        [user_id],
+    )
+    numbers = [int(r["batch_number"]) for r in rows]
+
+    assert len(numbers) == len(set(numbers)), f"批次号重复: {numbers}"
+    # 已分配的 1、2 必须保持原样（不能重编号，否则前端显示的历史会变）
+    assert numbers[:2] == [1, 2]
+    # 三个 0 记录从 3 开始接着编
+    assert numbers[2:] == [3, 4, 5]
+    assert "uk_analyses_batch" in db._index_names(conn, "analyses")
+
+    db.execute("DELETE FROM analyses WHERE user_id = ?", [user_id])
+
+
+def test_backfill_is_idempotent_when_nothing_to_do(demo_user: dict) -> None:
+    from app import db
+
+    conn = db.get_conn()
+    assert db._backfill_batch_numbers(conn) == 0
+    db.ensure_batch_uniqueness(conn)
+    db.ensure_batch_uniqueness(conn)  # 再调一次不该报错
+
+
+# ---------------------------------------------------------------------------
+# 复审追加：并发幂等（不是顺序重试）
+# ---------------------------------------------------------------------------
+
+def test_practice_in_flight_request_is_rejected_not_double_counted(
+    client: TestClient, auth_headers: dict[str, str], demo_user: dict
+) -> None:
+    """模拟两个进程同时收到同一请求。
+
+    第一个已经占位但还没干完，第二个必须拿到 409，而不是各写一次 Evidence。
+    """
+    session, question = _answer_question(client, auth_headers)
+    user_id = demo_user["user_id"]
+    key = "concurrent-probe"
+    idem_key = f"practice:{user_id}:{session['practice_session_id']}:{key}"
+
+    # 另一个「进程」占住了位（还没写响应）
+    assert repositories.reserve_idempotency(idem_key, user_id, "probe") is True
+    before = _evidence_count(user_id)
+
+    response = _submit(
+        client, auth_headers, session["practice_session_id"], question.id,
+        question.answer, client_request_id=key,
+    )
+
+    assert response.status_code == 409, response.text
+    assert response.json()["error_code"] == "IDEMPOTENCY_CONFLICT"
+    assert _evidence_count(user_id) == before, "并发请求必须没有写 Evidence"
+
+
+def test_practice_completed_reservation_replays(
+    client: TestClient, auth_headers: dict[str, str], demo_user: dict
+) -> None:
+    """占位被填成真正的响应之后，后续请求回放缓存。"""
+    user_id = demo_user["user_id"]
+    idem_key = "practice:probe:completed"
+
+    repositories.reserve_idempotency(idem_key, user_id, "probe")
+    repositories.put_idempotent_response(
+        idem_key, user_id, "probe", {"cached": True, "value": 42}
+    )
+    assert repositories.is_idempotency_pending(idem_key) is False
+    assert repositories.get_idempotent_response(idem_key) == {
+        "cached": True,
+        "value": 42,
+    }
+
+
+def test_failed_request_releases_the_reservation(
+    client: TestClient, auth_headers: dict[str, str], demo_user: dict
+) -> None:
+    """业务失败必须释放占位，否则客户端永远重试不了。"""
+    session, current = _answer_question(client, auth_headers)
+    user_id = demo_user["user_id"]
+    key = "release-probe"
+    idem_key = f"practice:{user_id}:{session['practice_session_id']}:{key}"
+
+    outside = next(q.id for q in get_bank().all() if q.id != current.id)
+    response = _submit(
+        client, auth_headers, session["practice_session_id"], outside, "A",
+        client_request_id=key,
+    )
+    assert response.status_code == 400
+    assert repositories.is_idempotency_pending(idem_key) is False, "占位没被释放"
+
+
+def test_tutor_in_flight_request_is_rejected(
+    client: TestClient, auth_headers: dict[str, str], demo_user: dict
+) -> None:
+    created = client.post(
+        "/api/v1/tutor/sessions",
+        headers=auth_headers,
+        json={"source_type": "knowledge_point", "knowledge_point_id": DEMO_KP},
+    ).json()
+    session_id = created["tutor_session_id"]
+    user_id = demo_user["user_id"]
+    key = "tutor-concurrent-probe"
+    idem_key = f"tutor:{user_id}:{session_id}:{key}"
+
+    assert repositories.reserve_idempotency(idem_key, user_id, "probe") is True
+    before = _evidence_count(user_id)
+
+    response = client.post(
+        f"/api/v1/tutor/sessions/{session_id}/turns",
+        headers=auth_headers,
+        json={
+            "selected_key": created["turn"]["choices"][0]["key"],
+            "client_request_id": key,
+        },
+    )
+    assert response.status_code == 409, response.text
+    assert response.json()["error_code"] == "IDEMPOTENCY_CONFLICT"
+    assert _evidence_count(user_id) == before
