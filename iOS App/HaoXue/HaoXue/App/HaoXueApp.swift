@@ -2,22 +2,9 @@ import SwiftUI
 
 @main
 struct HaoXueApp: App {
-    @State private var model: DevelopmentViewModel
-
-    init() {
-        let configuration = AppConfiguration()
-        let provider: any HomeDataProviding
-        switch configuration.mode {
-        case .mock:
-            provider = MockDataProvider()
-        case .live:
-            provider = LiveDataProvider(
-                client: APIClient(timeout: configuration.timeout), configuration: configuration)
-        }
-        _model = State(initialValue: DevelopmentViewModel(provider: provider))
-    }
+    @State private var demo = DemoScenarioStore()
 
     var body: some Scene {
-        WindowGroup { DevelopmentView(model: model) }
+        WindowGroup { AppShellView(store: demo) }
     }
 }

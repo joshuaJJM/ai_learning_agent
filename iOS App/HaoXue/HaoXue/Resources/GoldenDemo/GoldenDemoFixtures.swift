@@ -21,14 +21,14 @@ enum GoldenDemoFixtures {
         summary: "完成引导与独立练习，固定模拟服务器结果")
 
     static let homeBefore = HomeState(
-        nextStep: "学习导数符号与函数单调性的关系",
+        nextStep: "导数与函数单调性",
         subjects: [SubjectSummary(id: "math", name: "数学", summary: "导数基础")],
         knowledgePoints: [KnowledgePoint(id: knowledgeID, name: "导数与单调性", mastery: 0.43,
             trend: "需要关注", evidenceSummary: "基础求导熟练，导数符号到函数性质理解薄弱",
             recommendedAction: "进入 Tutor")], recentWrongQuestions: [wrongQuestion])
 
     static let homeAfter = HomeState(
-        nextStep: "继续巩固导数与单调性",
+        nextStep: "巩固导数与单调性",
         subjects: [SubjectSummary(id: "math", name: "数学", summary: "导数基础")],
         knowledgePoints: [KnowledgePoint(id: knowledgeID, name: "导数与单调性", mastery: 0.51,
             trend: "提升", evidenceSummary: "完成引导并答对独立练习",
