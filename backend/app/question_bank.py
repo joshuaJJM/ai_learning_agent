@@ -25,6 +25,8 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Sequence
@@ -40,6 +42,10 @@ SUPPORTED_QUESTION_TYPES = ("single_choice",)
 @dataclass(frozen=True)
 class BankQuestion:
     id: str
+    #: 题库文件里的原始 id（可能是「第001题」这种序号）。只用于展示，不参与关联。
+    source_id: str
+    #: 给用户看的题号（从 source_id 里抽数字）。练习接口的 question_number 用它。
+    question_number: str
     bank_id: str
     type: str
     stem: str
@@ -74,6 +80,42 @@ class LoadReport:
     errors: list[str] = field(default_factory=list)
 
 
+#: 只有形如 ASCII 点分标识的 id 才被认为是「稳定 id」。
+_STABLE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)+$")
+
+
+def stem_fingerprint(stem: str, length: int = 10) -> str:
+    """题干的内容指纹。
+
+    用它做题目身份，而不是题库给的序号：题库重新生成时，
+    序号会整体平移（第001题变成别的题），而**内容没变指纹就不变**。
+    内容真的改了 → 指纹变 → 视为另一道题，这正是我们想要的语义。
+    """
+    normalized = re.sub(r"\s+", "", stem or "")
+    return hashlib.sha1(normalized.encode("utf-8")).hexdigest()[:length]
+
+
+def stable_question_id(bank_id: str, source_id: str, stem: str) -> str:
+    """给一道题定一个稳定 id。
+
+    题库文件里的 id 合规就用它；是「第001题」这种序号就改用内容指纹，
+    拼成 `math.<主题>.<分组>.<指纹>` —— 既有稳定语义，也符合录入标准的形状。
+    """
+    if _STABLE_ID_PATTERN.match(source_id):
+        return source_id
+    return f"{bank_id}.{stem_fingerprint(stem)}"
+
+
+def display_number(source_id: str, fallback_index: int) -> str:
+    """给用户看的题号。从「第001题」里抽出 001；抽不到就用顺序号。"""
+    match = re.search(r"\d+", source_id or "")
+    if match:
+        return match.group(0)
+    if source_id:
+        return source_id.rsplit(".", 1)[-1]
+    return str(fallback_index)
+
+
 def _resolve_difficulty(kp_ids: Sequence[str]) -> float:
     """题目难度。
 
@@ -93,7 +135,7 @@ class QuestionBank:
         self.questions: dict[str, BankQuestion] = {}
         self.banks: dict[str, BankMeta] = {}
         self.report = LoadReport()
-        self._non_ascii_ids = 0
+        self._fingerprinted_ids = 0
         self._undeclared_tags = 0
 
     # -- 查询 ---------------------------------------------------------------
@@ -168,7 +210,7 @@ class QuestionBank:
         )
 
         accepted = 0
-        self._non_ascii_ids = 0
+        self._fingerprinted_ids = 0
         self._undeclared_tags = 0
         for index, item in enumerate(questions):
             question = self._parse_question(name, bank_id, index, item)
@@ -180,11 +222,12 @@ class QuestionBank:
             self.questions[question.id] = question
             accepted += 1
 
-        if self._non_ascii_ids:
+        if self._fingerprinted_ids:
             self.report.warnings.append(
-                f"{name}: 有 {self._non_ascii_ids} 道题的 ID 含非 ASCII 字符，"
-                f"不符合录入标准（应为 math.<主题>.<分组>.<编号>）。"
-                f"这种序号式 ID 在题库重新生成后会指向别的题，历史 Evidence 会挂错。"
+                f"{name}: 有 {self._fingerprinted_ids} 道题的 id 不符合录入标准"
+                f"（math.<主题>.<分组>.<编号>），已改用**题干内容指纹**做稳定 id。"
+                f"这样题库重新生成时，只要题目内容没变，历史 Evidence 就不会挂错。"
+                f"建议题库生成方直接产出规范 id。"
             )
         if self._undeclared_tags:
             self.report.warnings.append(
@@ -206,26 +249,37 @@ class QuestionBank:
             self.report.warnings.append(f"{label}: 不是对象，已跳过")
             return None
 
-        qid = str(item.get("id") or "").strip()
-        if not qid:
+        source_id = str(item.get("id") or "").strip()
+        if not source_id:
             self.report.warnings.append(f"{label}: 缺少 id，已跳过")
             return None
-        if not qid.isascii():
-            # 录入标准要求 id 形如 math.<主题>.<分组>.<编号>；
-            # 非 ASCII 的序号式 id（例如「第001题」）在新版题库里重新生成时
-            # 会指向不同的题，历史 Evidence 就挂错了。
-            # 逐题告警会刷屏，所以只计数，最后聚合成一条。
-            self._non_ascii_ids += 1
+        qid = source_id
 
         qtype = str(item.get("type") or "single_choice").strip()
         if qtype not in SUPPORTED_QUESTION_TYPES:
-            self.report.warnings.append(f"{label} ({qid}): 暂不支持题型 {qtype!r}，已跳过")
+            self.report.warnings.append(
+                f"{label} ({source_id}): 暂不支持题型 {qtype!r}，已跳过"
+            )
             return None
 
         stem = str(item.get("stem") or "").strip()
         if not stem:
-            self.report.warnings.append(f"{label} ({qid}): 题干为空，已跳过")
+            self.report.warnings.append(f"{label} ({source_id}): 题干为空，已跳过")
             return None
+
+        # id 不合规（例如「第001题」）时改用**内容指纹**做稳定 id。
+        #
+        # 为什么不直接用题库给的序号：题库一旦重新生成，序号会整体平移，
+        # 旧的 Evidence 就挂到别的题上了。指纹只在**内容真的变了**的时候才变，
+        # 那正好意味着"这已经是另一道题"。
+        if not _STABLE_ID_PATTERN.match(source_id):
+            qid = stable_question_id(bank_id, source_id, stem)
+            self._fingerprinted_ids += 1
+            if qid in self.questions:
+                self.report.warnings.append(
+                    f"{label} ({source_id}): 题干指纹与已有题目冲突（{qid}），已跳过"
+                )
+                return None
 
         raw_options = item.get("options")
         if not isinstance(raw_options, dict) or not (2 <= len(raw_options) <= 8):
@@ -310,6 +364,8 @@ class QuestionBank:
 
         return BankQuestion(
             id=qid,
+            source_id=source_id,
+            question_number=display_number(source_id, index + 1),
             bank_id=bank_id,
             type=qtype,
             stem=stem,

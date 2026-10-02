@@ -78,6 +78,7 @@ _MYSQL_SCHEMA: tuple[str, ...] = (
         difficulty          DOUBLE       NOT NULL,
         error_type          VARCHAR(64)  NULL,
         confidence          DOUBLE       NOT NULL DEFAULT 1.0,
+        question_stem_hash  VARCHAR(40)  NULL,
         detail              LONGTEXT     NULL,
         created_at          VARCHAR(40)  NOT NULL,
         PRIMARY KEY (evidence_id),
@@ -242,6 +243,7 @@ SQLITE_SCHEMA: tuple[str, ...] = (
         difficulty          REAL NOT NULL,
         error_type          TEXT,
         confidence          REAL NOT NULL DEFAULT 1.0,
+        question_stem_hash  TEXT,
         detail              TEXT,
         created_at          TEXT NOT NULL
     )
@@ -497,6 +499,9 @@ _COLUMN_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     ("analyses", "batch_number", "INT NOT NULL DEFAULT 0"),
     # 错题所属图书：筛选必须在 SQL 里做，不能先 LIMIT 再在 Python 里过滤
     ("wrong_questions", "book_id", "VARCHAR(64) NULL"),
+    # 题干指纹：让「这道题的作答历史」独立于题库版本被追溯。
+    # 题库重新生成后 question_id 可能指向别的题，但指纹只跟内容走。
+    ("evidence", "question_stem_hash", "VARCHAR(40) NULL"),
 )
 
 # (表名, 索引名, 列, 是否唯一)

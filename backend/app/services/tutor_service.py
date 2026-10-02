@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from .. import db, knowledge, repositories
-from ..question_bank import BankQuestion, get_bank
+from ..question_bank import BankQuestion, get_bank, stem_fingerprint
 from . import knowledge_service, recommendation_service, tag_service, vlm_service
 from .knowledge_service import EvidenceInput
 from .llm import LlmUnavailable, build_user_message, get_llm
@@ -577,6 +577,9 @@ def submit_answer(
                     source_type="tutor",
                     source_id=session_id,
                     question_id=content.get("question_id"),
+                    question_stem_hash=stem_fingerprint(
+                        str(content.get("text") or content.get("question_id") or "")
+                    ),
                     error_type=None if is_correct else "conceptual",
                     confidence=1.0 if kind != "remedial" else 0.7,
                     detail=None

@@ -47,6 +47,8 @@ class EvidenceInput:
     source_type: str  # homework | tutor | practice | exam
     source_id: str | None = None
     question_id: str | None = None
+    #: 题干内容指纹（可选）。让作答历史独立于题库版本被追溯。
+    question_stem_hash: str | None = None
     error_type: str | None = None
     confidence: float = 1.0
     detail: str | None = None
@@ -133,6 +135,7 @@ def apply_evidence(
             source_type=entry.source_type,
             source_id=entry.source_id,
             question_id=entry.question_id,
+            question_stem_hash=entry.question_stem_hash,
             error_type=entry.error_type,
             confidence=entry.confidence,
             detail=entry.detail,
@@ -306,6 +309,7 @@ def _evidence_item(record: EvidenceRecord) -> EvidenceItem:
         source_type=record.source,  # type: ignore[arg-type]
         source_id=None,
         question_id=record.question_id,
+        question_stem_hash=record.question_stem_hash,
         result=normalize_outcome(record.outcome),
         confidence=1.0,
         error_type=record.error_type,

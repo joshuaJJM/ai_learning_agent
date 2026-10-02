@@ -91,6 +91,9 @@ class EvidenceRecord:
     created_at: datetime
     error_type: str | None = None
     question_id: str | None = None
+    #: 题干内容指纹。question_id 会随题库重新生成而指向别的题，
+    #: 指纹只跟内容走 —— 追溯「学生当初做的是哪道题」要靠它。
+    question_stem_hash: str | None = None
     question_no: str | None = None
     exam_id: str | None = None
     answer_excerpt: str | None = None

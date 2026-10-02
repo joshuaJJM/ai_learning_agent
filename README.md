@@ -180,14 +180,14 @@ math.function.symmetry_periodicity_derivative         奇偶性、对称性与�
 ```json
 {
   "schema_version": "1.0",
-  "bank_id": "math.derivative.application.monotonicity_extrema",
-  "bank_name": "导数的应用 单调性极值与最值选择题",
+  "bank_id": "math.derivative.comprehensive",
+  "bank_name": "高中数学导数综合题库",
   "language": "zh-CN",
   "version": "1.0.0",
   "updated_at": "2026-10-02",
   "questions": [
     {
-      "id": "math.derivative.application.a06",
+      "id": "第001题",
       "type": "single_choice",
       "stem": "已知 f(x)=x-ln(x)，求 f(x) 的单调递减区间。",
       "options": { "A": "(-∞,1)", "B": "(0,1)", "C": "(1,+∞)", "D": "(0,+∞)" },
@@ -198,6 +198,27 @@ math.function.symmetry_periodicity_derivative         奇偶性、对称性与�
   ]
 }
 ```
+
+### 题目 ID：内容指纹
+
+团队给的题库里 `id` 是「第001题」这种**按位置编的序号**。直接拿它当身份有个隐患：
+**题库一旦重新生成、题目顺序变了，同一个序号就指向另一道题**，
+历史 Evidence 会挂错。
+
+所以加载器对不合规的 id 做一层转换：改用**题干内容指纹**。
+
+```
+文件里的 id:  第001题
+服务端 id:    math.derivative.comprehensive.1bd577aaf5   ← sha1(题干)[:10]
+```
+
+- 题目内容没变 → 指纹不变 → 历史记录继续有效
+- 内容真改了 → 指纹变 → 视为另一道题（这正是想要的语义）
+- 原始序号保留在 `source_id`，展示用的题号在 `question_number`
+
+启动时会告警一行，提示题库生成方最好直接产出规范 id —— 但**功能上已经安全了**。
+细节与测试见 `app/question_bank.py` 的 `stem_fingerprint` 与
+`tests/test_question_identity.py`。
 
 题库格式由 `题库JSON录入标准_AI说明.md` 规定，几条硬性要求：
 

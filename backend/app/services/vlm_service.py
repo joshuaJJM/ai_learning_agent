@@ -23,7 +23,7 @@ from typing import Any, Sequence
 
 from .. import knowledge
 from ..config import get_settings
-from ..question_bank import BankQuestion, get_bank
+from ..question_bank import BankQuestion, get_bank, stem_fingerprint  # noqa: F401
 from .llm import LlmClient, LlmUnavailable, build_user_message, get_llm
 
 # 题干相似度达到这个阈值，就认为是题库里的同一道题

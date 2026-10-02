@@ -11,7 +11,7 @@ from typing import Any
 
 from .. import db, knowledge, repositories
 from ..mastery import error_patterns
-from ..question_bank import BankQuestion, get_bank
+from ..question_bank import BankQuestion, get_bank, stem_fingerprint
 from . import knowledge_service, recommendation_service, tag_service
 from .knowledge_service import EvidenceInput
 
@@ -271,7 +271,9 @@ def _question_payload(
             )
     return {
         "question_id": question.id,
-        "question_number": question.id.rsplit(".", 1)[-1],
+        # 用题库里的题号（「第017题」→ 017），不要从 id 里截 ——
+        # id 现在是内容指纹，截出来会是一串十六进制。
+        "question_number": question.question_number,
         # 标签会下发给客户端：「本题考察 XXX」
         "tags": list(question.tags),
         "stem": question.stem,
@@ -408,6 +410,7 @@ def submit_answer(
                 source_type="practice",
                 source_id=session_id,
                 question_id=question_id,
+                question_stem_hash=stem_fingerprint(question.stem),
                 error_type=None if is_correct else _guess_error_type(question),
                 confidence=1.0,
                 detail=None if is_correct else f"练习中答错：{question.stem[:60]}",

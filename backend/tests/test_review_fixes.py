@@ -1,4 +1,4 @@
-"""代码评审 8 项问题的回归测试。
+﻿"""代码评审 8 项问题的回归测试。
 
 每条都对应一个具体的越权 / 数据污染 / 一致性缺陷，
 修完必须有测试钉住，否则很容易再退回去。
@@ -289,7 +289,7 @@ def test_tutor_from_another_users_wrong_question_is_rejected(
     foreign = {
         "wrong_question_id": "wq_foreign_probe",
         "user_id": other_user["user_id"],
-        "question_id": "第001题",
+        "question_id": "math.derivative.comprehensive.1bd577aaf5",
         "knowledge_point_id": "math.derivative.monotonicity",
         "status": "open",
         "question_number": "1",

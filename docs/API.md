@@ -95,6 +95,30 @@ GET /openapi.json
 > 所以「文档写了但后端不抛」这种漂移在结构上不可能发生。
 > 表是 `python tools/sync_error_codes.py` 生成的，别手改。
 
+### 题目 ID：当成不透明字符串用
+
+**请把 `question_id` 当作不透明标识，不要解析、不要拼、不要假设它长什么样。**
+
+它有可能是两种形态：
+
+| 来源 | 形态 | 例子 |
+|---|---|---|
+| 题库题 | `math.<主题>.<分组>.<内容指纹>` | `math.derivative.comprehensive.2d662514ec` |
+| OCR 上传的题 | `q_<随机>` | `q_6942b7319a1249579f5b` |
+
+**为什么是内容指纹**：题库文件原来的 id 是「第001题」这种按位置编的序号。
+题库一旦重新生成、题目顺序变了，序号就会指向另一道题，
+历史作答记录（Evidence）就挂错了。所以后端改用**题干内容指纹**做 id：
+
+- 题目内容没变 → id 不变 → 历史记录继续有效
+- 题目内容真的改了 → id 变 → 视为另一道题（这正是我们想要的语义）
+
+**要显示题号就用 `question_number`**（`"036"` 这种），不要从 `question_id` 里截取 ——
+指纹 id 末尾是一串十六进制，截出来没有意义。
+
+**要追溯「这几次作答是不是同一道题」**用 Evidence 里的 `question_stem_hash`
+（见 §3.2），它和题目 id 一样只跟内容走。
+
 ### 统一错误格式
 
 所有错误响应体固定为：
@@ -581,7 +605,8 @@ GET /api/v1/knowledge/{knowledge_point_id}
   "correct_count": 4, "partial_count": 3, "wrong_count": 5,
   "recent_performance": [
     { "occurred_at": "2026-09-30T21:30:00+00:00", "result": "incorrect",
-      "source_type": "exam", "question_id": null }
+      "source_type": "practice",
+      "question_id": "math.derivative.comprehensive.fdd405da9c" }
   ],
   "error_patterns": [
     { "error_type": "case_analysis",  "label": "分类讨论错误",       "count": 3, "share": 0.375 },
@@ -589,8 +614,10 @@ GET /api/v1/knowledge/{knowledge_point_id}
     { "error_type": "domain_omission","label": "定义域遗漏",         "count": 2, "share": 0.25 }
   ],
   "evidence": [
-    { "evidence_id": "ev_1", "knowledge_point_id": "…", "source_type": "exam",
-      "question_id": null, "result": "incorrect", "confidence": 1.0,
+    { "evidence_id": "ev_1", "knowledge_point_id": "…", "source_type": "practice",
+      "question_id": "math.derivative.comprehensive.fdd405da9c",
+      "question_stem_hash": "fdd405da9c",
+      "result": "incorrect", "confidence": 1.0,
       "error_type": "case_analysis", "error_label": "分类讨论错误",
       "answer_excerpt": null, "detail": "分类讨论时漏了 a<0 的情况",
       "created_at": "2026-09-06T21:30:00+00:00" }
@@ -827,7 +854,7 @@ POST /api/v1/practice/sessions
   "status": "active",
   "total": 5, "answered": 0, "correct": 0,
   "next_question": {
-    "question_id": "math.derivative.monotonicity_applications.0004",
+    "question_id": "math.derivative.comprehensive.fdd405da9c",
     "question_number": "0004",
     "stem": "已知函数 f(x) = x^2 - a·e^x 在 [0, +∞) 上单调递增，则实数 a 的取值范围是（  ）",
     "choices": [
@@ -849,7 +876,7 @@ POST /api/v1/practice/sessions
 GET  /api/v1/practice/sessions/{session_id}          # 读整组练习的状态与当前题
 GET  /api/v1/practice/sessions/{session_id}/next     # 只取下一题
 POST /api/v1/practice/sessions/{session_id}/answers
-     { "question_id": "math.derivative.monotonicity_applications.0004", "selected_key": "C" }
+     { "question_id": "math.derivative.comprehensive.fdd405da9c", "selected_key": "C" }
 ```
 
 `GET .../{session_id}` 返回与创建时同构的会话状态（含 `answered` / `correct` / `next_question`），
@@ -861,7 +888,7 @@ POST /api/v1/practice/sessions/{session_id}/answers
 ```json
 {
   "practice_session_id": "prac_2b7c",
-  "question_id": "math.derivative.monotonicity_applications.0004",
+  "question_id": "math.derivative.comprehensive.fdd405da9c",
   "correctness": "wrong",
   "is_correct": false,
   "correct_answer": "A",
@@ -934,9 +961,9 @@ POST /api/v1/practice/sessions/{session_id}/answers
     {
       "tag": "函数关系式与导数的综合应用",
       "tag_score": -3,
-      "question_id": "第036题",
+      "question_id": "math.derivative.comprehensive.2d662514ec",
       "question_tags": ["基本求导公式与运算法则", "函数关系式与导数的综合应用"],
-      "question": { "question_id": "第036题", "question_number": "036", "stem": "…",
+      "question": { "question_id": "math.derivative.comprehensive.2d662514ec", "question_number": "036", "stem": "…",
                     "choices": [{ "key": "A", "text": "…" }], "tags": ["…"], "index": 1, "total": 1 }
     }
   ]
@@ -966,7 +993,7 @@ POST /api/v1/practice/sessions/{session_id}/answers
 
 ```json
 "tag_changes": {
-  "question_id": "第036题",
+  "question_id": "math.derivative.comprehensive.2d662514ec",
   "is_correct": false,
   "delta": -1,
   "tags": ["基本求导公式与运算法则", "函数关系式与导数的综合应用"]

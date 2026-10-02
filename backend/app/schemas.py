@@ -446,6 +446,9 @@ class EvidenceItem(BaseModel):
     source_type: SourceType
     source_id: str | None = None
     question_id: str | None = None
+    #: 题干内容指纹。题库重新生成后 question_id 可能指向别的题，
+    #: 靠它才能确认「这几次作答是同一道题」。
+    question_stem_hash: str | None = None
     result: str
     confidence: float
     error_type: str | None = None

@@ -91,6 +91,7 @@ def add_evidence(
     confidence: float = 1.0,
     detail: str | None = None,
     answer_excerpt: str | None = None,
+    question_stem_hash: str | None = None,
     created_at: datetime | None = None,
 ) -> str:
     evidence_id = db.new_id("ev")
@@ -107,8 +108,8 @@ def add_evidence(
         INSERT INTO evidence (
             evidence_id, user_id, knowledge_point_id, source_type, source_id,
             question_id, result, score, difficulty, error_type, confidence,
-            detail, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            question_stem_hash, detail, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [
             evidence_id,
@@ -122,6 +123,7 @@ def add_evidence(
             difficulty,
             error_type,
             confidence,
+            question_stem_hash,
             json.dumps(payload, ensure_ascii=False),
             db.to_iso(created),
         ],
@@ -150,6 +152,9 @@ def _row_to_record(row: sqlite3.Row) -> EvidenceRecord:
         created_at=db.from_iso(row["created_at"]) or db.utcnow(),
         error_type=row["error_type"],
         question_id=row["question_id"],
+        question_stem_hash=row["question_stem_hash"]
+        if "question_stem_hash" in row.keys()
+        else None,
         answer_excerpt=answer_excerpt,
         reason=reason,
         confidence=row["confidence"] if row["confidence"] is not None else 1.0,
