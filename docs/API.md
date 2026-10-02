@@ -252,7 +252,12 @@ GET /api/v1/homework/analyses/{analysis_id}
 }
 ```
 
-- `state`: `done` | `active` | `pending`
+- `state`: `done` | `active` | `pending` | `failed`
+  - 分析失败时，**出错的那一步是 `failed`（不是 `active`）**，前端可以据此在卡片上
+    标出「就是这一步失败的」。例如图里识别不出题目时：
+    `image_received: done` / `questions_detected: failed` / 其余 `pending`，
+    同时 `error.error_code = "QUESTION_NOT_RECOGNIZED"`。
+  - 模型不可用（`VLM_TIMEOUT`）失败点同样落在 `questions_detected`。
 - **多张图片是并行识别的**，所以耗时取决于最慢的那一张，不是页数之和。
   实测 1 张约 21 秒、3 张同样约 21 秒。并发上限 4（打满模型配额反而会被限流）。
 - 建议轮询间隔 1 秒；`status` 变为 `completed` / `failed` 即停止

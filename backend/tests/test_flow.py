@@ -273,6 +273,45 @@ def test_upload_without_images_returns_invalid_image_not_validation_error(
     assert response.json()["error_code"] == "INVALID_IMAGE"
 
 
+def test_unrecognized_question_fails_at_the_detection_stage(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """识别不出题目时，失败点必须落在 questions_detected 上。
+
+    前端要靠这个在进度卡片上指出「就是这一步失败的」，
+    所以这里的阶段状态必须是 failed 而不是 active。
+    """
+
+    async def _empty(images: Any, **kwargs: Any) -> VlmOutcome:
+        return VlmOutcome(generated_by="fake-vlm", model="fake")  # 没有 questions
+
+    monkeypatch.setattr(vlm_service, "analyze_images", _empty)
+
+    with FIXTURE_IMAGE.open("rb") as handle:
+        created = client.post(
+            "/api/v1/homework/analyses",
+            headers=auth_headers,
+            files={"images": ("page.png", handle, "image/png")},
+            data={"subject": "mathematics"},
+        )
+    analysis_id = created.json()["analysis_id"]
+    body = client.get(
+        f"/api/v1/homework/analyses/{analysis_id}", headers=auth_headers
+    ).json()
+
+    assert body["status"] == "failed"
+    assert body["error"]["error_code"] == "QUESTION_NOT_RECOGNIZED"
+    assert body["progress"]["current_stage_key"] == "questions_detected"
+
+    states = {stage["key"]: stage["state"] for stage in body["progress"]["stages"]}
+    assert states["image_received"] == "done"
+    assert states["questions_detected"] == "failed"
+    assert states["answers_understood"] == "pending"
+    assert states["knowledge_updated"] == "pending"
+
+
 def test_unknown_analysis_returns_404(
     client: TestClient, auth_headers: dict[str, str]
 ) -> None:

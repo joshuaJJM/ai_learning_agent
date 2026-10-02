@@ -162,8 +162,14 @@ func uploadPages(_ images: [UIImage]) async throws -> AnalysisCreated {
 }
 ```
 
-进度卡片直接渲染 `stages` 就够了：`state` 是 `done` / `active` / `pending`，
+进度卡片直接渲染 `stages` 就够了：`state` 是 `done` / `active` / `pending` / `failed`，
 `percent` 驱动进度条，`current_stage_label_zh` 是当前阶段的中文文案。
+
+> 分析失败时，**出错的那一步会是 `failed`（不是 `active`）**，
+> 前端可以据此在卡片上标出「就是这一步失败的」。
+> 比如图里没有题目时：`image_received: done`、`questions_detected: failed`、其余 `pending`，
+> 同时 `error.error_code = "QUESTION_NOT_RECOGNIZED"`。
+> 模型不可用（`VLM_TIMEOUT`）时失败点同样在 `questions_detected`。
 
 ### 4.3 完成
 

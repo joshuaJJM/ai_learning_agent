@@ -23,7 +23,7 @@ Correctness = Literal["correct", "wrong", "partial", "unknown"]
 SourceType = Literal["homework", "tutor", "practice", "exam"]
 AnalysisStatus = Literal["queued", "processing", "completed", "failed"]
 Trend = Literal["improving", "stable", "declining", "unknown"]
-StageState = Literal["done", "active", "pending"]
+StageState = Literal["done", "active", "pending", "failed"]
 
 TutorPhase = Literal[
     "diagnose", "teach", "guided_practice", "independent_practice", "completed"
@@ -241,8 +241,9 @@ class AnalysisStage(BaseModel):
 class AnalysisProgress(BaseModel):
     """分析进度，用于「可持续追踪的进度卡片」。
 
-    `stages` 是固定 5 段，每段带 `state`（done / active / pending），
+    `stages` 是固定 5 段，每段带 `state`（done / active / pending / failed），
     直接渲染成勾选列表即可；`percent` 可驱动进度条。
+    分析失败时，出错的那一步是 `failed` 而不是 `active`。
     实测整条流水线约 20–30 秒，建议 1 秒轮询一次。
     """
 

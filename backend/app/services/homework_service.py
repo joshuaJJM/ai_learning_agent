@@ -70,18 +70,18 @@ def sniff_image_mime(data: bytes) -> str | None:
     return None
 
 
-def _stages(active: int) -> list[dict[str, str]]:
+def _stages(active: int, failed: bool = False) -> list[dict[str, str]]:
     """active = 正在进行的阶段下标；之前的算 done，之后的算 pending。
 
-    label 保持契约里的英文原文（前端可能已经按它做了映射），
-    label_zh 给直接展示中文的进度卡片用。
+    `failed=True` 时把当前阶段标成 `failed` —— 分析失败时，
+    前端要能在进度卡片上明确指出「就是这一步失败的」，而不是让它看起来还在跑。
     """
     result: list[dict[str, str]] = []
     for index, (key, label, label_zh) in enumerate(ANALYSIS_STAGES):
         if index < active:
             state = "done"
         elif index == active:
-            state = "active"
+            state = "failed" if failed else "active"
         else:
             state = "pending"
         result.append(
@@ -90,8 +90,8 @@ def _stages(active: int) -> list[dict[str, str]]:
     return result
 
 
-def _progress(active: int, percent: float) -> dict[str, Any]:
-    stages = _stages(active)
+def _progress(active: int, percent: float, *, failed: bool = False) -> dict[str, Any]:
+    stages = _stages(active, failed=failed)
     if active < len(ANALYSIS_STAGES):
         key, label, label_zh = ANALYSIS_STAGES[active]
     else:
@@ -281,7 +281,7 @@ async def run_analysis(analysis_id: str) -> None:
             _update(
                 doc,
                 status="failed",
-                progress=_progress(1, 0.25),
+                progress=_progress(1, 0.25, failed=True),
                 error={
                     "error_code": "VLM_TIMEOUT",
                     "message": vlm_error or "视觉模型不可用",
@@ -292,19 +292,21 @@ async def run_analysis(analysis_id: str) -> None:
 
         doc["warnings"] = [*doc.get("warnings", []), *outcome.warnings]
         doc["generated_by"] = outcome.generated_by
-        _update(doc, progress=_progress(3, 0.62))
 
         if not outcome.questions:
+            # 模型正常返回了，但图里没有题目 —— 失败点就是「识别题目」这一步
             _update(
                 doc,
                 status="failed",
-                progress=_progress(1, 0.62),
+                progress=_progress(1, 0.62, failed=True),
                 error={
                     "error_code": "QUESTION_NOT_RECOGNIZED",
                     "message": "没有从图片中识别出题目",
                 },
             )
             return
+
+        _update(doc, progress=_progress(3, 0.62))
 
         # --- 阶段 4：错误模式归因 ---
         _update(doc, progress=_progress(3, 0.75))
@@ -380,9 +382,17 @@ async def run_analysis(analysis_id: str) -> None:
             next_action=next_action.model_dump(mode="json"),
         )
     except Exception as exc:  # noqa: BLE001
+        # 未预期的异常：把当前正在进行的阶段标成 failed，方便前端定位
+        progress = doc.get("progress") or {}
+        stages = progress.get("stages") or []
+        for stage in stages:
+            if stage.get("state") == "active":
+                stage["state"] = "failed"
+                break
         _update(
             doc,
             status="failed",
+            progress=progress,
             error={
                 "error_code": "INTERNAL_ERROR",
                 "message": f"分析过程出错: {type(exc).__name__}: {exc}",
