@@ -124,7 +124,7 @@ def redeem(user_id: str, book_id: str, serial_number: str) -> dict[str, Any]:
     expected = (target.get("demo_serial") or "").upper()
     valid = bool(serial) and (
         serial == expected
-        or (serial.startswith("ZHIJI-") and len(serial) >= 12)
+        or (serial.startswith("HAOXUE-") and len(serial) >= 12)
     )
     if not valid:
         return {

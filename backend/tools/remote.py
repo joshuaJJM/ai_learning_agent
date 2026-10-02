@@ -137,14 +137,14 @@ exec .venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port __PORT__ --w
 
 START_SH = """#!/bin/bash
 cd "$(dirname "$0")"
-if [ -f zhiji.pid ] && kill -0 "$(cat zhiji.pid)" 2>/dev/null; then
-  echo "ALREADY_RUNNING pid=$(cat zhiji.pid)"; exit 0
+if [ -f haoxue.pid ] && kill -0 "$(cat haoxue.pid)" 2>/dev/null; then
+  echo "ALREADY_RUNNING pid=$(cat haoxue.pid)"; exit 0
 fi
 setsid nohup ./run.sh >> service.log 2>&1 < /dev/null &
-echo $! > zhiji.pid
+echo $! > haoxue.pid
 sleep 4
-if kill -0 "$(cat zhiji.pid)" 2>/dev/null; then
-  echo "STARTED pid=$(cat zhiji.pid)"
+if kill -0 "$(cat haoxue.pid)" 2>/dev/null; then
+  echo "STARTED pid=$(cat haoxue.pid)"
 else
   echo "FAILED_TO_START"; tail -n 30 service.log; exit 1
 fi
@@ -152,11 +152,11 @@ fi
 
 STOP_SH = """#!/bin/bash
 cd "$(dirname "$0")"
-if [ -f zhiji.pid ]; then
-  kill "$(cat zhiji.pid)" 2>/dev/null && echo "STOPPED pid=$(cat zhiji.pid)"
+if [ -f haoxue.pid ]; then
+  kill "$(cat haoxue.pid)" 2>/dev/null && echo "STOPPED pid=$(cat haoxue.pid)"
   sleep 1
-  kill -9 "$(cat zhiji.pid)" 2>/dev/null
-  rm -f zhiji.pid
+  kill -9 "$(cat haoxue.pid)" 2>/dev/null
+  rm -f haoxue.pid
 else
   echo "NO_PIDFILE"
 fi
@@ -191,8 +191,8 @@ def _service(remote: Remote, action: str) -> str:
     if action == "status":
         _, out, _ = remote.run(
             f"cd {app_dir} && "
-            "(test -f zhiji.pid && kill -0 $(cat zhiji.pid) 2>/dev/null "
-            "&& echo \"RUNNING pid=$(cat zhiji.pid)\" || echo NOT_RUNNING); "
+            "(test -f haoxue.pid && kill -0 $(cat haoxue.pid) 2>/dev/null "
+            "&& echo \"RUNNING pid=$(cat haoxue.pid)\" || echo NOT_RUNNING); "
             "echo '--- listening ---'; "
             "(ss -ltn 2>/dev/null | grep 17283 || echo 'nothing on 17283'); "
             "echo '--- log tail ---'; tail -n 15 service.log 2>/dev/null"

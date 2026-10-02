@@ -484,7 +484,7 @@ def test_books_and_redeem(client: TestClient, auth_headers: dict[str, str]) -> N
     redeemed = client.post(
         "/api/v1/books/book.derivative.advanced/redeem",
         headers=auth_headers,
-        json={"serial_number": "ZHIJI-ADVD-0002"},
+        json={"serial_number": "HAOXUE-ADVD-0002"},
     )
     assert redeemed.status_code == 200
     assert redeemed.json()["entitled"] is True

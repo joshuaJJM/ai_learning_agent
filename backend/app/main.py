@@ -1,4 +1,4 @@
-"""知迹 / Personal Learning Agent —— 后端入口。
+"""好学 / Personal Learning Agent —— 后端入口。
 
 启动：
     cd backend
@@ -27,7 +27,7 @@ from .schemas import HealthResponse
 from .services import book_service
 from .services.llm import get_llm, shutdown_llm
 
-logger = logging.getLogger("zhiji")
+logger = logging.getLogger("haoxue")
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
 )
@@ -61,7 +61,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(
-    title="知迹 · Personal Learning Agent API",
+    title="好学 · Personal Learning Agent API",
     description=(
         "Observe → Understand → Decide → Teach → Practice → Evaluate → Update → Re-plan\n\n"
         "后端是整个系统的 Source of Truth：用户、Knowledge State、Mastery、Evidence、"
@@ -133,7 +133,7 @@ async def health() -> HealthResponse:
 @app.get("/", tags=["meta"])
 async def root() -> dict[str, Any]:
     return {
-        "name": "知迹 · Personal Learning Agent API",
+        "name": "好学 · Personal Learning Agent API",
         "version": __version__,
         "docs": "/docs",
         "api_prefix": "/api/v1",

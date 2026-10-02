@@ -27,7 +27,7 @@ data/
 
 # ---- 工具产生的临时垃圾 ----
 pip-unpack-*/
-zhiji-test-*/
+haoxue-test-*/
 .pytest_tmp/
 
 # ---- 系统 / 编辑器 ----

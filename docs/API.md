@@ -1,4 +1,4 @@
-# 知迹 Backend API Contract v1.0
+# 好学 Backend API Contract v1.0
 
 > 后端是整个系统的 **Source of Truth**。iOS **不自行计算掌握度**——`43% → 51%` 这个变化
 > 只能由服务器算出来并返回，客户端只负责动画展示。
@@ -700,14 +700,14 @@ GET /api/v1/books
 ```json
 { "total": 2, "items": [
   { "book_id": "book.derivative.basic", "title": "高中数学·导数基础训练",
-    "publisher": "知迹教研组", "cover_url": null, "price_cents": 0,
+    "publisher": "好学教研组", "cover_url": null, "price_cents": 0,
     "question_count": 22, "owned": true }
 ] }
 ```
 
 ```http
 GET  /api/v1/books/{book_id}
-POST /api/v1/books/{book_id}/redeem     { "serial_number": "ZHIJI-ADVD-0002" }
+POST /api/v1/books/{book_id}/redeem     { "serial_number": "HAOXUE-ADVD-0002" }
 GET  /api/v1/entitlements
 ```
 
@@ -715,8 +715,8 @@ Demo 可用的兑换码（`POST /books/book.derivative.advanced/redeem`）：
 
 | 图书 | 序列号 |
 |---|---|
-| 导数基础训练 | `ZHIJI-DERI-0001`（默认已拥有） |
-| 导数综合应用 | `ZHIJI-ADVD-0002` |
+| 导数基础训练 | `HAOXUE-DERI-0001`（默认已拥有） |
+| 导数综合应用 | `HAOXUE-ADVD-0002` |
 
 订阅信息目前是假数据（`¥20/月`），**不接真实支付**。
 

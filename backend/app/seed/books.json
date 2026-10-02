@@ -6,7 +6,7 @@
     {
       "book_id": "book.derivative.basic",
       "title": "高中数学·导数基础训练",
-      "publisher": "知迹教研组",
+      "publisher": "好学教研组",
       "cover_url": null,
       "price_cents": 0,
       "question_count": 22,
@@ -22,13 +22,13 @@
         "math.derivative.inequality",
         "math.derivative.monotonicity"
       ],
-      "demo_serial": "ZHIJI-DERI-0001",
+      "demo_serial": "HAOXUE-DERI-0001",
       "owned_by_default": true
     },
     {
       "book_id": "book.derivative.advanced",
       "title": "高中数学·导数综合应用",
-      "publisher": "知迹教研组",
+      "publisher": "好学教研组",
       "cover_url": null,
       "price_cents": 2000,
       "question_count": 21,
@@ -44,12 +44,12 @@
         "math.derivative.comprehensive",
         "math.function.monotonicity"
       ],
-      "demo_serial": "ZHIJI-ADVD-0002",
+      "demo_serial": "HAOXUE-ADVD-0002",
       "owned_by_default": false
     }
   ],
   "subscription": {
-    "plan_name": "知迹会员",
+    "plan_name": "好学会员",
     "price_cents": 2000,
     "period": "月",
     "features": ["全部题库", "无限次试卷分析", "AI Tutor 不限次"]
