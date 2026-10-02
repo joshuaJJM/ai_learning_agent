@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import posixpath
+import stat
 import sys
 from pathlib import Path
 from typing import Iterable
@@ -129,6 +130,50 @@ class Remote:
             total += path.stat().st_size
         return files, total
 
+    # -- 清理 ---------------------------------------------------------------
+    # 部署只做上传的话，本地删掉的文件会永远留在远端。
+    # 题库换代时就踩过这个坑：旧的 6 个 bank 还在，服务加载出 76 道题而不是 32 道。
+    PRUNE_DIRS = ("app", "tools", "tests")
+
+    def _list_remote_files(self, remote_dir: str, prefix: str = "") -> list[str]:
+        entries: list[str] = []
+        try:
+            listed = self._sftp.listdir_attr(remote_dir)
+        except OSError:
+            return entries
+        for entry in listed:
+            relative = f"{prefix}/{entry.filename}" if prefix else entry.filename
+            full = posixpath.join(remote_dir, entry.filename)
+            if stat.S_ISDIR(entry.st_mode or 0):
+                entries.extend(self._list_remote_files(full, relative))
+            else:
+                entries.append(relative)
+        return entries
+
+    def prune_tree(
+        self, local_root: Path, remote_root: str, extra_excludes: Iterable[str] = ()
+    ) -> list[str]:
+        """删除远端受管目录里、本地已经不存在的文件。返回被删掉的相对路径。"""
+        excludes = EXCLUDE_NAMES | set(extra_excludes)
+        local_files = {
+            path.relative_to(local_root).as_posix()
+            for path in local_root.rglob("*")
+            if path.is_file()
+            and path.suffix not in EXCLUDE_SUFFIXES
+            and not any(part in excludes for part in path.relative_to(local_root).parts)
+        }
+
+        removed: list[str] = []
+        for sub in self.PRUNE_DIRS:
+            remote_sub = posixpath.join(remote_root, sub)
+            for relative in self._list_remote_files(remote_sub, sub):
+                if relative.endswith(".pyc"):
+                    continue
+                if relative not in local_files:
+                    self._sftp.remove(posixpath.join(remote_root, relative))
+                    removed.append(relative)
+        return removed
+
 
 RUN_SH = """#!/bin/bash
 # 由 tools/remote.py 生成。远端用户不在 sudoers 里，所以用 nohup 托管而不是 systemd。
@@ -220,7 +265,12 @@ def main() -> int:
         "--with-env", action="store_true", help="同时上传本地 .env（含密钥）"
     )
     p_deploy.add_argument(
-        "--restart", action="store_true", help="上传后重启 systemd 服务"
+        "--restart", action="store_true", help="上传后重启服务"
+    )
+    p_deploy.add_argument(
+        "--prune",
+        action="store_true",
+        help="删除远端 app/ tools/ tests/ 里本地已不存在的文件（题库换代等场景必须加）",
     )
 
     p_boot = sub.add_parser("bootstrap", help="远端首次初始化：建 venv、装依赖、装 systemd")
@@ -267,6 +317,15 @@ def main() -> int:
             target = args.dir or get_settings().remote_app_dir
             files, total = remote.upload_tree(BACKEND_ROOT, target)
             print(f"上传完成: {files} 个文件, {total / 1024:.1f} KB -> {target}")
+
+            if args.prune:
+                removed = remote.prune_tree(BACKEND_ROOT, target)
+                if removed:
+                    print(f"清理远端残留: {len(removed)} 个文件")
+                    for item in removed:
+                        print(f"    - {item}")
+                else:
+                    print("清理远端残留: 无")
 
             if args.with_env:
                 local_env = BACKEND_ROOT / ".env"
