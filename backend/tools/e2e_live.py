@@ -1,4 +1,4 @@
-﻿"""端到端联调脚本（**打真实模型**）。
+"""端到端联调脚本（**打真实模型**）。
 
 与 pytest 不同，这个脚本不 mock 任何东西：
 真的起 HTTP 请求、真的调 VLM、真的跑后台分析任务、真的轮询。
@@ -56,7 +56,12 @@ def main() -> int:
     show("1. /health", health)
     check("health.ok", health["status"] == "ok", f"llm_mode={health['llm_mode']}")
     check("模型已接入", health["llm_mode"] == "live", "未配 key 或开了 Mock")
-    check("题库已加载", health["question_count"] == 32, f"{health['question_count']} 题")
+    # 不写死题数：题库会换代（已经换过两次了）
+    check(
+        "题库已加载",
+        health["question_count"] > 0 and health["bank_count"] > 0,
+        f"{health['bank_count']} bank / {health['question_count']} 题",
+    )
     check("存储后端", "mysql" in health["database"] or "sqlite" in health["database"],
           health["database"])
 
