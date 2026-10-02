@@ -1,4 +1,4 @@
-"""端到端 Demo 流程测试。
+﻿"""端到端 Demo 流程测试。
 
 走的就是现场演示那条链路：
 
@@ -69,7 +69,7 @@ def test_health_and_root(client: TestClient) -> None:
     health = client.get("/health")
     assert health.status_code == 200
     body = health.json()
-    assert body["question_count"] == 32
+    assert body["question_count"] == 73
     assert body["bank_count"] == 1
     assert body["llm_mode"] == "mock"  # 测试环境强制 Mock
 
@@ -127,7 +127,7 @@ def test_home_suggests_the_weakest_point(
     assert home["next_action"]["action"] == "start_tutor"
     assert home["weakest"]["knowledge_point_id"] == DEMO_KP
     assert home["wrong_question_count"] == 0
-    assert home["stats"]["total_evidence"] == 49
+    assert home["stats"]["total_evidence"] == 103
     assert len(home["knowledge_summary"]) >= 3
 
 
@@ -330,12 +330,12 @@ def test_knowledge_tree_is_returned_whole(
     _seed(client, auth_headers)
     body = client.get("/api/v1/knowledge", headers=auth_headers).json()
 
-    assert body["total_evidence"] == 49
+    assert body["total_evidence"] == 103
     assert body["weakest"][0]["knowledge_point_id"] == DEMO_KP
 
     # 官方知识点清单是扁平的 7 个，全部作为顶层叶子节点返回
     node_ids = {node["knowledge_point_id"] for node in body["tree"]}
-    assert len(node_ids) == 7
+    assert len(node_ids) == 17
     assert "math.derivative.monotonicity_applications" in node_ids
     assert all(not node["children"] for node in body["tree"])
 

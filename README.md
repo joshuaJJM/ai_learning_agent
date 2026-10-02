@@ -155,16 +155,30 @@ diagnose ──答错→ remedial（更简单的问题）→ 讲解
 没有父子层级。**ID 与名称不要自行增删或改写** —— 前端、题库录入标准、后端三边都依赖它：
 
 ```
-math.derivative.monotonicity              利用导数判断函数单调性与单调区间
-math.derivative.monotonicity_parameter    利用单调性或导数恒成立求参数
-math.derivative.monotonicity_applications 导数与函数性质综合应用
-math.derivative.extrema                   利用导数判断与求解极值
-math.derivative.extrema_parameter         根据极值或最值条件求参数
-math.derivative.absolute_extrema          利用导数求函数最值
-math.function.parity_and_monotonicity     函数奇偶性与单调性综合判断
+math.derivative.monotonicity                          利用导数判断函数单调性与单调区间
+math.derivative.monotonicity_parameter                利用单调性或导数恒成立求参数
+math.derivative.monotonicity_applications             导数与函数性质综合应用
+math.derivative.extrema                               利用导数判断与求解极值
+math.derivative.extrema_parameter                     根据极值或最值条件求参数
+math.derivative.absolute_extrema                      利用导数求函数最值
+math.function.parity_and_monotonicity                 函数奇偶性与单调性综合判断
+
+（以下 10 个来自 2026-10-02 的新版题库，官方的 knowledge_points.json 仍是
+ version 1 只含上面 7 个，待官方更新到 version 2 后对齐）
+
+math.derivative.definition                            导数定义与极限
+math.derivative.meaning                               导数的几何意义与瞬时变化率
+math.derivative.rules                                 基本求导公式与运算法则
+math.derivative.tangent_slope                         切线斜率与倾斜角
+math.derivative.tangent_equation                      曲线切线方程
+math.derivative.tangent_relations                     切线的平行与垂直关系
+math.derivative.tangent_count                         切线条数与公切线
+math.derivative.tangent_optimization                  切线相关的最值问题
+math.derivative.function_relations                    函数关系式与导数的综合应用
+math.function.symmetry_periodicity_derivative         奇偶性、对称性与周期性中的导数关系
 ```
 
-题库是预处理好的静态 JSON，放在 `app/seed/banks/`，当前 1 个 bank / 32 道单选题：
+题库是预处理好的静态 JSON，放在 `app/seed/banks/`，当前 1 个 bank / 73 道单选题：
 
 ```json
 {
@@ -361,11 +375,21 @@ curl -X POST http://121.43.137.176:17283/api/v1/demo/seed
 | 知识点 | 掌握度 |
 |---|---|
 | 利用导数判断函数单调性与单调区间 | 83% |
+| 基本求导公式与运算法则 | 77% |
+| 导数的几何意义与瞬时变化率 | 74% |
 | 利用导数求函数最值 | 72% |
 | 利用单调性或导数恒成立求参数 | 69% |
 | 函数奇偶性与单调性综合判断 | 68% |
+| 导数定义与极限 | 67% |
+| 切线斜率与倾斜角 | 64% |
 | 利用导数判断与求解极值 | 62% |
+| 函数关系式与导数的综合应用 | 62% |
+| 切线的平行与垂直关系 | 61% |
+| 曲线切线方程 | 53% |
 | 根据极值或最值条件求参数 | 51% |
+| 切线条数与公切线 | 50% |
+| 切线相关的最值问题 | 44% |
+| 奇偶性、对称性与周期性中的导数关系 | 44% |
 | **导数与函数性质综合应用** | **43%** ← Demo 主线 |
 
 证据时间戳相对播种时刻计算，所以每次演示前重新 seed，时间轴就是「最近」，

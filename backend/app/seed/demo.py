@@ -105,6 +105,91 @@ DEMO_PLAN: dict[str, tuple[SeedRecord, ...]] = {
         SeedRecord("wrong", 0.55, 3, "conceptual", "用特殊值代替了任意性判断"),
         SeedRecord("correct", 0.55, 1),
     ),
+    # ---- 新版题库带来的 10 个知识点，也铺一层证据，避免半棵树停在 50% ----
+    # 基本求导法则：很扎实
+    "math.derivative.rules": (
+        SeedRecord("correct", 0.40, 21),
+        SeedRecord("correct", 0.40, 16),
+        SeedRecord("correct", 0.45, 11),
+        SeedRecord("correct", 0.40, 7),
+        SeedRecord("partial", 0.45, 4, "procedural", "复合函数内层导数漏乘"),
+        SeedRecord("correct", 0.45, 2),
+    ),
+    # 导数定义与极限：掌握
+    "math.derivative.definition": (
+        SeedRecord("correct", 0.35, 18),
+        SeedRecord("correct", 0.35, 13),
+        SeedRecord("correct", 0.40, 9),
+        SeedRecord("wrong", 0.40, 5, "conceptual", "极限式变形时符号弄错"),
+        SeedRecord("correct", 0.40, 2),
+    ),
+    # 几何意义与瞬时变化率：掌握
+    "math.derivative.meaning": (
+        SeedRecord("correct", 0.35, 17),
+        SeedRecord("correct", 0.35, 12),
+        SeedRecord("correct", 0.40, 8),
+        SeedRecord("partial", 0.40, 4, "conceptual", "把平均变化率当成瞬时变化率"),
+        SeedRecord("correct", 0.40, 1),
+    ),
+    # 切线斜率与倾斜角：中等
+    "math.derivative.tangent_slope": (
+        SeedRecord("correct", 0.45, 19),
+        SeedRecord("correct", 0.45, 14),
+        SeedRecord("correct", 0.50, 10),
+        SeedRecord("partial", 0.50, 6, "procedural", "倾斜角范围没取对"),
+        SeedRecord("wrong", 0.50, 3, "domain_omission", "忽略了倾斜角 [0,π) 的限制"),
+        SeedRecord("correct", 0.50, 1),
+    ),
+    # 曲线切线方程：中等偏弱
+    "math.derivative.tangent_equation": (
+        SeedRecord("correct", 0.55, 20),
+        SeedRecord("correct", 0.55, 15),
+        SeedRecord("partial", 0.60, 11, "procedural", "切点坐标代错"),
+        SeedRecord("wrong", 0.60, 7, "conceptual", "过点作切线时没设切点"),
+        SeedRecord("wrong", 0.60, 4, "case_analysis", "漏了另一条切线"),
+        SeedRecord("correct", 0.60, 1),
+    ),
+    # 切线平行与垂直关系：中等
+    "math.derivative.tangent_relations": (
+        SeedRecord("correct", 0.60, 16),
+        SeedRecord("correct", 0.60, 11),
+        SeedRecord("partial", 0.60, 7, "procedural", "垂直条件用成了平行"),
+        SeedRecord("wrong", 0.65, 3, "procedural", "斜率乘积算错"),
+        SeedRecord("correct", 0.60, 1),
+    ),
+    # 切线条数与公切线：偏弱但不至于最弱
+    "math.derivative.tangent_count": (
+        SeedRecord("correct", 0.75, 18),
+        SeedRecord("correct", 0.75, 13),
+        SeedRecord("correct", 0.75, 10),
+        SeedRecord("partial", 0.75, 9, "case_analysis", "只算了一种情况"),
+        SeedRecord("wrong", 0.80, 5, "case_analysis", "没讨论切点是否在曲线上"),
+        SeedRecord("wrong", 0.80, 2, "conceptual", "把公切线条数当成 1"),
+    ),
+    # 切线相关最值：偏弱，但要明显高于 Demo 主线（否则树里"最弱"和推荐目标对不上）
+    "math.derivative.tangent_optimization": (
+        SeedRecord("correct", 0.80, 17),
+        SeedRecord("correct", 0.80, 13),
+        SeedRecord("partial", 0.80, 12, "procedural", "目标函数列错"),
+        SeedRecord("wrong", 0.85, 8, "transformation", "没把几何条件转成函数"),
+        SeedRecord("wrong", 0.85, 1, "case_analysis", "漏掉端点情形"),
+    ),
+    # 函数关系式与导数综合：中等偏弱
+    "math.derivative.function_relations": (
+        SeedRecord("correct", 0.70, 19),
+        SeedRecord("correct", 0.70, 14),
+        SeedRecord("partial", 0.70, 10, "transformation", "对 f'(x) 的不等式方向判断反"),
+        SeedRecord("wrong", 0.75, 6, "conceptual", "没有构造函数就套结论"),
+        SeedRecord("correct", 0.70, 2),
+    ),
+    # 对称性与周期性的导数关系：偏弱
+    "math.function.symmetry_periodicity_derivative": (
+        SeedRecord("correct", 0.75, 17),
+        SeedRecord("correct", 0.75, 12),
+        SeedRecord("partial", 0.75, 8, "transformation", "周期性推对了但对称性推错"),
+        SeedRecord("wrong", 0.80, 5, "conceptual", "认为导函数一定也是周期函数"),
+        SeedRecord("wrong", 0.80, 1, "case_analysis", "奇偶性判断反了"),
+    ),
 }
 
 

@@ -76,6 +76,80 @@ _RAW: tuple[KnowledgePoint, ...] = (
         description="同时判断函数的奇偶性与单调性",
         default_difficulty=0.60,
     ),
+    # ---- 以下 10 个来自 2026-10-02 的新版题库（导数综合题库 3）----
+    # 官方的 knowledge_points.json 目前仍是 version 1（只有上面 7 个），
+    # 新版题库实际用到了 17 个。这里按题库里的 tags 逐字补齐，
+    # 否则 73 道题里有 46 道会因为没有有效知识点映射而被丢弃。
+    # 待官方清单更新到 version 2 后，应与那边对齐。
+    KnowledgePoint(
+        id="math.derivative.definition",
+        name="导数定义与极限",
+        description="用极限定义理解导数，求平均变化率的极限",
+        default_difficulty=0.35,
+    ),
+    KnowledgePoint(
+        id="math.derivative.meaning",
+        name="导数的几何意义与瞬时变化率",
+        description="导数就是切线斜率，表示瞬时变化率",
+        default_difficulty=0.35,
+        prerequisites=("math.derivative.definition",),
+    ),
+    KnowledgePoint(
+        id="math.derivative.rules",
+        name="基本求导公式与运算法则",
+        description="基本初等函数求导、四则运算与复合函数求导",
+        default_difficulty=0.40,
+        prerequisites=("math.derivative.definition",),
+    ),
+    KnowledgePoint(
+        id="math.derivative.tangent_slope",
+        name="切线斜率与倾斜角",
+        description="由导数求切线斜率，进而求倾斜角",
+        default_difficulty=0.45,
+        prerequisites=("math.derivative.meaning", "math.derivative.rules"),
+    ),
+    KnowledgePoint(
+        id="math.derivative.tangent_equation",
+        name="曲线切线方程",
+        description="求曲线在某点（或过某点）处的切线方程",
+        default_difficulty=0.55,
+        prerequisites=("math.derivative.tangent_slope",),
+    ),
+    KnowledgePoint(
+        id="math.derivative.tangent_relations",
+        name="切线的平行与垂直关系",
+        description="两切线平行或垂直时反求参数",
+        default_difficulty=0.60,
+        prerequisites=("math.derivative.tangent_slope",),
+    ),
+    KnowledgePoint(
+        id="math.derivative.tangent_count",
+        name="切线条数与公切线",
+        description="过一点能作几条切线、两曲线的公切线问题",
+        default_difficulty=0.75,
+        prerequisites=("math.derivative.tangent_equation",),
+    ),
+    KnowledgePoint(
+        id="math.derivative.tangent_optimization",
+        name="切线相关的最值问题",
+        description="切线与坐标轴围成图形、切点距离等最值问题",
+        default_difficulty=0.80,
+        prerequisites=("math.derivative.tangent_equation",),
+    ),
+    KnowledgePoint(
+        id="math.derivative.function_relations",
+        name="函数关系式与导数的综合应用",
+        description="由函数关系式（含 f(x) 与 f'(x) 的混合式）推导性质",
+        default_difficulty=0.70,
+        prerequisites=("math.derivative.rules",),
+    ),
+    KnowledgePoint(
+        id="math.function.symmetry_periodicity_derivative",
+        name="奇偶性、对称性与周期性中的导数关系",
+        description="利用对称性与周期性推导导函数的性质",
+        default_difficulty=0.75,
+        prerequisites=("math.derivative.rules",),
+    ),
 )
 
 _BY_ID: dict[str, KnowledgePoint] = {kp.id: kp for kp in _RAW}

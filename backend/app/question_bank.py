@@ -93,6 +93,7 @@ class QuestionBank:
         self.questions: dict[str, BankQuestion] = {}
         self.banks: dict[str, BankMeta] = {}
         self.report = LoadReport()
+        self._non_ascii_ids = 0
 
     # -- 查询 ---------------------------------------------------------------
     def get(self, question_id: str) -> BankQuestion | None:
@@ -166,6 +167,7 @@ class QuestionBank:
         )
 
         accepted = 0
+        self._non_ascii_ids = 0
         for index, item in enumerate(questions):
             question = self._parse_question(name, bank_id, index, item)
             if question is None:
@@ -175,6 +177,13 @@ class QuestionBank:
                 continue
             self.questions[question.id] = question
             accepted += 1
+
+        if self._non_ascii_ids:
+            self.report.warnings.append(
+                f"{name}: 有 {self._non_ascii_ids} 道题的 ID 含非 ASCII 字符，"
+                f"不符合录入标准（应为 math.<主题>.<分组>.<编号>）。"
+                f"这种序号式 ID 在题库重新生成后会指向别的题，历史 Evidence 会挂错。"
+            )
 
         meta.question_count = accepted
         if bank_id in self.banks:
@@ -193,6 +202,12 @@ class QuestionBank:
         if not qid:
             self.report.warnings.append(f"{label}: 缺少 id，已跳过")
             return None
+        if not qid.isascii():
+            # 录入标准要求 id 形如 math.<主题>.<分组>.<编号>；
+            # 非 ASCII 的序号式 id（例如「第001题」）在新版题库里重新生成时
+            # 会指向不同的题，历史 Evidence 就挂错了。
+            # 逐题告警会刷屏，所以只计数，最后聚合成一条。
+            self._non_ascii_ids += 1
 
         qtype = str(item.get("type") or "single_choice").strip()
         if qtype not in SUPPORTED_QUESTION_TYPES:
