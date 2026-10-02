@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 SUBJECT_MATH = "math"
 
@@ -221,3 +222,62 @@ def default_difficulty(kp_id: str) -> float:
 
 def is_known(kp_id: str) -> bool:
     return kp_id in _BY_ID
+
+
+_BY_NAME: dict[str, KnowledgePoint] = {kp.name: kp for kp in _RAW}
+
+
+def get_point_by_name(name: str) -> KnowledgePoint | None:
+    """按知识点名称反查。
+
+    题库的 tags 目前与知识点名称一致，所以当模型没给出知识点、
+    但给出了标签时，可以用标签名反推出知识点。
+    """
+    return _BY_NAME.get(str(name or "").strip())
+
+
+# ---------------------------------------------------------------------------
+# 与 seed/knowledge_points.json 的一致性校验
+# ---------------------------------------------------------------------------
+#
+# 这份清单被三个地方同时依赖：后端代码、题库、前端。任何一边改了另一边没跟上，
+# 都会静默出错（题库换代时就吃过这个亏：题库给了 17 个，代码里只有 7 个，
+# 46 道题直接挂不上知识点）。所以启动时对一遍。
+
+def seed_file_path() -> Path:
+    return Path(__file__).resolve().parent / "seed" / "knowledge_points.json"
+
+
+def validate_against_seed_file() -> list[str]:
+    """比对代码里的清单与 seed/knowledge_points.json。返回差异描述（空 = 一致）。"""
+    import json
+
+    path = seed_file_path()
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return [f"读不到或解析不了 {path.name}"]
+
+    entries = payload.get("knowledge_points")
+    if not isinstance(entries, list):
+        return [f"{path.name} 缺少 knowledge_points 数组"]
+
+    declared = {
+        str(item.get("id")): str(item.get("name"))
+        for item in entries
+        if isinstance(item, dict) and item.get("id")
+    }
+    code = {kp.id: kp.name for kp in _RAW}
+
+    problems: list[str] = []
+    for kp_id, name in code.items():
+        if kp_id not in declared:
+            problems.append(f"{path.name} 里缺少知识点 {kp_id}")
+        elif declared[kp_id] != name:
+            problems.append(
+                f"{kp_id} 名称不一致：代码={name!r} / {path.name}={declared[kp_id]!r}"
+            )
+    for kp_id in declared:
+        if kp_id not in code:
+            problems.append(f"代码里缺少知识点 {kp_id}（{path.name} 里有）")
+    return problems

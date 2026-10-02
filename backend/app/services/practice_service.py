@@ -12,7 +12,7 @@ from typing import Any
 from .. import db, knowledge, repositories
 from ..mastery import error_patterns
 from ..question_bank import BankQuestion, get_bank
-from . import knowledge_service, recommendation_service
+from . import knowledge_service, recommendation_service, tag_service
 from .knowledge_service import EvidenceInput
 
 # 错误类型 → 题库 tags/题干里的关键词，用于"针对错误模式出题"
@@ -209,6 +209,56 @@ def create_session(
     return session
 
 
+def create_tag_session(user_id: str, *, count: int = 5, book_id: str | None = None) -> dict[str, Any]:
+    """按**标签分数**选题（默认的推荐方式）。
+
+    规则：把所有标签从小到大排序，返回包含分数最低那个标签的题目。
+    多对多的部分由 tag_service.pick_questions 处理（见那里的注释）。
+    """
+    tag_service.initialize_scores(user_id)
+    picks = tag_service.pick_questions(user_id, limit=max(1, count))
+    bank = get_bank()
+    questions = [bank.get(p["question_id"]) for p in picks]
+    questions = [q for q in questions if q is not None]
+
+    now = db.to_iso(db.utcnow())
+    lead = picks[0] if picks else None
+
+    # 兼容既有会话结构：knowledge_point_id 取第一道题的主知识点。
+    # 但真正驱动选择的是 target_tag。
+    primary_kp = None
+    if questions:
+        for kp_id in questions[0].knowledge_point_ids:
+            if knowledge.is_known(kp_id):
+                primary_kp = kp_id
+                break
+
+    session: dict[str, Any] = {
+        "practice_session_id": db.new_id("prac"),
+        "user_id": user_id,
+        "selection_mode": "tag",
+        "target_tag": lead["tag"] if lead else None,
+        "target_tag_score": lead["tag_score"] if lead else None,
+        "picked_tags": [p["tag"] for p in picks],
+        "knowledge_point_id": primary_kp,
+        "knowledge_point_name": (
+            knowledge.get_point(primary_kp).name if primary_kp else None
+        ),
+        "book_id": book_id,
+        "status": "active",
+        "total": len(questions),
+        "target_difficulty": None,
+        "mastery_at_start": None,
+        "question_ids": [q.id for q in questions],
+        "served_index": 0,
+        "attempts": [],
+        "created_at": now,
+        "updated_at": now,
+    }
+    repositories.save_practice_session(session)
+    return session
+
+
 def _question_payload(
     question: BankQuestion, index: int, total: int
 ) -> dict[str, Any]:
@@ -222,6 +272,8 @@ def _question_payload(
     return {
         "question_id": question.id,
         "question_number": question.id.rsplit(".", 1)[-1],
+        # 标签会下发给客户端：「本题考察 XXX」
+        "tags": list(question.tags),
         "stem": question.stem,
         "choices": [{"key": k, "text": v} for k, v in sorted(question.options.items())],
         "difficulty": question.difficulty,
@@ -254,6 +306,11 @@ def session_response(session: dict[str, Any]) -> dict[str, Any]:
         "answered": len(attempts),
         "correct": sum(1 for a in attempts if a.get("correctness") == "correct"),
         "next_question": current_question(session),
+        # 标签选题的元信息：客户端可以显示「本次专练：XXX」
+        "selection_mode": session.get("selection_mode", "knowledge_point"),
+        "target_tag": session.get("target_tag"),
+        "target_tag_score": session.get("target_tag_score"),
+        "picked_tags": session.get("picked_tags", []),
         "created_at": session["created_at"],
     }
 
@@ -316,7 +373,7 @@ def submit_answer(
                 detail=None if is_correct else f"练习中答错：{question.stem[:60]}",
                 answer_excerpt=chosen,
             )
-            for kp_id in (question.knowledge_point_ids or ("math.derivative",))
+            for kp_id in (question.knowledge_point_ids or ())
             if knowledge.is_known(kp_id)
         ],
     )
@@ -327,6 +384,9 @@ def submit_answer(
         session["status"] = "completed"
     repositories.save_practice_session(session)
 
+    # 标签计分：答对则该题所有标签 +1，答错 -1
+    tag_update = tag_service.apply_answer(user_id, question_id, is_correct)
+
     return {
         "practice_session_id": session_id,
         "question_id": question_id,
@@ -336,6 +396,7 @@ def submit_answer(
         # 官方题库规范不含解析字段，这里可能是 None，客户端要能处理
         "explanation": question.explanation or None,
         "knowledge_changes": [c.model_dump(mode="json") for c in changes],
+        "tag_changes": tag_update,
         "next_question": None if finished else current_question(session),
         "session_completed": finished,
         "answered": len(attempts),

@@ -205,6 +205,8 @@ def reset_user_data(user_id: str) -> dict[str, int]:
         ("tutor_sessions", "user_id"),
         ("practice_sessions", "user_id"),
         ("entitlements", "user_id"),
+        # 标签分数也要清掉，否则 Demo 的标签不是从 0 开始
+        ("tag_scores", "user_id"),
     ):
         cursor = db.execute(f"DELETE FROM {table} WHERE {column} = ?", [user_id])
         counts[table] = cursor.rowcount if cursor.rowcount and cursor.rowcount > 0 else 0

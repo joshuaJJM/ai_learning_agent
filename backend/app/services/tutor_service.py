@@ -28,7 +28,7 @@ from typing import Any, Sequence
 
 from .. import db, knowledge, repositories
 from ..question_bank import BankQuestion, get_bank
-from . import knowledge_service, recommendation_service, vlm_service
+from . import knowledge_service, recommendation_service, tag_service, vlm_service
 from .knowledge_service import EvidenceInput
 from .llm import LlmUnavailable, build_user_message, get_llm
 
@@ -566,6 +566,8 @@ def submit_answer(
                 )
             ],
         )
+        # Tutor 的题来自教学脚本，没有题库题目 id，所以按知识点反查标签计分
+        tag_service.apply_for_knowledge_point(user_id, session["knowledge_point_id"], is_correct)
 
     strategy: str
     if kind == "concept" and not is_correct:

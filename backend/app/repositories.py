@@ -509,6 +509,58 @@ def find_entitlement_by_serial(serial: str) -> dict[str, Any] | None:
 
 
 # ---------------------------------------------------------------------------
+# 标签计分
+# ---------------------------------------------------------------------------
+
+def all_tag_scores(user_id: str) -> dict[str, int]:
+    """该用户所有标签的分数。没有记录过的标签视为 0，不在这里出现。"""
+    rows = db.query_all(
+        "SELECT tag, score FROM tag_scores WHERE user_id = ?", [user_id]
+    )
+    return {str(row["tag"]): int(row["score"]) for row in rows}
+
+
+def bump_tag_scores(user_id: str, tags: Iterable[str], delta: int) -> None:
+    """把若干标签的分数各加 delta（答对 +1 / 答错 -1）。"""
+    if not tags or delta == 0:
+        return
+    now = db.to_iso(db.utcnow())
+    for tag in tags:
+        db.bump_counter(
+            "tag_scores",
+            ["user_id", "tag"],
+            [user_id, tag],
+            "score",
+            delta,
+            updated_at=now,
+        )
+
+
+def ensure_tag_scores(user_id: str, tags: Iterable[str]) -> int:
+    """给尚未出现过的标签建一条 0 分记录。返回新建条数。
+
+    需求：「初始时，给所有标签分配一个 0」。
+    """
+    existing = set(all_tag_scores(user_id))
+    now = db.to_iso(db.utcnow())
+    created = 0
+    for tag in tags:
+        if tag in existing:
+            continue
+        db.bump_counter(
+            "tag_scores",
+            ["user_id", "tag"],
+            [user_id, tag],
+            "score",
+            0,
+            updated_at=now,
+        )
+        existing.add(tag)
+        created += 1
+    return created
+
+
+# ---------------------------------------------------------------------------
 # 幂等
 # ---------------------------------------------------------------------------
 

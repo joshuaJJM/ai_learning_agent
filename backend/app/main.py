@@ -17,14 +17,14 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from . import __version__, db
+from . import __version__, db, knowledge
 from .config import get_settings
 from .errors import install_error_handlers
 from .question_bank import get_bank
 from .routers import ALL_ROUTERS
 from .routers import demo as demo_router
 from .schemas import HealthResponse
-from .services import book_service
+from .services import book_service, tag_service
 from .services.llm import get_llm, shutdown_llm
 
 logger = logging.getLogger("haoxue")
@@ -48,10 +48,29 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
     logger.info("图书: %d 本", books)
     logger.info("题库: %d 个 bank / %d 道题", stats["bank_count"], stats["question_count"])
+    logger.info(
+        "知识点: %d 个 | 标签: %d 个",
+        len(knowledge.all_points()),
+        len(tag_service.tag_universe()),
+    )
     for warning in bank.report.warnings:
         logger.warning("题库告警: %s", warning)
     for error in bank.report.errors:
         logger.error("题库错误: %s", error)
+
+    # 清单漂移检查：代码里的知识点、seed/knowledge_points.json、题库的 tags，
+    # 三边必须一致。题库换代时吃过这个亏（题库 17 个、代码 7 个，46 道题挂不上）。
+    for problem in knowledge.validate_against_seed_file():
+        logger.warning("知识点清单不一致: %s", problem)
+    seed_extra = set(tag_service.tag_universe()) - {
+        kp.name for kp in knowledge.all_points()
+    }
+    if seed_extra:
+        logger.warning(
+            "有 %d 个标签不对应任何知识点名称（按设计 tags 应是知识点 name 的镜像）: %s",
+            len(seed_extra),
+            ", ".join(sorted(seed_extra)[:5]),
+        )
     logger.info(
         "模型: %s (%s) | VLM: %s",
         settings.llm_model,

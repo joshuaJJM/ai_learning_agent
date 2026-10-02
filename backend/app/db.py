@@ -186,6 +186,15 @@ _MYSQL_SCHEMA: tuple[str, ...] = (
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
     """
+    CREATE TABLE IF NOT EXISTS tag_scores (
+        user_id    VARCHAR(64) NOT NULL,
+        tag        VARCHAR(96) NOT NULL,
+        score      INT         NOT NULL DEFAULT 0,
+        updated_at VARCHAR(40) NOT NULL,
+        PRIMARY KEY (user_id, tag)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
+    """
     CREATE TABLE IF NOT EXISTS idempotency (
         idem_key    VARCHAR(128) NOT NULL,
         user_id     VARCHAR(64)  NULL,
@@ -319,6 +328,15 @@ SQLITE_SCHEMA: tuple[str, ...] = (
         book_id        TEXT NOT NULL,
         created_at     TEXT NOT NULL,
         doc            TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS tag_scores (
+        user_id    TEXT NOT NULL,
+        tag        TEXT NOT NULL,
+        score      INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (user_id, tag)
     )
     """,
     """
@@ -577,3 +595,38 @@ def count_docs(table: str, where: str = "", params: Iterable[Any] = ()) -> int:
 
 def delete_doc(table: str, key_col: str, key: str) -> None:
     execute(f"DELETE FROM {table} WHERE {key_col} = ?", [key])
+
+
+def bump_counter(
+    table: str,
+    key_columns: Sequence[str],
+    key_values: Sequence[Any],
+    delta_column: str,
+    delta: int,
+    **extra: Any,
+) -> None:
+    """把某个计数列加上 delta，行不存在时以 0 为起点创建。
+
+    这是 tag_scores 的核心操作（标签 +1 / -1），
+    和 upsert_doc 的「整体覆盖」语义不同，所以单独一个函数。
+    """
+    columns = [*key_columns, delta_column, *extra.keys()]
+    placeholders = ", ".join("?" for _ in columns)
+    conflict = ", ".join(key_columns)
+
+    if _use_mysql():
+        updates = [f"{delta_column} = {delta_column} + VALUES({delta_column})"]
+        updates += [f"{name} = VALUES({name})" for name in extra]
+        sql = (
+            f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({placeholders}) "
+            f"ON DUPLICATE KEY UPDATE {', '.join(updates)}"
+        )
+    else:
+        updates = [f"{delta_column} = {delta_column} + excluded.{delta_column}"]
+        updates += [f"{name} = excluded.{name}" for name in extra]
+        sql = (
+            f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({placeholders}) "
+            f"ON CONFLICT({conflict}) DO UPDATE SET {', '.join(updates)}"
+        )
+
+    execute(sql, [*key_values, delta, *extra.values()])

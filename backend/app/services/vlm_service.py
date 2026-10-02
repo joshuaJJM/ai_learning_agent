@@ -69,6 +69,7 @@ class RawQuestion:
     correct_answer: str | None
     correctness: str
     knowledge_point_ids: list[str]
+    tags: list[str]
     error_type: str | None
     diagnosis: str
     explanation: str | None
@@ -131,7 +132,7 @@ def infer_knowledge_points(stem: str, options: dict[str, str]) -> list[str]:
         if any(kw.lower() in haystack for kw in keywords):
             if kp_id not in hits:
                 hits.append(kp_id)
-    return hits or ["math.derivative"]
+    return hits
 
 
 def _clean_answer(value: Any, options: dict[str, str]) -> str | None:
@@ -202,6 +203,29 @@ def _clean_options(value: Any) -> dict[str, str]:
     return cleaned
 
 
+def _clean_tags(value: Any, *, bank_question: Any = None) -> list[str]:
+    """标签收敛。
+
+    - 命中题库的题：**以题库的标签为准**（需求明确说标签系统就用题库里的标签）。
+    - 没命中的题：用模型挑的标签，但必须落在标签宇宙里 ——
+      模型偶尔会自己造词，放任它会凭空长出一堆只有一道题的标签。
+    """
+    if bank_question is not None:
+        return list(bank_question.tags)
+
+    from . import tag_service
+
+    universe = set(tag_service.tag_universe())
+    if not isinstance(value, list):
+        return []
+    result: list[str] = []
+    for raw in value:
+        text = str(raw or "").strip()
+        if text and text in universe and text not in result:
+            result.append(text)
+    return result
+
+
 def raw_questions_from_payload(payload: dict[str, Any]) -> list[RawQuestion]:
     """把模型返回的 JSON 收敛成 RawQuestion，并做服务端判定。"""
     items = payload.get("questions")
@@ -254,6 +278,7 @@ def raw_questions_from_payload(payload: dict[str, Any]) -> list[RawQuestion]:
                     item.get("correctness"), student, correct
                 ),
                 knowledge_point_ids=kp_ids,
+                tags=_clean_tags(item.get("tags"), bank_question=bank_question),
                 error_type=_clean_error_type(item.get("error_type")),
                 diagnosis=str(item.get("diagnosis") or "").strip(),
                 explanation=(str(item.get("explanation")).strip() or None)
@@ -288,6 +313,12 @@ def build_prompt(subject: str = "mathematics", topic: str | None = None) -> str:
         if code != "unknown"
     )
     topic_line = f"本次作业主题：{topic}" if topic else ""
+
+    # 标签清单：模型必须从这份清单里给每道题挑标签（标签系统靠它计分）。
+    from . import tag_service
+
+    tag_lines = "\n".join(f"  - {tag}" for tag in tag_service.tag_universe())
+
     return f"""你是一位中国高中数学老师，正在批改学生上传的作业/试卷照片。学科：{subject}。{topic_line}
 
 请识别照片中出现的**每一道选择题**，并输出严格的 JSON。
@@ -301,15 +332,17 @@ def build_prompt(subject: str = "mathematics", topic: str | None = None) -> str:
 6. correctness：学生答案与正确答案一致填 "correct"，不一致填 "wrong"，学生未作答填 "unknown"。
 7. knowledge_point_ids 只能从下面这份清单里选（可多选，最多 3 个）：
 {kp_lines}
-8. error_type 只能取以下之一（做对了就填 null）：
+8. tags 填这道题涉及的**标签**，必须**逐字**从下面这份清单里选（1 到 4 个，不要自己造词）：
+{tag_lines}
+9. error_type 只能取以下之一（做对了就填 null）：
 {error_lines}
-9. diagnosis：用一两句中文说清学生**错在哪一步**（例如"能正确求出导数，但把 f'(x)>0 对应的区间写反了"）。做对了就说明他掌握得好在哪。
-10. explanation：写出完整的关键解题步骤。
-11. confidence：0 到 1 之间，表示你对本题识别与判定的把握。
-12. difficulty：1-5 的整数，1 最简单、5 最难。
+10. diagnosis：用一两句中文说清学生**错在哪一步**（例如"能正确求出导数，但把 f'(x)>0 对应的区间写反了"）。做对了就说明他掌握得好在哪。
+11. explanation：写出完整的关键解题步骤。
+12. confidence：0 到 1 之间，表示你对本题识别与判定的把握。
+13. difficulty：1-5 的整数，1 最简单、5 最难。
 
 输出格式必须严格如下：
-{{"questions":[{{"question_number":"17","stem":"已知函数 f(x) = x^3 - 3x^2 + 2，求 f(x) 的单调递增区间。","options":{{"A":"(-inf, 0)","B":"(0, 2)","C":"(-inf, 0) 和 (2, +inf)","D":"(2, +inf)"}},"student_answer":"A","answer":"C","correctness":"wrong","knowledge_point_ids":["math.derivative.monotonicity"],"error_type":"transformation","diagnosis":"学生能够正确求出导数，但把导数符号与函数单调性的对应关系弄反了。","explanation":"f'(x) = 3x^2 - 6x = 3x(x-2)，令 f'(x) > 0 得 x<0 或 x>2，故单调递增区间为 (-inf,0) 和 (2,+inf)。","confidence":0.92,"difficulty":3}}]}}
+{{"questions":[{{"question_number":"17","stem":"已知函数 f(x) = x^3 - 3x^2 + 2，求 f(x) 的单调递增区间。","options":{{"A":"(-inf, 0)","B":"(0, 2)","C":"(-inf, 0) 和 (2, +inf)","D":"(2, +inf)"}},"student_answer":"A","answer":"C","correctness":"wrong","knowledge_point_ids":["math.derivative.monotonicity"],"tags":["利用导数判断函数单调性与单调区间"],"error_type":"transformation","diagnosis":"学生能够正确求出导数，但把导数符号与函数单调性的对应关系弄反了。","explanation":"f'(x) = 3x^2 - 6x = 3x(x-2)，令 f'(x) > 0 得 x<0 或 x>2，故单调递增区间为 (-inf,0) 和 (2,+inf)。","confidence":0.92,"difficulty":3}}]}}
 
 如果照片里没有任何题目，返回 {{"questions":[]}}。"""
 

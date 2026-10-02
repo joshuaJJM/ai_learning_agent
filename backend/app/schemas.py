@@ -137,6 +137,38 @@ class KnowledgeChange(BaseModel):
     evidence_count: int
 
 
+# ---------------------------------------------------------------------------
+# 标签系统
+# ---------------------------------------------------------------------------
+
+class TagChange(BaseModel):
+    """一次答题导致的标签分数变动。
+
+    规则：答对 → 该题所有标签 +1；答错 → -1。
+    `correctness=unknown`（两个模型对答案有分歧）时不改动标签。
+    """
+
+    question_id: str
+    is_correct: bool
+    delta: int
+    tags: list[str] = Field(default_factory=list)
+
+
+class TagScore(BaseModel):
+    tag: str
+    score: int
+
+
+class TagScoresResponse(BaseModel):
+    """该用户全部标签的分数，按分数升序（最弱的在前）。"""
+
+    user_id: str
+    tag_count: int
+    weakest: TagScore | None = None
+    strongest: TagScore | None = None
+    tags: list[TagScore] = Field(default_factory=list)
+
+
 class ErrorInfo(BaseModel):
     error_code: str
     message: str
@@ -554,6 +586,12 @@ class TutorTurnResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 class PracticeSessionCreateRequest(BaseModel):
+    """创建练习。
+
+    **不填 `knowledge_point_id` 时走标签推荐**：服务端把所有标签按分数
+    从小到大排序，返回包含分数最低那个标签的题目。
+    """
+
     knowledge_point_id: str | None = None
     difficulty: float | None = Field(default=None, ge=0.0, le=1.0)
     book_id: str | None = None
@@ -569,8 +607,28 @@ class PracticeQuestion(BaseModel):
     choices: list[Choice]
     difficulty: float
     knowledge_points: list[KnowledgePointRef] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
     index: int
     total: int
+
+
+class TagRecommendation(BaseModel):
+    """按标签推荐出来的一道题。
+
+    `tag` 是被选中的那个「分数最低的标签」，`question` 是包含它的题目。
+    """
+
+    tag: str
+    tag_score: int
+    question_id: str
+    question_tags: list[str] = Field(default_factory=list)
+    question: PracticeQuestion | None = None
+
+
+class TagRecommendResponse(BaseModel):
+    user_id: str
+    weakest: TagScore | None = None
+    recommendations: list[TagRecommendation] = Field(default_factory=list)
 
 
 class PracticeSessionResponse(BaseModel):
@@ -583,6 +641,11 @@ class PracticeSessionResponse(BaseModel):
     answered: int
     correct: int
     next_question: PracticeQuestion | None = None
+    # ---- 标签推荐（selection_mode="tag" 时）----
+    selection_mode: Literal["tag", "knowledge_point"] = "knowledge_point"
+    target_tag: str | None = None
+    target_tag_score: int | None = None
+    picked_tags: list[str] = Field(default_factory=list)
     created_at: datetime
 
 
@@ -607,6 +670,7 @@ class PracticeAnswerResponse(BaseModel):
     correct_answer: str
     explanation: str | None = None
     knowledge_changes: list[KnowledgeChange] = Field(default_factory=list)
+    tag_changes: TagChange | None = None
     next_question: PracticeQuestion | None = None
     session_completed: bool = False
     answered: int = 0

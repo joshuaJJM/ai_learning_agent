@@ -35,13 +35,20 @@ async def create_session(
     payload: PracticeSessionCreateRequest,
     user: dict[str, Any] = Depends(current_user),
 ) -> PracticeSessionResponse:
-    session = practice_service.create_session(
-        user["user_id"],
-        knowledge_point_id=payload.knowledge_point_id,
-        difficulty=payload.difficulty,
-        book_id=payload.book_id,
-        count=payload.count,
-    )
+    # 不指定知识点时走**标签推荐**（把所有标签按分数升序，取最弱标签的题）。
+    # 指定了知识点则沿用原来的知识点内选题逻辑。
+    if payload.knowledge_point_id:
+        session = practice_service.create_session(
+            user["user_id"],
+            knowledge_point_id=payload.knowledge_point_id,
+            difficulty=payload.difficulty,
+            book_id=payload.book_id,
+            count=payload.count,
+        )
+    else:
+        session = practice_service.create_tag_session(
+            user["user_id"], count=payload.count, book_id=payload.book_id
+        )
     return PracticeSessionResponse(**practice_service.session_response(session))
 
 

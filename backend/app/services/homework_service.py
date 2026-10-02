@@ -21,7 +21,7 @@ from typing import Any, Sequence
 
 from .. import db, knowledge, repositories
 from ..config import get_settings
-from . import knowledge_service, recommendation_service, vlm_service
+from . import knowledge_service, recommendation_service, tag_service, vlm_service
 from .llm import LlmUnavailable
 from .knowledge_service import EvidenceInput
 from .vlm_service import RawQuestion, VlmOutcome
@@ -352,6 +352,17 @@ async def run_analysis(analysis_id: str) -> None:
         _update(doc, progress=_progress(4, 0.88))
         changes = knowledge_service.apply_evidence(doc["user_id"], evidence_entries)
 
+        # --- 标签计分：答对则该题所有标签 +1，否则 -1 ---
+        # correctness=unknown（两个模型对答案有分歧）时不动标签：
+        # 我们并不知道学生到底对不对，不该瞎扣分。
+        tag_updates = [
+            tag_service.apply_answer(
+                doc["user_id"], result["question_id"], result["correctness"] == "correct"
+            )
+            for result in question_results
+            if result["correctness"] != "unknown" and result.get("tags")
+        ]
+
         homework_doc = {
             "homework_id": homework_id,
             "user_id": doc["user_id"],
@@ -411,9 +422,8 @@ def _build_question_result(
             break
 
     refs = []
-    raw_kp_ids = raw.knowledge_point_ids or ["math.derivative"]
     # 第一个知识点视为主要关联，权重最高
-    for position, kp_id in enumerate(raw_kp_ids[:3]):
+    for position, kp_id in enumerate((raw.knowledge_point_ids or [])[:3]):
         point = knowledge.get_point(kp_id)
         if point is None:
             continue
@@ -424,15 +434,19 @@ def _build_question_result(
                 "weight": round(max(0.4, 1.0 - position * 0.25), 3),
             }
         )
+
+    # 模型没给出有效知识点时，用标签名反查（题库的 tags 与知识点同名）。
+    #
+    # 这里原来会回退到 "math.derivative" —— 那是旧知识树里的父节点，
+    # 换成扁平清单后已经不存在了，结果就是凭空造出一个幽灵知识点。
+    # 现在宁可留空：没有知识点就不写 Evidence，也就不该影响掌握度。
     if not refs:
-        fallback = knowledge.get_point("math.derivative")
-        refs.append(
-            {
-                "knowledge_point_id": "math.derivative",
-                "name": fallback.name if fallback else "导数",
-                "weight": 1.0,
-            }
-        )
+        for tag in raw.tags[:3]:
+            point = knowledge.get_point_by_name(tag)
+            if point is not None and point.id not in {r["knowledge_point_id"] for r in refs}:
+                refs.append(
+                    {"knowledge_point_id": point.id, "name": point.name, "weight": 0.6}
+                )
 
     return {
         "question_id": question_id,
@@ -447,6 +461,8 @@ def _build_question_result(
         "correct_answer": raw.correct_answer,
         "correctness": raw.correctness,
         "knowledge_points": refs,
+        # 标签：练习推荐与标签计分用。命中题库时就是题库的标签。
+        "tags": list(raw.tags),
         "error_type": raw.error_type,
         "error_label": knowledge.error_label(raw.error_type) if raw.error_type else None,
         "diagnosis": raw.diagnosis,
@@ -462,13 +478,15 @@ def _build_question_result(
 def _build_wrong_question(
     result: dict[str, Any], doc: dict[str, Any], homework_id: str, now: str
 ) -> dict[str, Any]:
-    primary = result["knowledge_points"][0]
+    # 知识点可能为空（模型既没给出知识点、标签也反查不到）。
+    # 错题本身仍然要留下来给学生看，只是不挂知识点。
+    primary = result["knowledge_points"][0] if result["knowledge_points"] else None
     return {
         "wrong_question_id": db.new_id("wq"),
         "user_id": doc["user_id"],
         "question_id": result["question_id"],
-        "knowledge_point_id": primary["knowledge_point_id"],
-        "knowledge_point_name": primary["name"],
+        "knowledge_point_id": primary["knowledge_point_id"] if primary else None,
+        "knowledge_point_name": primary["name"] if primary else None,
         "status": "open",
         "favorite": False,
         "question_number": result["question_number"],

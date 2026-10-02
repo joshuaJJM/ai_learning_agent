@@ -1,4 +1,4 @@
-﻿"""端到端 Demo 流程测试。
+"""端到端 Demo 流程测试。
 
 走的就是现场演示那条链路：
 
@@ -19,40 +19,11 @@ from fastapi.testclient import TestClient
 
 from app.question_bank import get_bank
 from app.services import vlm_service
-from app.services.vlm_service import RawQuestion, VlmOutcome
+from app.services.vlm_service import VlmOutcome
 
 from .conftest import FIXTURE_IMAGE
 
 DEMO_KP = "math.derivative.monotonicity_applications"
-DEMO_QUESTION = {
-    "question_number": "17",
-    "stem": "已知函数 f(x) = x^3 - 3x^2 + 2，求 f(x) 的单调递增区间。",
-    "options": {
-        "A": "(-inf, 0)",
-        "B": "(0, 2)",
-        "C": "(-inf, 0) 和 (2, +inf)",
-        "D": "(2, +inf)",
-    },
-    "student_answer": "A",
-    "correct_answer": "C",
-    "correctness": "wrong",
-    "knowledge_point_ids": ["math.derivative.monotonicity"],
-    "error_type": "transformation",
-    "diagnosis": "学生能正确求导，但把导数符号与单调性的对应关系弄反了。",
-    "explanation": "f'(x)=3x^2-6x=3x(x-2)，f'(x)>0 得 x<0 或 x>2。",
-    "confidence": 0.93,
-    "difficulty": 0.5,
-}
-
-
-@pytest.fixture()
-def fake_vlm(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def _analyze(images: Any, **kwargs: Any) -> VlmOutcome:
-        outcome = VlmOutcome(generated_by="fake-vlm", model="fake")
-        outcome.questions.append(RawQuestion(**DEMO_QUESTION))
-        return outcome
-
-    monkeypatch.setattr(vlm_service, "analyze_images", _analyze)
 
 
 def _seed(client: TestClient, headers: dict[str, str]) -> dict[str, Any]:
@@ -302,7 +273,7 @@ def test_unrecognized_question_fails_at_the_detection_stage(
     ).json()
 
     assert body["status"] == "failed"
-    assert body["error"]["error_code"] == "QUESTION_NOT_RECOGNIZED"
+    assert body["error"]["error_code"] == "QUESTION_NOT_RECOGNIZED", body["error"]
     assert body["progress"]["current_stage_key"] == "questions_detected"
 
     states = {stage["key"]: stage["state"] for stage in body["progress"]["stages"]}

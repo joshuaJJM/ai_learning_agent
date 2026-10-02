@@ -1,0 +1,92 @@
+{
+  "schema_version": "1.0",
+  "updated_at": "2026-10-02",
+  "note": "标签表。按 JSON标签与项目设计说明.txt：题库的 tags 是知识点 name 的展示层镜像，两者完全一致，没有额外标签。标签宇宙 = 本表 ∪ 题库实际标签，所以即使本表滞后也不会丢标签。练习推荐只依赖标签分数，与知识点掌握度是两套独立信号。",
+  "tags": [
+    {
+      "tag": "曲线切线方程",
+      "description": "",
+      "bank_question_count": 14
+    },
+    {
+      "tag": "基本求导公式与运算法则",
+      "description": "",
+      "bank_question_count": 12
+    },
+    {
+      "tag": "导数与函数性质综合应用",
+      "description": "",
+      "bank_question_count": 11
+    },
+    {
+      "tag": "利用导数判断函数单调性与单调区间",
+      "description": "",
+      "bank_question_count": 10
+    },
+    {
+      "tag": "奇偶性、对称性与周期性中的导数关系",
+      "description": "",
+      "bank_question_count": 9
+    },
+    {
+      "tag": "根据极值或最值条件求参数",
+      "description": "",
+      "bank_question_count": 8
+    },
+    {
+      "tag": "切线斜率与倾斜角",
+      "description": "",
+      "bank_question_count": 8
+    },
+    {
+      "tag": "利用单调性或导数恒成立求参数",
+      "description": "",
+      "bank_question_count": 6
+    },
+    {
+      "tag": "利用导数求函数最值",
+      "description": "",
+      "bank_question_count": 6
+    },
+    {
+      "tag": "函数关系式与导数的综合应用",
+      "description": "",
+      "bank_question_count": 6
+    },
+    {
+      "tag": "切线条数与公切线",
+      "description": "",
+      "bank_question_count": 5
+    },
+    {
+      "tag": "利用导数判断与求解极值",
+      "description": "",
+      "bank_question_count": 4
+    },
+    {
+      "tag": "切线相关的最值问题",
+      "description": "",
+      "bank_question_count": 4
+    },
+    {
+      "tag": "切线的平行与垂直关系",
+      "description": "",
+      "bank_question_count": 3
+    },
+    {
+      "tag": "函数奇偶性与单调性综合判断",
+      "description": "",
+      "bank_question_count": 2
+    },
+    {
+      "tag": "导数定义与极限",
+      "description": "",
+      "bank_question_count": 2
+    },
+    {
+      "tag": "导数的几何意义与瞬时变化率",
+      "description": "",
+      "bank_question_count": 2
+    }
+  ]
+}

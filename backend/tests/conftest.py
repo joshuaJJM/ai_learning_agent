@@ -54,3 +54,45 @@ def demo_user(client: TestClient) -> dict:
 @pytest.fixture()
 def auth_headers(demo_user: dict) -> dict[str, str]:
     return {"Authorization": f"Bearer {demo_user['access_token']}"}
+
+
+# ---------------------------------------------------------------------------
+# 确定性的假 VLM
+# ---------------------------------------------------------------------------
+# 放在 conftest 里让所有测试文件共用。它返回一道**答错**的题：
+# 正确答案是 C，学生选了 A。这样作业批改、错题、Evidence、标签计分
+# 这几条链路都能被确定性地覆盖，完全不依赖网络与模型。
+
+DEMO_QUESTION = {
+    "question_number": "17",
+    "stem": "已知函数 f(x) = x^3 - 3x^2 + 2，求 f(x) 的单调递增区间。",
+    "options": {
+        "A": "(-inf, 0)",
+        "B": "(0, 2)",
+        "C": "(-inf, 0) 和 (2, +inf)",
+        "D": "(2, +inf)",
+    },
+    "student_answer": "A",
+    "correct_answer": "C",
+    "correctness": "wrong",
+    "knowledge_point_ids": ["math.derivative.monotonicity"],
+    "tags": ["利用导数判断函数单调性与单调区间"],
+    "error_type": "transformation",
+    "diagnosis": "学生能正确求导，但把导数符号与单调性的对应关系弄反了。",
+    "explanation": "f'(x)=3x^2-6x=3x(x-2)，f'(x)>0 得 x<0 或 x>2。",
+    "confidence": 0.93,
+    "difficulty": 0.5,
+}
+
+
+@pytest.fixture()
+def fake_vlm(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.services import vlm_service
+    from app.services.vlm_service import RawQuestion, VlmOutcome
+
+    async def _analyze(images: object, **kwargs: object) -> VlmOutcome:
+        outcome = VlmOutcome(generated_by="fake-vlm", model="fake")
+        outcome.questions.append(RawQuestion(**DEMO_QUESTION))
+        return outcome
+
+    monkeypatch.setattr(vlm_service, "analyze_images", _analyze)

@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Sequence
 
-from . import knowledge
+from . import knowledge, tags as tag_vocab
 
 BANKS_DIR = Path(__file__).resolve().parent / "seed" / "banks"
 
@@ -94,6 +94,7 @@ class QuestionBank:
         self.banks: dict[str, BankMeta] = {}
         self.report = LoadReport()
         self._non_ascii_ids = 0
+        self._undeclared_tags = 0
 
     # -- 查询 ---------------------------------------------------------------
     def get(self, question_id: str) -> BankQuestion | None:
@@ -168,6 +169,7 @@ class QuestionBank:
 
         accepted = 0
         self._non_ascii_ids = 0
+        self._undeclared_tags = 0
         for index, item in enumerate(questions):
             question = self._parse_question(name, bank_id, index, item)
             if question is None:
@@ -183,6 +185,12 @@ class QuestionBank:
                 f"{name}: 有 {self._non_ascii_ids} 道题的 ID 含非 ASCII 字符，"
                 f"不符合录入标准（应为 math.<主题>.<分组>.<编号>）。"
                 f"这种序号式 ID 在题库重新生成后会指向别的题，历史 Evidence 会挂错。"
+            )
+        if self._undeclared_tags:
+            self.report.warnings.append(
+                f"{name}: 有 {self._undeclared_tags} 处标签不在 seed/tags.json 的标签表里。"
+                f"标签宇宙取「标签表 ∪ 题库实际标签」，所以这些标签仍会正常计分，"
+                f"但建议把标签表补全。"
             )
 
         meta.question_count = accepted
@@ -265,21 +273,33 @@ class QuestionBank:
         if not kp_ids:
             self.report.warnings.append(f"{label} ({qid}): 没有有效知识点映射")
 
-        # 规范要求 tags 与 knowledge_point_ids 一一对应、顺序相同、逐字等于知识点 name。
-        # 这里以知识点名称为准，文件里的 tags 只用来校验。
-        expected_tags = [
-            knowledge.get_point(kp_id).name  # type: ignore[union-attr]
-            for kp_id in kp_ids
-        ]
+        # tags 是**标签系统**的输入（练习推荐用），必须原样保留。
+        #
+        # 注意：录入标准原本要求 tags 与知识点名称一一对应，但团队后来给标签
+        # 单独定义了一套体系，所以这里不再用知识点名去覆盖文件里的 tags，
+        # 只做合法性与「是否在标签表里」的校验。
         raw_tags = item.get("tags")
+        file_tags: list[str] = []
         if isinstance(raw_tags, list):
-            actual_tags = [str(t) for t in raw_tags]
-            if actual_tags != expected_tags:
-                self.report.warnings.append(
-                    f"{label} ({qid}): tags 与知识点名称不一致，已按知识点重写"
-                )
+            for raw_tag in raw_tags:
+                text = tag_vocab.normalize(raw_tag)
+                if not text:
+                    continue
+                if not tag_vocab.is_valid(text):
+                    self.report.warnings.append(
+                        f"{label} ({qid}): 标签过长（>{tag_vocab.TAG_MAX_LENGTH}），已忽略 {text[:20]!r}…"
+                    )
+                    continue
+                if text not in file_tags:
+                    file_tags.append(text)
+        if not file_tags:
+            self.report.warnings.append(f"{label} ({qid}): 缺少 tags，该题不参与标签计分")
         else:
-            self.report.warnings.append(f"{label} ({qid}): 缺少 tags，已按知识点补全")
+            declared = set(tag_vocab.declared_tags())
+            if declared:
+                for text in file_tags:
+                    if text not in declared:
+                        self._undeclared_tags += 1
 
         # 规范禁止在题目里写 difficulty / source / source_ref
         for forbidden in ("difficulty", "source", "source_ref"):
@@ -297,7 +317,7 @@ class QuestionBank:
             answer=answer,
             explanation=str(item.get("explanation") or "").strip(),
             knowledge_point_ids=tuple(kp_ids),
-            tags=tuple(expected_tags),
+            tags=tuple(file_tags),
             source_ref="",
             difficulty=_resolve_difficulty(kp_ids),
         )
