@@ -391,7 +391,32 @@ cd backend
 .venv/bin/python tools/remote.py service status        # RUNNING / NOT_RUNNING
 .venv/bin/python tools/remote.py service logs
 .venv/bin/python tools/remote.py service restart
+.venv/bin/python tools/remote.py reset --yes           # 恢复到全新环境（见下）
 ```
+
+### 重置线上数据
+
+演示或联调前想要一个**全新环境**：
+
+```bash
+.venv/bin/python tools/remote.py reset          # 只打印计划，不动数据
+.venv/bin/python tools/remote.py reset --yes    # 真的执行
+```
+
+它做的是「**结构也重来**」而不是「删数据留旧表」：
+
+1. 停服务
+2. **drop 掉整个 MySQL 库再重建** —— 下次启动时服务按代码重新建表 + 跑迁移
+3. 清空 `data/uploads/`（`--keep-uploads` 可保留）、删遗留 SQLite、清空 `service.log`
+4. 启服务
+
+MySQL 凭据是**在服务器上从 `.env` 现读**的，不在本地解析、也不经过命令行参数，
+密钥始终留在服务器上。不带 `--yes` 时只打印计划并返回退出码 1，防误触。
+
+> 重置完所有业务表都是 0 行。`books` 表会有 2 行 —— 那是启动时从
+> `seed/books.json` 自动播种的配置数据，不是用户数据，每次启动都会有。
+>
+> 想铺演示数据：`POST /api/v1/demo/seed`。
 
 远端：`121.43.137.176:22`（用户 `hackathon`），应用目录 `~/haoxue-backend`，监听 `17283`。
 

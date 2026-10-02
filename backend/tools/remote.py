@@ -253,6 +253,58 @@ def _service(remote: Remote, action: str) -> str:
     return "\n".join(part for part in (out.strip(), err.strip()) if part)
 
 
+# ---------------------------------------------------------------------------
+# 数据重置（把线上恢复成全新环境）
+# ---------------------------------------------------------------------------
+#
+# 做的是「结构也重来」而不是「删数据留旧表」：drop 掉整个库再重建，
+# 服务下次启动会按代码重新建表 + 跑迁移。
+#
+# 凭据**在服务器上从 .env 现读**，不在本地解析、不经过这条命令的参数 ——
+# 密钥始终留在服务器上。
+
+RESET_SCRIPT = r"""
+set -u
+cd __APP_DIR__
+
+MYSQL_HOST=$(grep -E '^MYSQL_HOST=' .env 2>/dev/null | cut -d= -f2-)
+MYSQL_PORT=$(grep -E '^MYSQL_PORT=' .env 2>/dev/null | cut -d= -f2-)
+MYSQL_USER=$(grep -E '^MYSQL_USER=' .env 2>/dev/null | cut -d= -f2-)
+MYSQL_PASSWORD=$(grep -E '^MYSQL_PASSWORD=' .env 2>/dev/null | cut -d= -f2-)
+MYSQL_DATABASE=$(grep -E '^MYSQL_DATABASE=' .env 2>/dev/null | cut -d= -f2-)
+
+if [ -n "${MYSQL_USER:-}" ] && [ -n "${MYSQL_DATABASE:-}" ]; then
+  mysql -h "${MYSQL_HOST:-127.0.0.1}" -P "${MYSQL_PORT:-3306}" \
+        -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" \
+        -e "DROP DATABASE IF EXISTS \`$MYSQL_DATABASE\`; CREATE DATABASE \`$MYSQL_DATABASE\` CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;" 2>&1 \
+    | grep -v -i 'warning' || true
+  echo "MySQL: 已 drop 并重建 $MYSQL_DATABASE"
+else
+  echo "MySQL: .env 里没有配置，跳过"
+fi
+
+rm -f data/haoxue.db data/haoxue.db-shm data/haoxue.db-wal
+if [ "__KEEP_UPLOADS__" = "1" ]; then
+  echo "文件: 保留 data/uploads（--keep-uploads）"
+else
+  rm -rf data/uploads
+  mkdir -p data/uploads
+  echo "文件: 已清空 data/uploads"
+fi
+: > service.log
+rm -rf .pytest_tmp .pytest_tmp_probe nohup.out
+echo "文件: 已清日志与临时目录"
+"""
+
+
+def reset_remote(remote: Remote, app_dir: str, *, keep_uploads: bool = False) -> str:
+    script = RESET_SCRIPT.replace("__APP_DIR__", app_dir).replace(
+        "__KEEP_UPLOADS__", "1" if keep_uploads else "0"
+    )
+    _, out, err = remote.run(script)
+    return "\n".join(part for part in (out.strip(), err.strip()) if part)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="远程服务器操作")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -288,6 +340,17 @@ def main() -> int:
         "action",
         choices=["start", "stop", "restart", "status", "logs"],
     )
+
+    p_reset = sub.add_parser(
+        "reset", help="把线上恢复成全新环境（重建数据库、清上传图片与日志）"
+    )
+    p_reset.add_argument(
+        "--yes", action="store_true", help="确认执行（不加这个只是打印计划）"
+    )
+    p_reset.add_argument(
+        "--keep-uploads", action="store_true", help="保留已上传的图片"
+    )
+    p_reset.add_argument("--dir", default=None, help="远端应用目录")
 
     args = parser.parse_args()
 
@@ -396,6 +459,28 @@ def main() -> int:
 
         if args.cmd == "service":
             print(_service(remote, args.action))
+            return 0
+
+        if args.cmd == "reset":
+            target = args.dir or get_settings().remote_app_dir
+            if not args.yes:
+                print("这会**永久删除**线上全部业务数据：")
+                print("  - MySQL 库：drop 后重建（所有表与数据）")
+                if args.keep_uploads:
+                    print("  - 上传图片：保留")
+                else:
+                    print("  - 上传图片：全部删除")
+                print("  - service.log、临时目录：清空")
+                print(f"\n目标目录: {target}")
+                print("\n确认请加 --yes：  python tools/remote.py reset --yes")
+                return 1
+
+            print("1) 停服务")
+            print(_service(remote, "stop") or "  (已停止)")
+            print("\n2) 重建数据库 + 清理文件")
+            print(reset_remote(remote, target, keep_uploads=args.keep_uploads))
+            print("\n3) 启动服务（会按代码重新建表并跑迁移）")
+            print(_service(remote, "start"))
             return 0
     finally:
         remote.close()
