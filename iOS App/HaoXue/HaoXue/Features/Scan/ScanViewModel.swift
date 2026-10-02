@@ -140,8 +140,8 @@ final class ScanViewModel {
                 return
             } catch {
                 ScanDiagnostics.log("FLOW error=\(error) analysis_id=\(self.analysisID ?? "nil") state=\(self.state)")
-                self.errorCode = (error as? AnalysisServiceError).flatMap {
-                    if case let .backend(code) = $0 { return code }; return nil
+                self.errorCode = (error as? NetworkError).flatMap {
+                    if case let .backend(code, _, _, _) = $0 { return code }; return nil
                 } ?? "NETWORK_ERROR"
                 self.state = .failed
             }

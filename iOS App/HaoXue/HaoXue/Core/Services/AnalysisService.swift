@@ -7,7 +7,6 @@ protocol AnalysisServing {
 }
 
 enum AnalysisServiceError: Error {
-    case backend(String)
     case unexpectedStatus(Int)
 }
 
@@ -34,9 +33,24 @@ struct LiveAnalysisService: AnalysisServing {
     }
 
     func create(images: [Data], key: UUID) async throws -> CreateAnalysisResponse {
-        let (data, response) = try await client.sendData(makeCreateRequest(images: images, key: key))
+        let request = makeCreateRequest(images: images, key: key)
+        var data = Data()
+        var response: HTTPURLResponse?
+        for attempt in 0..<3 {
+            let result = try await client.sendData(request)
+            data = result.0
+            response = result.1
+            if response?.statusCode == 409,
+               (try? BackendJSON.decoder.decode(BackendErrorDTO.self, from: data).errorCode) == "IDEMPOTENCY_CONFLICT",
+               attempt < 2 {
+                try await Task.sleep(for: .seconds(1))
+                continue
+            }
+            break
+        }
+        guard let response else { throw NetworkError.invalidResponse }
         ScanDiagnostics.log("CREATE http=\(response.statusCode) body=\(String(decoding: data.prefix(2048), as: UTF8.self))")
-        try validate(response, data: data)
+        try client.validate(response, data: data)
         guard response.statusCode == 202 else { throw AnalysisServiceError.unexpectedStatus(response.statusCode) }
         do {
             let created = try JSONDecoder().decode(CreateAnalysisResponse.self, from: data)
@@ -53,7 +67,7 @@ struct LiveAnalysisService: AnalysisServing {
         request.httpMethod = "GET"
         let (data, response) = try await client.sendData(request)
         ScanDiagnostics.log("POLL http=\(response.statusCode) analysis_id=\(id)")
-        try validate(response, data: data)
+        try client.validate(response, data: data)
         do {
             return try JSONDecoder().decode(AnalysisResponse.self, from: data)
         } catch {
@@ -62,12 +76,6 @@ struct LiveAnalysisService: AnalysisServing {
         }
     }
 
-    private func validate(_ response: HTTPURLResponse, data: Data) throws {
-        guard (200...299).contains(response.statusCode) else {
-            let error = try? JSONDecoder().decode(AnalysisFailure.self, from: data)
-            throw AnalysisServiceError.backend(error?.errorCode ?? "HTTP_\(response.statusCode)")
-        }
-    }
 }
 
 @MainActor

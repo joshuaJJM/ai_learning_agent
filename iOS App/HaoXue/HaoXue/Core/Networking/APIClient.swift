@@ -7,6 +7,7 @@ enum NetworkError: Error, Equatable {
     case timeout
     case httpStatus(Int)
     case decoding
+    case backend(code: String, message: String, requestID: String?, status: Int)
 }
 
 // Semantic error codes; a future Backend DTO mapper owns envelope parsing.
@@ -82,13 +83,21 @@ final class APIClient {
         guard let response = response as? HTTPURLResponse else {
             throw NetworkError.invalidResponse
         }
-        guard (200...299).contains(response.statusCode) else {
-            throw NetworkError.httpStatus(response.statusCode)
-        }
+        try validate(response, data: data)
         do {
-            return try JSONDecoder().decode(DTO.self, from: data)
+            return try BackendJSON.decoder.decode(DTO.self, from: data)
         } catch {
             throw NetworkError.decoding
+        }
+    }
+
+    func validate(_ response: HTTPURLResponse, data: Data) throws {
+        guard (200...299).contains(response.statusCode) else {
+            if let error = try? BackendJSON.decoder.decode(BackendErrorDTO.self, from: data) {
+                throw NetworkError.backend(code: error.errorCode, message: error.message,
+                                           requestID: error.requestId, status: response.statusCode)
+            }
+            throw NetworkError.httpStatus(response.statusCode)
         }
     }
 }

@@ -42,5 +42,31 @@ struct AnalysisResponse: Decodable {
 struct CreateAnalysisResponse: Decodable {
     let analysisID: String
     let status: AnalysisPhase
-    enum CodingKeys: String, CodingKey { case analysisID = "analysis_id", status }
+    let createdAt: Date?
+    enum CodingKeys: String, CodingKey {
+        case analysisID = "analysis_id", status, createdAt = "created_at"
+    }
+
+    init(analysisID: String, status: AnalysisPhase, createdAt: Date? = nil) {
+        self.analysisID = analysisID
+        self.status = status
+        self.createdAt = createdAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        analysisID = try values.decode(String.self, forKey: .analysisID)
+        status = try values.decode(AnalysisPhase.self, forKey: .status)
+        if let raw = try values.decodeIfPresent(String.self, forKey: .createdAt) {
+            let fractional = ISO8601DateFormatter()
+            fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            createdAt = fractional.date(from: raw) ?? ISO8601DateFormatter().date(from: raw)
+            if createdAt == nil {
+                throw DecodingError.dataCorruptedError(forKey: .createdAt, in: values,
+                                                       debugDescription: "Invalid ISO-8601 date")
+            }
+        } else {
+            createdAt = nil
+        }
+    }
 }

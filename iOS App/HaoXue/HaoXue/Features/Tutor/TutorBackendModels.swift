@@ -78,12 +78,16 @@ struct TutorEvaluationDTO: Decodable, Equatable {
 
 struct TutorSessionDTO: Decodable {
     let tutorSessionId: String
+    let sourceType: String?
+    let sourceId: String?
     let knowledgePointId: String?
     let knowledgePointName: String?
     let difficulty: Double
     let completed: Bool
     let turn: TutorTurnDTO?
     let knowledgeChanges: [TutorKnowledgeChangeDTO]
+    let history: [TutorTurnDTO]?
+    let nextAction: NextActionDTO?
 }
 
 struct TutorTurnResponseDTO: Decodable {
@@ -95,6 +99,8 @@ struct TutorTurnResponseDTO: Decodable {
     let progress: TutorProgressDTO
     let studentUnderstanding: Double
     let knowledgeChanges: [TutorKnowledgeChangeDTO]
+    let nextAction: NextActionDTO?
+    let replayed: Bool?
 }
 
 struct TutorCreateRequestDTO: Encodable {
@@ -108,6 +114,7 @@ struct TutorAnswerRequestDTO: Encodable {
     let text: String?
     let selfReportedConfidence: String?
     let clientRequestId: String
+    let answeringTurnId: String?
     let stream: Bool
 }
 

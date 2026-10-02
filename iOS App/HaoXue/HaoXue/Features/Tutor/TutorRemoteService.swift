@@ -25,6 +25,7 @@ final class TutorRemoteService: TutorRemoteServing {
     let baseURL: URL
     private let session: URLSession
     private let client: APIClient
+    private var answeringTurnIDs: [String: String] = [:]
 
     init(baseURL: URL, session: URLSession = .shared) {
         self.baseURL = baseURL
@@ -44,7 +45,7 @@ final class TutorRemoteService: TutorRemoteServing {
     }
 
     func makeTurnRequest(sessionId: String, selectedKey: String?, text: String? = nil,
-                         key: String, stream: Bool) throws -> URLRequest {
+                         key: String, stream: Bool, answeringTurnId: String? = nil) throws -> URLRequest {
         var request = URLRequest(url: baseURL.appendingPathComponent("api/v1/tutor/sessions/\(sessionId)/turns"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -53,20 +54,31 @@ final class TutorRemoteService: TutorRemoteServing {
         request.timeoutInterval = 60
         request.httpBody = try TutorJSON.encoder.encode(TutorAnswerRequestDTO(
             selectedKey: selectedKey, text: text, selfReportedConfidence: "guess",
-            clientRequestId: key, stream: stream
+            clientRequestId: key, answeringTurnId: answeringTurnId, stream: stream
         ))
         return request
     }
 
     func createSession(key: String) async throws -> TutorSessionDTO {
         let request = try makeCreateRequest(key: key)
-        return try await sendJSON(request, as: TutorSessionDTO.self)
+        let dto = try await sendJSON(request, as: TutorSessionDTO.self)
+        answeringTurnIDs[dto.tutorSessionId] = dto.turn?.turnId
+        return dto
+    }
+
+    func fetchSession(id: String) async throws -> TutorSessionDTO {
+        var request = URLRequest(url: baseURL.appendingPathComponent("api/v1/tutor/sessions/\(id)"))
+        request.httpMethod = "GET"
+        let dto = try await sendJSON(request, as: TutorSessionDTO.self)
+        answeringTurnIDs[id] = dto.turn?.turnId
+        return dto
     }
 
     func submit(sessionId: String, selectedKey: String?, text: String?, key: String,
                 onEvent: @escaping @MainActor (TutorStreamEvent) -> Void) async throws -> TutorTurnResponseDTO {
         let request = try makeTurnRequest(sessionId: sessionId, selectedKey: selectedKey,
-                                          text: text, key: key, stream: true)
+                                          text: text, key: key, stream: true,
+                                          answeringTurnId: answeringTurnIDs[sessionId])
         var parser = TutorSSEParser()
         var sawTurn = false
         var sawDone = false
@@ -112,8 +124,11 @@ final class TutorRemoteService: TutorRemoteServing {
 
         // The SSE envelope omits evaluation and knowledge_changes; same-key JSON replay is read-only.
         let replay = try makeTurnRequest(sessionId: sessionId, selectedKey: selectedKey,
-                                         text: text, key: key, stream: false)
-        return try await sendJSON(replay, as: TutorTurnResponseDTO.self)
+                                         text: text, key: key, stream: false,
+                                         answeringTurnId: answeringTurnIDs[sessionId])
+        let result = try await sendJSON(replay, as: TutorTurnResponseDTO.self)
+        answeringTurnIDs[sessionId] = result.turn.turnId
+        return result
     }
 
     private func sendJSON<T: Decodable>(_ request: URLRequest, as type: T.Type) async throws -> T {

@@ -99,13 +99,10 @@ struct NetworkingBoundaryTests {
         await #expect(throws: NetworkError.cancelled) { try await task.value }
     }
 
-    @Test func liveNeverRequestsOrFallsBack() async {
+    @Test func livePracticeRemainsOutsidePhase5A() async {
         let session = session(ForbiddenRequestStub.self)
         defer { session.invalidateAndCancel() }
         let live = LiveDataProvider(client: APIClient(session: session), configuration: AppConfiguration(mode: .live))
-        await #expect(throws: ProviderError.contractNotConfigured) { try await live.fetchHome() }
-        await #expect(throws: ProviderError.contractNotConfigured) { try await live.fetchAnalysis(id: "any") }
-        await #expect(throws: ProviderError.contractNotConfigured) { try await live.fetchTutorSession(id: "any") }
         await #expect(throws: ProviderError.contractNotConfigured) { try await live.fetchPracticeSession(id: "any") }
     }
 
