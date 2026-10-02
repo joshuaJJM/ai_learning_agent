@@ -55,8 +55,48 @@ POST /api/v1/auth/guest
 GET /                    # 服务名、版本、文档地址
 GET /health              # 健康检查
 GET /api/v1/health       # 同上（等价别名）
-                         # 返回 status / llm_mode / 题库题数 / 运行时长
 ```
+
+```json
+{
+  "status": "ok",                       // ok | degraded
+  "version": "…",
+  "llm_mode": "live",                   // live | mock
+  "llm_model": "deepseek-ai/DeepSeek-V3.2",
+  "vlm_model": "Qwen/Qwen3-VL-32B-Instruct",
+  "database": "mysql://hackathon@127.0.0.1:3306/hackathon",
+  "bank_count": 1,
+  "question_count": 73,
+  "uptime_seconds": 1234.5,
+  "backup_llm_model": "deepseek-flash",
+  "backup_llm_configured": true
+}
+```
+
+`backup_llm_*` 是**备用 provider**（另一个厂商）。主厂商整体不可用时靠它顶上，
+同时也用作二次求解校验的模型。`backup_llm_configured: false` 表示没配 key，
+此时兜底能力会弱一档 —— 排查线上问题时先看这两个字段。
+
+### 模型与容错策略
+
+| 角色 | 模型 | 厂商 |
+|---|---|---|
+| 图片识别（主） | `Qwen/Qwen3-VL-32B-Instruct` | SiliconFlow |
+| 图片识别（备） | `Qwen/Qwen3-VL-8B-Instruct` | SiliconFlow |
+| 图片识别（**跨厂商兜底**） | `deepseek-flash` | DeepSeek |
+| 二次求解校验 | `deepseek-flash` | DeepSeek |
+
+- **识别链是逐级降级的**：主 → 备 → 跨厂商兜底。全都失败才算失败。
+- **二次求解校验刻意用另一个厂商的模型**：识别是视觉模型、校验是文本模型，
+  两边异构，独立性更好 —— 同一家的模型容易犯同样的错。
+  校验结果与识别不一致时，该题判为 `unknown`（**不计入掌握度**）。
+- `deepseek-flash` 是**推理模型**（思维链放在 `reasoning_content`，
+  且思考 token 计入 `max_tokens`）。开启 JSON 模式后它的推理量会大幅下降，
+  实测同一张图从 10.2s 降到 1.9s。
+
+> 上传大图时若一次要识别十几道题，模型输出可能很长。
+> 后端会检查 `finish_reason`：一旦是被 `max_tokens` 截断，
+> 会**自动放大预算重发**，而不是原样重试（原样重试只会得到同样被截断的结果）。
 
 ### 契约常量（请从这里拉，不要手抄文档）
 

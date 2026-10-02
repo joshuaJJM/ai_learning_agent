@@ -1,5 +1,9 @@
 # ---- 密钥 / 凭证：绝对不要提交 ----
 api-key.txt
+# 备用 provider 的 key（放在仓库根目录，绝不能进公开仓库）
+backup-api-key.txt
+*api-key*.txt
+*apikey*.txt
 .env
 backend/.env
 # 服务器专用环境文件（含 MySQL 密码）

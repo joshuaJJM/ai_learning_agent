@@ -72,10 +72,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             ", ".join(sorted(seed_extra)[:5]),
         )
     logger.info(
-        "模型: %s (%s) | VLM: %s",
+        "模型: %s (%s) | VLM: %s | 备用: %s",
         settings.llm_model,
         "已配置" if get_llm().configured else "Mock 模式",
         settings.vlm_model,
+        (
+            f"{settings.backup_llm_model} @ {settings.backup_llm_base_url}（已配置）"
+            if get_llm().backup_configured
+            else "未配置"
+        ),
     )
     yield
     await shutdown_llm()
@@ -148,6 +153,8 @@ async def health() -> HealthResponse:
         bank_count=stats["bank_count"],
         question_count=stats["question_count"],
         uptime_seconds=round(time.time() - STARTED_AT, 2),
+        backup_llm_model=settings.backup_llm_model,
+        backup_llm_configured=llm.backup_configured,
     )
 
 

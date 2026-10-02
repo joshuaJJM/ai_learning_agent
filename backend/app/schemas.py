@@ -981,3 +981,7 @@ class HealthResponse(BaseModel):
     bank_count: int
     question_count: int
     uptime_seconds: float
+    #: 备用 provider（另一个厂商）。主厂商整体挂掉时靠它顶上，
+    #: 同时用作二次求解校验的模型。
+    backup_llm_model: str = ""
+    backup_llm_configured: bool = False

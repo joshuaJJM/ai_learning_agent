@@ -36,6 +36,23 @@ class Settings(BaseSettings):
     # 置 true 则完全不走网络，全部使用本地 Mock Provider（断网演示保险）。
     force_mock_llm: bool = False
 
+    # ---- 备用 provider（另一个厂商，用来抗单点故障）----
+    #
+    # 主 provider 挂了（实测遇到过 SiliconFlow 返 500）时，整条链路会一起哑掉。
+    # 备用 provider 是**另一个厂商**，走它自己的 base_url 和 key。
+    #
+    # 它在两处同时生效：
+    #   1. VLM 兜底链的最后一环（主备都失败时还能识别图片）
+    #   2. 二次求解校验（没有题库背书的题，用它独立解一遍）
+    #
+    # 注意：deepseek-flash 是**推理模型**，思维链占 completion_tokens，
+    # 所以给它的 max_tokens 要留足余量（实测开 JSON 模式后推理量会大幅下降）。
+    backup_llm_base_url: str = "https://api.deepseek.com/v1"
+    backup_llm_api_key: str = ""
+    backup_llm_model: str = "deepseek-flash"
+    # 用备用模型做二次求解校验（与识别模型异构，独立性更好）
+    verify_with_backup_model: bool = True
+
     # ---- 存储 ----
     # 生产用 MySQL（远端 127.0.0.1，仅服务器内可连）；本地开发与测试回落到 SQLite。
     # 只要 MYSQL_HOST 配了就走 MySQL。

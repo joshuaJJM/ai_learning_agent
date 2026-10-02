@@ -396,11 +396,27 @@ async def _solve_independently(
     ]
     try:
         payload, _ = await llm.complete_json(
-            messages, model=model, temperature=0.0, max_tokens=500, retries=0
+            messages,
+            model=model,
+            temperature=0.0,
+            # 备用模型是推理模型，思维链占用 completion_tokens，要留余量
+            max_tokens=1500,
+            retries=0,
         )
     except LlmUnavailable:
         return None
     return _clean_answer(payload.get("answer"), options)
+
+
+def verification_model(settings: Any, llm: LlmClient) -> str:
+    """二次求解校验用哪个模型。
+
+    优先用**另一个厂商**的模型：识别用的是视觉模型，校验用文本模型，
+    两边异构，独立性更好 —— 同一家的模型容易犯同样的错。
+    """
+    if settings.verify_with_backup_model and llm.backup_configured:
+        return settings.backup_llm_model
+    return settings.llm_model
 
 
 async def verify_answers(
@@ -433,11 +449,12 @@ async def verify_answers(
         return warnings
 
     semaphore = asyncio.Semaphore(VERIFY_CONCURRENCY)
+    model = verification_model(settings, llm)
 
     async def solve(question: RawQuestion) -> str | None:
         async with semaphore:
             return await _solve_independently(
-                question.stem, question.options, llm, settings.llm_model
+                question.stem, question.options, llm, model
             )
 
     solved = await asyncio.gather(
@@ -493,6 +510,10 @@ async def analyze_images(
     models = [settings.vlm_model]
     if settings.vlm_fallback_model and settings.vlm_fallback_model != settings.vlm_model:
         models.append(settings.vlm_fallback_model)
+    # 最后一道防线：**另一个厂商**的模型。主厂商整体挂掉时（实测遇到过
+    # SiliconFlow 返 500），同一家的备选模型会一起哑，只有换厂商才救得回来。
+    if llm.backup_configured and settings.backup_llm_model not in models:
+        models.append(settings.backup_llm_model)
 
     semaphore = asyncio.Semaphore(VLM_CONCURRENCY)
 

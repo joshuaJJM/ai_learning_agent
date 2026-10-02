@@ -234,17 +234,57 @@ def extract_json(text: str) -> dict[str, Any] | None:
     return None
 
 
+@dataclass(frozen=True)
+class Provider:
+    """一个 OpenAI 兼容端点（厂商 + 它的 base_url 与 key）。"""
+
+    name: str
+    base_url: str
+    api_key: str
+
+
 class LlmClient:
-    """OpenAI 兼容的异步客户端。"""
+    """OpenAI 兼容的异步客户端。
+
+    支持**多个 provider**：模型名决定走哪个端点与哪把 key。
+    这样主厂商整体挂掉时（实测遇到过 SiliconFlow 返 500），
+    备用厂商还能顶上 —— 单点故障不会让整条链路一起哑。
+    """
 
     def __init__(self, settings: Settings | None = None) -> None:
         self.settings = settings or get_settings()
         self._client: httpx.AsyncClient | None = None
         self._lock = asyncio.Lock()
 
+    def provider_for(self, model: str) -> Provider:
+        """按模型名选 provider。
+
+        备用 provider **只认领它自己那一个模型名**，其余一律走主 provider ——
+        规则足够简单，不会出现「某个 Qwen 模型被误发到 DeepSeek」这种事。
+        """
+        backup_key = self.settings.backup_llm_api_key
+        if backup_key and model == self.settings.backup_llm_model:
+            return Provider(
+                name="deepseek",
+                base_url=self.settings.backup_llm_base_url,
+                api_key=backup_key,
+            )
+        return Provider(
+            name="siliconflow",
+            base_url=self.settings.llm_base_url,
+            api_key=self.settings.llm_api_key,
+        )
+
     @property
     def configured(self) -> bool:
-        return bool(self.settings.llm_api_key) and not self.settings.force_mock_llm
+        """只要**任意一个** provider 有 key 就算可用。"""
+        if self.settings.force_mock_llm:
+            return False
+        return bool(self.settings.llm_api_key or self.settings.backup_llm_api_key)
+
+    @property
+    def backup_configured(self) -> bool:
+        return bool(self.settings.backup_llm_api_key) and not self.settings.force_mock_llm
 
     @property
     def mode(self) -> str:
@@ -267,8 +307,15 @@ class LlmClient:
     def default_model(self, *, vision: bool = False) -> str:
         return self.settings.vlm_model if vision else self.settings.llm_model
 
+    def headers_for(self, provider: Provider) -> dict[str, str]:
+        return {
+            "Authorization": f"Bearer {provider.api_key}",
+            "Content-Type": "application/json",
+        }
+
     @property
     def _headers(self) -> dict[str, str]:
+        """主 provider 的头（向后兼容，内部已改用 headers_for）。"""
         return {
             "Authorization": f"Bearer {self.settings.llm_api_key}",
             "Content-Type": "application/json",
@@ -289,7 +336,12 @@ class LlmClient:
             raise LlmUnavailable("LLM 未配置或已强制 Mock 模式")
 
         target_model = model or self.default_model(vision=vision)
-        url = self.settings.llm_base_url.rstrip("/") + "/chat/completions"
+        provider = self.provider_for(target_model)
+        if not provider.api_key:
+            raise LlmUnavailable(
+                f"provider {provider.name} 没有配置 API key（模型 {target_model}）"
+            )
+        url = provider.base_url.rstrip("/") + "/chat/completions"
         payload: dict[str, Any] = {
             "model": target_model,
             "messages": messages,
@@ -307,7 +359,7 @@ class LlmClient:
             try:
                 response = await client.post(
                     url,
-                    headers=self._headers,
+                    headers=self.headers_for(provider),
                     json=payload,
                 )
             except httpx.TimeoutException as exc:
@@ -326,7 +378,7 @@ class LlmClient:
                         return LlmReply(
                             text=text,
                             model=target_model,
-                            provider="siliconflow",
+                            provider=provider.name,
                             latency_ms=latency,
                             usage=data.get("usage"),
                             raw=data,
@@ -378,7 +430,12 @@ class LlmClient:
             raise LlmUnavailable("LLM 未配置或已强制 Mock 模式")
 
         target_model = model or self.default_model(vision=vision)
-        url = self.settings.llm_base_url.rstrip("/") + "/chat/completions"
+        provider = self.provider_for(target_model)
+        if not provider.api_key:
+            raise LlmUnavailable(
+                f"provider {provider.name} 没有配置 API key（模型 {target_model}）"
+            )
+        url = provider.base_url.rstrip("/") + "/chat/completions"
         payload: dict[str, Any] = {
             "model": target_model,
             "messages": messages,
@@ -397,7 +454,11 @@ class LlmClient:
 
         try:
             async with client.stream(
-                "POST", url, headers=self._headers, json=payload, timeout=timeout
+                "POST",
+                url,
+                headers=self.headers_for(provider),
+                json=payload,
+                timeout=timeout,
             ) as response:
                 if response.status_code in (401, 403):
                     raise LlmUnavailable(
