@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import re
@@ -300,6 +301,14 @@ def build_prompt(subject: str = "mathematics", topic: str | None = None) -> str:
 
 MAX_VERIFY_PER_ANALYSIS = 8
 
+# 多张图片并行识别。设上限是为了别把模型的并发配额打满（打满会触发限流，
+# 反而比串行更慢）。
+VLM_CONCURRENCY = 4
+# 二次求解校验同样并行
+VERIFY_CONCURRENCY = 4
+# JSON 非法时，**每个模型**最多尝试这么多次；主模型用完才轮到备选模型
+JSON_ATTEMPTS_PER_MODEL = 5
+
 SOLVER_PROMPT = """你是一位中国高中数学老师。请**独立**解答下面这道单选题——
 只根据题目本身推导，不要猜测"标准答案"或"学生可能选什么"。
 
@@ -337,30 +346,46 @@ async def _solve_independently(
 async def verify_answers(
     questions: Sequence[RawQuestion], *, client: LlmClient | None = None
 ) -> list[str]:
-    """对没有题库背书的题目做二次求解校验，返回告警列表。"""
+    """对没有题库背书的题目做二次求解校验，返回告警列表。
+
+    各题之间并行（互不依赖），所以一整套试卷的校验耗时取决于最慢的那一道，
+    而不是所有题目之和。
+    """
     settings = get_settings()
     llm = client or get_llm()
     if not llm.configured:
         return []
 
     warnings: list[str] = []
-    checked = 0
-    for question in questions:
-        if question.bank_question_id is not None:
-            continue  # 题库已背书，可信
-        if not question.options or not question.correct_answer:
-            continue
-        if question.student_answer is None:
-            continue  # 学生没作答，不需要判定对错
-        if checked >= MAX_VERIFY_PER_ANALYSIS:
-            warnings.append("题目较多，部分题目未做二次校验，结果仅供参考")
-            break
-        checked += 1
 
-        solver_answer = await _solve_independently(
-            question.stem, question.options, llm, settings.llm_model
-        )
-        if solver_answer is None:
+    pending = [
+        question
+        for question in questions
+        if question.bank_question_id is None  # 题库已背书，可信
+        and question.options
+        and question.correct_answer
+        and question.student_answer is not None  # 没作答就不需要判定对错
+    ]
+    if len(pending) > MAX_VERIFY_PER_ANALYSIS:
+        warnings.append("题目较多，部分题目未做二次校验，结果仅供参考")
+        pending = pending[:MAX_VERIFY_PER_ANALYSIS]
+    if not pending:
+        return warnings
+
+    semaphore = asyncio.Semaphore(VERIFY_CONCURRENCY)
+
+    async def solve(question: RawQuestion) -> str | None:
+        async with semaphore:
+            return await _solve_independently(
+                question.stem, question.options, llm, settings.llm_model
+            )
+
+    solved = await asyncio.gather(
+        *(solve(question) for question in pending), return_exceptions=True
+    )
+
+    for question, solver_answer in zip(pending, solved):
+        if isinstance(solver_answer, BaseException) or solver_answer is None:
             warnings.append(
                 f"第 {question.question_number} 题的答案未能二次确认，本题不计入掌握度统计"
             )
@@ -368,6 +393,7 @@ async def verify_answers(
             question.correct_answer = None
             question.error_type = None
             continue
+
         if solver_answer == question.correct_answer:
             question.confidence = min(1.0, round(question.confidence + 0.05, 4))
             continue
@@ -403,48 +429,85 @@ async def analyze_images(
     settings = get_settings()
     llm = client or get_llm()
     prompt = build_prompt(subject, topic)
-    outcome = VlmOutcome()
 
     models = [settings.vlm_model]
     if settings.vlm_fallback_model and settings.vlm_fallback_model != settings.vlm_model:
         models.append(settings.vlm_fallback_model)
 
-    for image_index, (raw, mime) in enumerate(images):
-        payload: dict[str, Any] | None = None
-        last_error: Exception | None = None
-        used_model = models[0]
+    semaphore = asyncio.Semaphore(VLM_CONCURRENCY)
 
-        for model in models:
-            try:
-                payload, reply = await llm.complete_json(
-                    [build_user_message(prompt, [(raw, mime)])],
-                    model=model,
-                    temperature=0.1,
-                    max_tokens=3000,
-                    vision=True,
-                    retries=0,
-                )
+    async def analyze_one(
+        image_index: int, raw: bytes, mime: str
+    ) -> tuple[list[RawQuestion], str, list[str]]:
+        """单张图片：主模型先试，JSON 不合法就重试，用尽次数再换备选模型。"""
+        async with semaphore:
+            payload: dict[str, Any] | None = None
+            last_error: Exception | None = None
+            used_model = models[0]
+            notes: list[str] = []
+
+            for model in models:
+                try:
+                    payload, reply = await llm.complete_json(
+                        [build_user_message(prompt, [(raw, mime)])],
+                        model=model,
+                        temperature=0.1,
+                        max_tokens=3000,
+                        vision=True,
+                        retries=0,
+                        attempts=JSON_ATTEMPTS_PER_MODEL,
+                    )
+                except LlmUnavailable as exc:
+                    last_error = exc
+                    continue
+
                 used_model = reply.model
-                outcome.model = reply.model
                 if model != models[0]:
-                    outcome.warnings.append(f"主 VLM 不可用，已降级到 {model}")
+                    notes.append(
+                        f"第 {image_index + 1} 张：主 VLM 未成功，已降级到 {model}"
+                    )
                 break
-            except LlmUnavailable as exc:
-                last_error = exc
-                continue
 
-        if payload is None:
-            raise LlmUnavailable(
-                f"VLM 识别失败（已尝试 {', '.join(models)}）: {last_error}"
-            )
+            if payload is None:
+                raise LlmUnavailable(
+                    f"第 {image_index + 1} 张图片识别失败"
+                    f"（已尝试 {', '.join(models)}，"
+                    f"每个模型最多 {JSON_ATTEMPTS_PER_MODEL} 次）: {last_error}"
+                )
 
-        outcome.generated_by = "vlm"
-        parsed = raw_questions_from_payload(payload)
-        for question in parsed:
-            question.image_index = image_index
-        if not parsed:
-            outcome.warnings.append(f"第 {image_index + 1} 张图片未识别出题目")
+            parsed = raw_questions_from_payload(payload)
+            for question in parsed:
+                question.image_index = image_index
+            if not parsed:
+                notes.append(f"第 {image_index + 1} 张图片未识别出题目")
+            return parsed, used_model, notes
+
+    # 多张图片并行处理：互不依赖，耗时取决于最慢的一张
+    results = await asyncio.gather(
+        *(analyze_one(index, raw, mime) for index, (raw, mime) in enumerate(images)),
+        return_exceptions=True,
+    )
+
+    outcome = VlmOutcome(generated_by="vlm")
+    failed = 0
+    for index, result in enumerate(results):
+        if isinstance(result, BaseException):
+            failed += 1
+            outcome.warnings.append(f"第 {index + 1} 张图片分析失败：{result}")
+            continue
+        parsed, used_model, notes = result
         outcome.questions.extend(parsed)
+        outcome.warnings.extend(notes)
+        if used_model:
+            outcome.model = used_model
+
+    total = len(results)
+    if failed and failed == total:
+        raise LlmUnavailable(
+            "全部 {} 张图片都识别失败：{}".format(total, "；".join(outcome.warnings[-failed:]))
+        )
+    if failed:
+        outcome.warnings.append(f"共 {total} 张图片，其中 {failed} 张识别失败，已跳过")
 
     # 二次求解校验：没有题库背书的答案必须能被独立复现
     if outcome.questions:

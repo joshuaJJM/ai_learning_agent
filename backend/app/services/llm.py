@@ -62,33 +62,148 @@ def build_user_message(text: str, images: Sequence[tuple[bytes, str]] = ()) -> d
 
 
 _JSON_FENCE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL)
+_TRAILING_COMMA = re.compile(r",\s*([}\]])")
+
+# 模型回答里常见的坏 JSON 变体
+SMART_OPEN = "\u201c"  # “
+SMART_CLOSE = "\u201d"  # ”
+
+
+JSON_RETRY_HINT = (
+    "上面这个回答不是合法的 JSON（解析失败了）。请重新输出，并严格遵守：\n"
+    "1. 只输出一个 JSON 对象，前后不要有任何解释文字，也不要用 markdown 围栏；\n"
+    '2. 字符串内部不要出现 ASCII 双引号 "，需要引号时请改用中文引号 「」 或 “”；\n'
+    "3. 最后一项后面不要留多余的逗号。"
+)
+
+
+def _strip_fence(text: str) -> str:
+    fenced = _JSON_FENCE.search(text)
+    return fenced.group(1).strip() if fenced else text.strip()
+
+
+def _outermost_object(text: str) -> str:
+    start = text.find("{")
+    end = text.rfind("}")
+    if start == -1 or end <= start:
+        return text
+    return text[start : end + 1]
+
+
+def _normalize_smart_quotes(text: str) -> str:
+    """整段没有 ASCII 引号、只有中文引号时，说明模型把中文引号当成了 JSON 定界符。"""
+    if '"' not in text and (SMART_OPEN in text or SMART_CLOSE in text):
+        return text.replace(SMART_OPEN, '"').replace(SMART_CLOSE, '"')
+    return text
+
+
+def _escape_stray_quotes(text: str) -> str:
+    """转义 JSON 字符串**内部**未转义的 ASCII 双引号。
+
+    这是最常见的一类坏输出：模型在中文文本里本该写「引号」或 “引号”，
+    却打了 ASCII 的 "，于是字符串提前闭合、整个 JSON 解析失败。例如：
+
+        {"diagnosis": "学生把"单调递增"理解反了"}
+
+    判断方法：遇到引号时往后看第一个非空白字符，
+    如果是 , } ] : 就认为它是正常的闭合引号；否则它是正文里的裸引号，补上反斜杠。
+    """
+    out: list[str] = []
+    in_string = False
+    escaped = False
+    index = 0
+    length = len(text)
+
+    while index < length:
+        char = text[index]
+
+        if escaped:
+            out.append(char)
+            escaped = False
+            index += 1
+            continue
+
+        if char == "\\":
+            out.append(char)
+            escaped = True
+            index += 1
+            continue
+
+        if char == '"':
+            if not in_string:
+                in_string = True
+                out.append(char)
+                index += 1
+                continue
+
+            lookahead = index + 1
+            while lookahead < length and text[lookahead] in " \t\r\n":
+                lookahead += 1
+            following = text[lookahead] if lookahead < length else ""
+
+            if following in (",", "}", "]", ":"):
+                in_string = False
+                out.append(char)
+            else:
+                out.append('\\"')
+            index += 1
+            continue
+
+        out.append(char)
+        index += 1
+
+    return "".join(out)
+
+
+def _drop_trailing_commas(text: str) -> str:
+    return _TRAILING_COMMA.sub(r"\1", text)
+
+
+def _variants(raw: str) -> list[str]:
+    """逐步加固的候选串：原样 → 中文引号归一 → 转义裸引号 → 去尾逗号。"""
+    variants = [raw]
+
+    normalized = _normalize_smart_quotes(raw)
+    if normalized != raw:
+        variants.append(normalized)
+
+    for source in list(variants):
+        escaped = _escape_stray_quotes(source)
+        if escaped != source:
+            variants.append(escaped)
+
+    for source in list(variants):
+        trimmed = _drop_trailing_commas(source)
+        if trimmed != source:
+            variants.append(trimmed)
+
+    return variants
 
 
 def extract_json(text: str) -> dict[str, Any] | None:
     """从模型输出里尽量抠出一个 JSON 对象。
 
-    模型经常会加上 ```json 围栏或前后废话，这里做三层兜底解析。
+    模型经常加上 ```json 围栏、前后废话，或者在字符串里用错引号。
+    这里先切出候选文本，再对每个候选做递进式修复，直到能解析为止。
     """
     if not text:
         return None
-    candidates: list[str] = [text.strip()]
 
-    fenced = _JSON_FENCE.search(text)
-    if fenced:
-        candidates.append(fenced.group(1).strip())
+    stripped = _strip_fence(text)
+    seeds = [text.strip(), stripped, _outermost_object(stripped)]
 
-    start = text.find("{")
-    end = text.rfind("}")
-    if start != -1 and end > start:
-        candidates.append(text[start : end + 1])
-
-    for candidate in candidates:
-        try:
-            parsed = json.loads(candidate)
-        except (json.JSONDecodeError, TypeError):
+    seen: set[str] = set()
+    for seed in seeds:
+        if not seed or seed in seen:
             continue
-        if isinstance(parsed, dict):
-            return parsed
+        seen.add(seed)
+        for variant in _variants(seed):
+            try:
+                parsed = json.loads(variant)
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if isinstance(parsed, dict):
+                return parsed
     return None
 
 
@@ -215,21 +330,46 @@ class LlmClient:
         temperature: float = 0.2,
         max_tokens: int = 2048,
         vision: bool = False,
-        retries: int = 1,
+        retries: int = 0,
+        attempts: int = 1,
     ) -> tuple[dict[str, Any], LlmReply]:
-        reply = await self.complete(
-            messages,
-            model=model,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            json_mode=True,
-            vision=vision,
-            retries=retries,
+        """要求模型返回 JSON，解析失败则重试。
+
+        `attempts` 是"拿到合法 JSON 为止"的总尝试次数，不是 HTTP 重试次数。
+        （HTTP 层的重试由 `retries` 控制，二者独立。）
+
+        第 2 次起会在对话里追加一句更强硬的格式约束 —— 模型看到自己上一条
+        坏输出和具体错因，比单纯重发同一个请求成功率高得多。
+        """
+        attempts = max(1, attempts)
+        request_messages = list(messages)
+        last_text = ""
+
+        for attempt in range(attempts):
+            reply = await self.complete(
+                request_messages,
+                model=model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                json_mode=True,
+                vision=vision,
+                retries=retries,
+            )
+            parsed = extract_json(reply.text)
+            if parsed is not None:
+                return parsed, reply
+
+            last_text = reply.text
+            if attempt + 1 < attempts:
+                request_messages = [
+                    *messages,
+                    {"role": "assistant", "content": reply.text[:800]},
+                    {"role": "user", "content": JSON_RETRY_HINT},
+                ]
+
+        raise LlmUnavailable(
+            f"连续 {attempts} 次未返回合法 JSON，最后一次输出: {last_text[:200]}"
         )
-        parsed = extract_json(reply.text)
-        if parsed is None:
-            raise LlmUnavailable(f"模型未返回合法 JSON: {reply.text[:200]}")
-        return parsed, reply
 
 
 _client: LlmClient | None = None
