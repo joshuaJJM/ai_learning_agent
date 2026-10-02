@@ -7,7 +7,11 @@ from typing import Any
 from fastapi import APIRouter, Depends, status
 
 from .. import repositories
-from ..dependencies import current_user
+from ..dependencies import (
+    current_user,
+    idempotency_key_header,
+    resolve_idempotency_key,
+)
 from ..errors import (
     IDEMPOTENCY_CONFLICT,
     NO_QUESTIONS_AVAILABLE,
@@ -36,7 +40,20 @@ router = APIRouter(prefix="/api/v1/practice", tags=["practice"])
 async def create_session(
     payload: PracticeSessionCreateRequest,
     user: dict[str, Any] = Depends(current_user),
+    header_key: str | None = Depends(idempotency_key_header),
 ) -> PracticeSessionResponse:
+    endpoint = "POST /api/v1/practice/sessions"
+    raw_key = resolve_idempotency_key(header_key, payload.client_request_id)
+    idem_key = f"practice-create:{user['user_id']}:{raw_key}" if raw_key else None
+
+    if idem_key and not repositories.reserve_idempotency(
+        idem_key, user["user_id"], endpoint
+    ):
+        cached = repositories.get_idempotent_response(idem_key)
+        if cached:
+            return PracticeSessionResponse(**cached)
+        raise ApiError(IDEMPOTENCY_CONFLICT, "同一个请求正在处理中，请稍后重试")
+
     # 不指定知识点时走**标签推荐**（把所有标签按分数升序，取最弱标签的题）。
     # 指定了知识点则沿用原来的知识点内选题逻辑。
     if payload.knowledge_point_id:
@@ -51,7 +68,11 @@ async def create_session(
         session = practice_service.create_tag_session(
             user["user_id"], count=payload.count, book_id=payload.book_id
         )
-    return PracticeSessionResponse(**practice_service.session_response(session))
+
+    body = practice_service.session_response(session)
+    if idem_key:
+        repositories.put_idempotent_response(idem_key, user["user_id"], endpoint, body)
+    return PracticeSessionResponse(**body)
 
 
 @router.get("/sessions/{session_id}", response_model=PracticeSessionResponse)
@@ -92,13 +113,11 @@ async def submit_answer(
     session_id: str,
     payload: PracticeAnswerRequest,
     user: dict[str, Any] = Depends(current_user),
+    header_key: str | None = Depends(idempotency_key_header),
 ) -> PracticeAnswerResponse:
     endpoint = f"POST /api/v1/practice/sessions/{session_id}/answers"
-    idem_key = (
-        f"practice:{user['user_id']}:{session_id}:{payload.client_request_id}"
-        if payload.client_request_id
-        else None
-    )
+    raw_key = resolve_idempotency_key(header_key, payload.client_request_id)
+    idem_key = f"practice:{user['user_id']}:{session_id}:{raw_key}" if raw_key else None
 
     # **先占位再干活**。只「先查缓存」的话，两个并发请求会同时看到未命中，
     # 于是各写一次 Evidence、各动一次标签 —— 掌握度被算两遍。

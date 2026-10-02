@@ -537,6 +537,8 @@ class TutorSessionCreateRequest(BaseModel):
     )
     mime_type: str = "image/jpeg"
     difficulty: float | None = None
+    # 幂等：也可以直接用 Idempotency-Key 请求头
+    client_request_id: str | None = None
 
 
 class TutorProgress(BaseModel):
@@ -639,12 +641,15 @@ class PracticeSessionCreateRequest(BaseModel):
 
     **不填 `knowledge_point_id` 时走标签推荐**：服务端把所有标签按分数
     从小到大排序，返回包含分数最低那个标签的题目。
+
+    幂等：可以带 `Idempotency-Key` 请求头，或在这里填 `client_request_id`。
     """
 
     knowledge_point_id: str | None = None
     difficulty: float | None = Field(default=None, ge=0.0, le=1.0)
     book_id: str | None = None
     count: int = Field(default=5, ge=1, le=20)
+    client_request_id: str | None = None
 
 
 class PracticeQuestion(BaseModel):

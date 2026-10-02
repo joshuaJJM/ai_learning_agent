@@ -53,3 +53,26 @@ async def current_user(
     if user is None:
         raise ApiError(UNAUTHORIZED, "用户不存在")
     return user
+
+
+# ---------------------------------------------------------------------------
+# 幂等键
+# ---------------------------------------------------------------------------
+#
+# 契约说「**推荐**带 `Idempotency-Key` 请求头，或在请求体里带 `client_request_id`」。
+# 但一开始只有 homework 真的读了这个头，practice / tutor 只看请求体 ——
+# 客户端照文档只发请求头的话，这两个接口的重试**拿不到承诺的幂等保护**。
+#
+# 所以把读取收敛成一个依赖，所有写接口统一声明它，别再各写各的。
+
+async def idempotency_key_header(
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    x_idempotency_key: str | None = Header(default=None, alias="X-Idempotency-Key"),
+) -> str | None:
+    """从请求头取幂等键。两种常见写法都认。"""
+    return (idempotency_key or x_idempotency_key or "").strip() or None
+
+
+def resolve_idempotency_key(header_key: str | None, body_key: str | None) -> str | None:
+    """请求头优先，其次请求体。两者都认，避免客户端二选一时踩空。"""
+    return (header_key or body_key or "").strip() or None

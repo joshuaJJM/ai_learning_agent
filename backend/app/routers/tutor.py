@@ -12,7 +12,11 @@ from typing import Any
 from fastapi import APIRouter, Depends, status
 
 from .. import repositories
-from ..dependencies import current_user
+from ..dependencies import (
+    current_user,
+    idempotency_key_header,
+    resolve_idempotency_key,
+)
 from ..errors import (
     IDEMPOTENCY_CONFLICT,
     QUESTION_NOT_RECOGNIZED,
@@ -54,7 +58,20 @@ def _decode_base64_image(raw: str) -> tuple[bytes, str]:
 async def create_session(
     payload: TutorSessionCreateRequest,
     user: dict[str, Any] = Depends(current_user),
+    header_key: str | None = Depends(idempotency_key_header),
 ) -> TutorSessionResponse:
+    endpoint = "POST /api/v1/tutor/sessions"
+    raw_key = resolve_idempotency_key(header_key, payload.client_request_id)
+    idem_key = f"tutor-create:{user['user_id']}:{raw_key}" if raw_key else None
+
+    if idem_key and not repositories.reserve_idempotency(
+        idem_key, user["user_id"], endpoint
+    ):
+        cached = repositories.get_idempotent_response(idem_key)
+        if cached:
+            return TutorSessionResponse(**cached)
+        raise ApiError(IDEMPOTENCY_CONFLICT, "同一个请求正在处理中，请稍后重试")
+
     image = None
     if payload.image_base64:
         image = _decode_base64_image(payload.image_base64)
@@ -69,13 +86,20 @@ async def create_session(
             image=image,
         )
     except LookupError as exc:
+        if idem_key:
+            repositories.release_idempotency(idem_key)
         raise ApiError(WRONG_QUESTION_NOT_FOUND, "错题不存在") from exc
     except ValueError as exc:
+        if idem_key:
+            repositories.release_idempotency(idem_key)
         raise ApiError(
             QUESTION_NOT_RECOGNIZED, "没能识别出这道题，换一张更清晰的照片试试"
         ) from exc
 
-    return TutorSessionResponse(**tutor_service.session_response(session))
+    body = tutor_service.session_response(session)
+    if idem_key:
+        repositories.put_idempotent_response(idem_key, user["user_id"], endpoint, body)
+    return TutorSessionResponse(**body)
 
 
 @router.get(
@@ -102,13 +126,11 @@ async def submit_turn(
     session_id: str,
     payload: TutorAnswerRequest,
     user: dict[str, Any] = Depends(current_user),
+    header_key: str | None = Depends(idempotency_key_header),
 ) -> TutorTurnResponse:
     endpoint = f"POST /api/v1/tutor/sessions/{session_id}/turns"
-    idem_key = (
-        f"tutor:{user['user_id']}:{session_id}:{payload.client_request_id}"
-        if payload.client_request_id
-        else None
-    )
+    raw_key = resolve_idempotency_key(header_key, payload.client_request_id)
+    idem_key = f"tutor:{user['user_id']}:{session_id}:{raw_key}" if raw_key else None
 
     # **先占位再干活**：只「先查缓存」的话，两个并发请求会同时未命中，
     # 于是各追一条 turn、各写一次 Evidence，掌握度被算两遍。

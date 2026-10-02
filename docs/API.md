@@ -96,12 +96,24 @@ GET /api/v1/health       # 同上（等价别名）
 
 ### 幂等（重要）
 
-所有**会改变数据**的写接口都支持重复提交保护：
+所有**会改变数据**的写接口都支持重复提交保护。**两种传法等价，任选其一**：
 
-- 推荐：任意请求带 `Idempotency-Key: <客户端生成的 uuid>` 请求头
-- 或：请求体/表单里带 `client_request_id`
+- `Idempotency-Key: <客户端生成的 uuid>` 请求头（推荐，**所有写接口都认**）
+- 或请求体/表单里的 `client_request_id`
+
+> 两者都带时**以请求头为准**。同时也接受 `X-Idempotency-Key` 这个别名。
 
 不带幂等键时，手机断网重试会**把掌握度更新两次**。
+
+| 接口 | 幂等键 |
+|---|---|
+| `POST /api/v1/homework/analyses` | 请求头 + 表单 `client_request_id` |
+| `POST /api/v1/practice/sessions` | 请求头 + 请求体 `client_request_id` |
+| `POST /api/v1/practice/sessions/{id}/answers` | 请求头 + 请求体 `client_request_id` |
+| `POST /api/v1/tutor/sessions` | 请求头 + 请求体 `client_request_id` |
+| `POST /api/v1/tutor/sessions/{id}/turns` | 请求头 + 请求体 `client_request_id` |
+| `POST /api/v1/books/{book_id}/redeem` | 请求头 |
+| `PATCH /api/v1/wrong-questions/{id}` | 不需要 —— 同一状态重复提交结果相同（HTTP 语义上天然幂等） |
 
 服务端的实现是「**先原子占位，再干活，最后用真正的响应覆盖占位**」，
 所以**顺序重试**和**并发重试**都不会重复计分：
@@ -115,6 +127,10 @@ GET /api/v1/health       # 同上（等价别名）
 
 > 并发那一条是刻意的：与其静默地把掌握度算两遍，不如明确告诉客户端
 > 「这个请求已经在处理了」。客户端遇到 409 时**等 1 秒原样重发**即可。
+
+> ⚠️ 只发请求头、请求体里不带 `client_request_id` 是**完全支持**的。
+> （早期版本只有 `homework` 真的读了这个头，practice / tutor 会静默失去保护，
+> 已修复并有回归测试。）
 
 ### 其它响应头
 
