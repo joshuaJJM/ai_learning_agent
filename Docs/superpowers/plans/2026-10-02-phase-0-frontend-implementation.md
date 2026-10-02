@@ -177,7 +177,8 @@ App 在 composition root 默认组装 Mock→ViewModel→View，mode 为 live �
 - [ ] 执行 `git status --short`、`git remote -v`、`git diff`、`git diff --cached`、`git diff --check`，检查公开文档与源码不含真实 secret，`git check-ignore Docs/LOCAL_COORDINATION.md` 必须命中，`git ls-files Docs/LOCAL_COORDINATION.md` 必须为空咩
 - [ ] 逐文件审查既有公开 Docs 后加入 Git，逐文件暂存 App、Tests、UI Tests、pbxproj、workspace contents 与 assets，不用 `git add -A` 把未审查 ReferenceUIs 混入提交，报告说明有意保留的未跟踪参考图片咩
 - [ ] 暂存后再次检查 staged diff 和清单，若有额外代码修改则重新 Build/Test，否则复用本任务已通过的结果咩
-- [ ] 仅在验收完成后提交 `phase-0: bootstrap project and freeze contracts`，记录 hash 与 message，不修改其他队友负责的文件，不 push，并停止于 Phase 0 咩
+- [ ] 报告仅记录最终 commit message `phase-0: bootstrap project and freeze contracts`，无需写最终 hash，可注明「final hash reported after commit」，避免自引用咩
+- [ ] 仅在验收完成后提交 `phase-0: bootstrap project and freeze contracts`，实际 hash 在提交后的终端与最终汇报中单独报告，不写回报告、不为自身 hash 创建额外 commit、不 amend 历史，不修改其他队友负责的文件，不 push，并停止于 Phase 0 咩
 
 ## 自查与执行交接咩
 
