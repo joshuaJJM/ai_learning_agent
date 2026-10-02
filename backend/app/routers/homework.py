@@ -30,8 +30,6 @@ from ..services import homework_service
 router = APIRouter(prefix="/api/v1/homework", tags=["homework"])
 
 MAX_IMAGE_BYTES = 12 * 1024 * 1024  # 12 MB / 张
-ALLOWED_MIME_PREFIX = "image/"
-IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".heic", ".webp", ".bmp")
 
 
 @router.post(
@@ -42,7 +40,9 @@ IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".heic", ".webp", ".bmp")
 )
 async def create_analysis(
     background: BackgroundTasks,
-    images: list[UploadFile] = File(..., description="一张或多张题目/试卷图片"),
+    images: list[UploadFile] | None = File(
+        default=None, description="一张或多张题目/试卷图片（字段名 images，可重复）"
+    ),
     subject: str = Form(default="mathematics"),
     topic: str | None = Form(default=None),
     book_id: str | None = Form(default=None),
@@ -52,7 +52,7 @@ async def create_analysis(
     user: dict[str, Any] = Depends(current_user),
 ) -> AnalysisCreateResponse:
     if not images:
-        raise ApiError(INVALID_IMAGE, "没有收到任何图片")
+        raise ApiError(INVALID_IMAGE, "没有收到任何图片（表单字段名应为 images）")
 
     payloads: list[homework_service.UploadedImage] = []
     for upload in images:
@@ -65,16 +65,16 @@ async def create_analysis(
                 f"图片过大：{len(data) // 1024 // 1024} MB，上限 "
                 f"{MAX_IMAGE_BYTES // 1024 // 1024} MB",
             )
-        content_type = (upload.content_type or "").lower()
-        filename = (upload.filename or "").lower()
-        if not content_type.startswith(ALLOWED_MIME_PREFIX) and not filename.endswith(
-            IMAGE_EXTENSIONS
-        ):
+
+        # 只认文件头，不信客户端声明的 content-type / 文件名
+        mime = homework_service.sniff_image_mime(data)
+        if mime is None:
+            declared = upload.content_type or "未知"
             raise ApiError(
                 INVALID_IMAGE,
-                f"不支持的文件类型: {content_type or filename or 'unknown'}",
+                f"这个文件不像是图片（声明的类型是 {declared}，"
+                f"但文件头既不是 JPEG/PNG/HEIC 也不是 WebP）",
             )
-        mime = content_type if content_type.startswith(ALLOWED_MIME_PREFIX) else "image/jpeg"
         payloads.append(
             homework_service.UploadedImage(
                 data=data, mime_type=mime, filename=upload.filename or ""

@@ -18,6 +18,11 @@
 | 健康检查 | `http://121.43.137.176:17283/health` |
 | 传输 | 明文 HTTP（比赛环境未配证书）。**上生产必须换 HTTPS。** |
 
+> **Base URL 就是 `http://121.43.137.176:17283`，不要把它写成某个具体接口的地址。**
+> 完整请求地址 = Base URL + 接口路径，例如 `http://121.43.137.176:17283/api/v1/home`。
+> 如果把 `.../api/v1/demo/seed` 这类完整接口地址错当成 Base URL，
+> 会拼出 `/api/v1/demo/seed/v1/models` 这种不存在的路径（服务端返回 404）。
+
 ### 鉴权（刻意从简）
 
 **单用户 Demo，前端联调阶段可以完全不传鉴权头。**
@@ -179,12 +184,35 @@ Idempotency-Key: <可选，强烈建议>
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
-| `images` | file[] | ✅ | 一张或多张图片，单张 ≤ 12 MB，支持 jpg/png/heic/webp |
+| `images` | file[] | ✅ | 一张或多张图片，字段名必须是 `images`，可重复出现 |
 | `subject` | string | | 默认 `mathematics` |
 | `topic` | string | | 如 `derivative` |
 | `book_id` | string | | 来源图书 |
 | `source_name` | string | | 如「某作业本第 32 页」 |
 | `client_request_id` | string | | 幂等备用字段 |
+
+**两张图片的 multipart 长这样**（注意每个文件部分都要有 `filename`）：
+
+```text
+Content-Disposition: form-data; name="images"; filename="page1.jpg"
+Content-Type: image/jpeg
+<binary>
+
+Content-Disposition: form-data; name="images"; filename="page2.jpg"
+Content-Type: image/jpeg
+<binary>
+```
+
+关于图片格式校验，有两点是刻意这么做的：
+
+- **服务端只认文件头（魔数），不信你声明的 `Content-Type` 和文件名。**
+  所以 `application/octet-stream` + 不带扩展名的 `filename="photo"` 也能正常上传 ——
+  这是 `URLSession` 手工拼 multipart 时的默认行为，不该因此被拒。
+- 反过来，**声明成 `image/png` 但字节不是图片的，会被拒**（`INVALID_IMAGE`）。
+
+> ⚠️ 文件部分**必须带 `filename`**。如果 `Content-Disposition` 里没有
+> `filename=`，服务端会把它当作普通文本字段解析，二进制内容会被破坏，
+> 无法还原成图片，只能返回参数错误。任何标准 multipart 构造方式默认都会带上它。
 
 **立刻返回 202，不等 AI 跑完：**
 

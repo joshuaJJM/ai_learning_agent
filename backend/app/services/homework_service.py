@@ -44,6 +44,31 @@ MIME_EXT = {
     "image/webp": "webp",
 }
 
+# 按文件头判断真实格式。**不要信客户端声明的 content-type 和文件名** ——
+# 手工拼 multipart 的客户端（例如 URLSession）默认给文件部分填
+# application/octet-stream，文件名也常常没有扩展名。
+_MAGIC_SIGNATURES: tuple[tuple[bytes, str], ...] = (
+    (b"\xff\xd8\xff", "image/jpeg"),
+    (b"\x89PNG\r\n\x1a\n", "image/png"),
+    (b"GIF87a", "image/gif"),
+    (b"GIF89a", "image/gif"),
+    (b"BM", "image/bmp"),
+)
+_HEIC_BRANDS = (b"heic", b"heix", b"hevc", b"hevx", b"mif1", b"msf1")
+
+
+def sniff_image_mime(data: bytes) -> str | None:
+    """按魔数识别图片格式，识别不出返回 None。"""
+    for signature, mime in _MAGIC_SIGNATURES:
+        if data.startswith(signature):
+            return mime
+    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    # HEIC/HEIF：ISO-BMFF 容器，第 4-8 字节是 'ftyp'，接着是品牌
+    if len(data) >= 12 and data[4:8] == b"ftyp" and data[8:12] in _HEIC_BRANDS:
+        return "image/heic"
+    return None
+
 
 def _stages(active: int) -> list[dict[str, str]]:
     """active = 正在进行的阶段下标；之前的算 done，之后的算 pending。

@@ -224,7 +224,50 @@ def test_bad_image_is_rejected_with_error_code(
     response = client.post(
         "/api/v1/homework/analyses",
         headers=auth_headers,
-        files={"images": ("notes.txt", b"not an image", "text/plain")},
+        files={"images": ("notes.png", b"this is definitely not an image", "image/png")},
+    )
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "INVALID_IMAGE"
+
+
+def test_upload_accepts_octet_stream_without_extension(
+    client: TestClient, auth_headers: dict[str, str], fake_vlm: None
+) -> None:
+    """手工拼 multipart 的客户端（URLSession）默认发 octet-stream 且文件名没扩展名。
+
+    以前这种请求会被拒（因为我们信了客户端声明的 content-type / 文件名），
+    但图片本身是好的。现在只认文件头，所以应当接受。
+    """
+    data = FIXTURE_IMAGE.read_bytes()
+    response = client.post(
+        "/api/v1/homework/analyses",
+        headers=auth_headers,
+        files={"images": ("photo", data, "application/octet-stream")},
+    )
+    assert response.status_code == 202, response.text
+
+
+def test_upload_rejects_non_image_bytes_even_with_image_headers(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    """反过来也要成立：声明成 image/png 但字节不是图片，仍要拒绝。"""
+    response = client.post(
+        "/api/v1/homework/analyses",
+        headers=auth_headers,
+        files={"images": ("fake.png", b"plain text pretending to be a png", "image/png")},
+    )
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "INVALID_IMAGE"
+
+
+def test_upload_without_images_returns_invalid_image_not_validation_error(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    """缺字段应当是明确的 INVALID_IMAGE，而不是含糊的 422。"""
+    response = client.post(
+        "/api/v1/homework/analyses",
+        headers=auth_headers,
+        data={"subject": "mathematics"},
     )
     assert response.status_code == 400
     assert response.json()["error_code"] == "INVALID_IMAGE"
