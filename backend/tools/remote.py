@@ -32,6 +32,7 @@ EXCLUDE_NAMES = {
     "venv",
     "__pycache__",
     ".pytest_cache",
+    ".pytest_tmp",
     ".mypy_cache",
     ".ruff_cache",
     "data",
