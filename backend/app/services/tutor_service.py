@@ -44,6 +44,11 @@ PHASE_ORDER = (
 
 MAX_HINTS = 2
 
+# 正式题答错后进入补救（remedial），最多允许这么深。
+# 第 4 层仍答错就停止继续生成问题，改为揭示答案并允许进入下一题 ——
+# 不允许出现第 5 层。
+MAX_REMEDIAL_DEPTH = 4
+
 
 # ---------------------------------------------------------------------------
 # 教学脚本
@@ -148,21 +153,8 @@ def _build_plan(user_id: str, kp_id: str, difficulty: float) -> list[dict[str, A
                 )
             )
 
-    # 2) 降级问题（答错时才插入，不计入进度）
-    remedial = script.get("remedial")
-    if remedial:
-        plan.append(
-            _step(
-                "remedial",
-                {
-                    "text": remedial["text"],
-                    "choices": remedial.get("choices", {}),
-                    "answer": remedial.get("answer"),
-                    "explanation": remedial.get("explanation", ""),
-                },
-                counts_toward=False,
-            )
-        )
+    # 2) 降级/补救问题不再写进计划 —— 它由答题结果动态触发，
+    #    而且要支持最多 MAX_REMEDIAL_DEPTH 层。见 _next_remedial_step()。
 
     # 3) 讲解
     teach_text = script.get("teach") or (
@@ -219,6 +211,153 @@ def _total_steps(plan: Sequence[dict[str, Any]]) -> int:
     return max(1, sum(1 for s in plan if s["counts_toward"]))
 
 
+# ---------------------------------------------------------------------------
+# 补救（remedial）状态
+# ---------------------------------------------------------------------------
+#
+# 正式题答错 → 进入补救，最多 4 层：
+#   第 1 层优先用教学脚本里手写的 remedial（更贴合这个知识点）
+#   第 2–4 层从题库里挑更简单的、没用过的题
+#
+# 任意一层答对 → 结束补救，继续正常流程
+# 第 4 层仍答错 → 不再出题，揭示答案并允许进入下一题
+# 补救期间**绝不**下发正式题的正确答案。
+
+def _remedial_used_texts(session: dict[str, Any]) -> set[str]:
+    history = session.get("remedial_history") or []
+    return {str(item.get("text") or "") for item in history}
+
+
+def _next_remedial_step(
+    session: dict[str, Any], *, depth: int, origin_index: int
+) -> dict[str, Any] | None:
+    """为第 depth 层挑一道补救题。挑不到就返回 None（调用方改为揭示答案）。"""
+    used = _remedial_used_texts(session)
+    # 正式题本身也不该被当成补救题重复出
+    for step in session.get("plan", []):
+        text = step.get("content", {}).get("text")
+        if text:
+            used.add(str(text))
+
+    kp_id = session["knowledge_point_id"]
+    script = _script_for(kp_id) or {}
+
+    # 第 1 层：手写的 remedial 最好用
+    if depth == 1:
+        remedial = script.get("remedial")
+        if remedial and str(remedial.get("text") or "") not in used:
+            return _step(
+                "remedial",
+                {
+                    "text": remedial["text"],
+                    "choices": remedial.get("choices", {}),
+                    "answer": remedial.get("answer"),
+                    "explanation": remedial.get("explanation", ""),
+                    "difficulty": 0.3,
+                },
+                counts_toward=False,
+            )
+
+    # 其余层（以及脚本里没有 remedial 时）：从题库挑更简单的题
+    candidates = _pick_bank(
+        session["user_id"],
+        kp_id,
+        target_difficulty=min(0.45, max(0.15, 0.45 - 0.08 * (depth - 1))),
+        count=8,
+    )
+    for question in candidates:
+        if question.stem in used:
+            continue
+        return _step(
+            "remedial",
+            {
+                "text": question.stem,
+                "choices": dict(question.options),
+                "answer": question.answer,
+                "explanation": question.explanation,
+                "question_id": question.id,
+                "difficulty": question.difficulty,
+            },
+            counts_toward=False,
+        )
+    return None
+
+
+def _start_remedial(
+    session: dict[str, Any], *, origin_index: int, origin_step: dict[str, Any]
+) -> bool:
+    """进入补救第 1 层。返回 False 表示没有可用的补救题。"""
+    step = _next_remedial_step(session, depth=1, origin_index=origin_index)
+    if step is None:
+        return False
+    session["remedial"] = {
+        "depth": 1,
+        "origin_index": origin_index,
+        "origin_content": dict(origin_step.get("content") or {}),
+        "step": step,
+    }
+    session.setdefault("remedial_history", []).append(
+        {"depth": 1, "text": step["content"]["text"]}
+    )
+    return True
+
+
+def _deeper_remedial(session: dict[str, Any]) -> bool:
+    """补救答错 → 进入下一层。返回 False 表示已到上限或没题了。"""
+    remedial = session.get("remedial") or {}
+    depth = int(remedial.get("depth", 0)) + 1
+    if depth > MAX_REMEDIAL_DEPTH:
+        return False
+    step = _next_remedial_step(
+        session, depth=depth, origin_index=int(remedial.get("origin_index", 0))
+    )
+    if step is None:
+        return False
+    remedial["depth"] = depth
+    remedial["step"] = step
+    session["remedial"] = remedial
+    session.setdefault("remedial_history", []).append(
+        {"depth": depth, "text": step["content"]["text"]}
+    )
+    return True
+
+
+def _end_remedial(session: dict[str, Any]) -> dict[str, Any] | None:
+    """结束补救，返回触发它的那道正式题的内容（用于揭示答案）。"""
+    remedial = session.pop("remedial", None)
+    if not remedial:
+        return None
+    origin_index = int(remedial.get("origin_index", 0))
+    # 补救结束 → 那道正式题就算过了，直接推进到它后面
+    session["step_index"] = max(session.get("step_index", 0), origin_index + 1)
+    return dict(remedial.get("origin_content") or {})
+
+
+def _active_step(session: dict[str, Any]) -> dict[str, Any] | None:
+    """当前正在作答的步骤：补救优先，否则取计划里的当前步。"""
+    remedial = session.get("remedial")
+    if remedial:
+        return remedial["step"]
+    plan = session["plan"]
+    index = session.get("step_index", 0)
+    if index >= len(plan):
+        return None
+    return plan[index]
+
+
+def _revealed(content: dict[str, Any]) -> dict[str, Any] | None:
+    """把一道题的答案+解析整理成可下发的形状。没有答案就返回 None。"""
+    answer = (content.get("answer") or "").upper()
+    if not answer:
+        return None
+    return {
+        "question_id": content.get("question_id"),
+        "question_text": content.get("text"),
+        "correct_key": answer,
+        "explanation": content.get("explanation") or None,
+    }
+
+
 def _progress_of(session: dict[str, Any]) -> dict[str, Any]:
     plan = session["plan"]
     index = session["step_index"]
@@ -236,13 +375,15 @@ def _progress_of(session: dict[str, Any]) -> dict[str, Any]:
 
 
 def _phase_of(session: dict[str, Any]) -> str:
-    plan = session["plan"]
-    index = session["step_index"]
-    if session.get("completed") or index >= len(plan):
+    if session.get("completed"):
         return "completed"
-    kind = plan[index]["kind"]
+    step = _active_step(session)
+    if step is None:
+        return "completed"
+    kind = step["kind"]
     return {
         "concept": "diagnose",
+        # 补救仍然发生在诊断/讲解阶段，前端按 turn_type 区分即可
         "remedial": "diagnose",
         "explain": "teach",
         "guided": "guided_practice",
@@ -263,6 +404,11 @@ def _turn_type_of(kind: str, *, after_wrong: bool) -> str:
     if kind == "independent":
         return "independent_practice"
     return "summary"
+
+
+def _remedial_depth(session: dict[str, Any]) -> int:
+    remedial = session.get("remedial") or {}
+    return int(remedial.get("depth", 0) or 0)
 
 
 # ---------------------------------------------------------------------------
@@ -288,19 +434,19 @@ def _render_turn(
     *,
     after_wrong: bool = False,
     feedback: str | None = None,
+    strategy: str | None = None,
+    answer_reveal: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    plan = session["plan"]
-    index = session["step_index"]
+    step = _active_step(session)
     completed = session.get("completed", False)
 
-    if completed or index >= len(plan):
-        return _summary_turn(session)
+    if completed or step is None:
+        return _summary_turn(
+            session, strategy=strategy, answer_reveal=answer_reveal
+        )
 
-    step = plan[index]
     kind = step["kind"]
     content = step["content"]
-    kp_id = session["knowledge_point_id"]
-    point = knowledge.get_point(kp_id)
 
     if kind == "explain":
         return {
@@ -309,10 +455,15 @@ def _render_turn(
             "choices": {},
             "allow_free_text": False,
             "question_id": None,
+            "strategy": strategy,
+            "remedial_depth": _remedial_depth(session),
+            "answer_reveal": answer_reveal,
         }
 
     if kind == "summary":
-        return _summary_turn(session)
+        return _summary_turn(
+            session, strategy=strategy, answer_reveal=answer_reveal
+        )
 
     text = content["text"]
     if feedback:
@@ -325,10 +476,19 @@ def _render_turn(
         "choices": choices,
         "allow_free_text": not choices,
         "question_id": content.get("question_id"),
+        "strategy": strategy,
+        "remedial_depth": _remedial_depth(session),
+        # 补救进行中永远是 None —— 绝不提前泄漏正式题答案
+        "answer_reveal": answer_reveal,
     }
 
 
-def _summary_turn(session: dict[str, Any]) -> dict[str, Any]:
+def _summary_turn(
+    session: dict[str, Any],
+    *,
+    strategy: str | None = None,
+    answer_reveal: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     point = knowledge.get_point(session["knowledge_point_id"])
     name = point.name if point else "这个知识点"
     changes = session.get("knowledge_changes") or []
@@ -350,6 +510,9 @@ def _summary_turn(session: dict[str, Any]) -> dict[str, Any]:
         "choices": {},
         "allow_free_text": False,
         "question_id": None,
+        "strategy": strategy,
+        "remedial_depth": _remedial_depth(session),
+        "answer_reveal": answer_reveal,
     }
 
 
@@ -376,6 +539,11 @@ def _persist_turn(session: dict[str, Any], turn: dict[str, Any]) -> dict[str, An
         "progress": _progress_of(session),
         "completed": session.get("completed", False),
         "question_id": turn.get("question_id"),
+        # 服务端对教学策略的决定，客户端只呈现、不推断
+        "strategy": turn.get("strategy"),
+        "remedial_depth": turn.get("remedial_depth", 0),
+        # 仅在「答对」或「补救耗尽」时出现；补救进行中恒为 None
+        "answer_reveal": turn.get("answer_reveal"),
         "created_at": db.to_iso(db.utcnow()),
     }
     session.setdefault("history", []).append(record)
@@ -542,12 +710,14 @@ def submit_answer(
         raise RuntimeError("completed")
 
     plan = session["plan"]
-    index = session["step_index"]
-    if index >= len(plan):
+    index = session.get("step_index", 0)
+
+    step = _active_step(session)
+    if step is None:
         raise RuntimeError("completed")
-    step = plan[index]
     content = step["content"]
     kind = step["kind"]
+    in_remedial = session.get("remedial") is not None
 
     expected = (content.get("answer") or "").upper() or None
     chosen = (selected_key or "").strip().upper() or None
@@ -584,7 +754,11 @@ def submit_answer(
                     confidence=1.0 if kind != "remedial" else 0.7,
                     detail=None
                     if is_correct
-                    else "在 AI Tutor 的概念诊断中作答错误",
+                    else (
+                        f"辅导中第 {_remedial_depth(session)} 层补救题仍答错"
+                        if in_remedial
+                        else "在 AI Tutor 的概念诊断中作答错误"
+                    ),
                     answer_excerpt=chosen,
                 )
             ],
@@ -592,37 +766,57 @@ def submit_answer(
         # Tutor 的题来自教学脚本，没有题库题目 id，所以按知识点反查标签计分
         tag_service.apply_for_knowledge_point(user_id, session["knowledge_point_id"], is_correct)
 
+    # ------------------------------------------------------------------
+    # 教学策略：由服务端决定，客户端只负责呈现
+    # ------------------------------------------------------------------
     strategy: str
-    if kind == "concept" and not is_correct:
-        # 答错 → 插入降级问题（若还没有被用过）
-        remedial_index = next(
-            (i for i, s in enumerate(plan) if s["kind"] == "remedial"), None
-        )
-        hint_count = session.get("hint_count", 0)
-        if remedial_index is not None and remedial_index >= index:
-            session["step_index"] = remedial_index
+    answer_reveal: dict[str, Any] | None = None
+    force_turn_type: str | None = None
+
+    if in_remedial:
+        if is_correct:
+            # 任意一层答对 → 结束补救，回到正常教学/下一正式题
+            _end_remedial(session)
+            session["hint_count"] = 0
+            strategy = "advance"
+            answer_reveal = {"current": _revealed(content), "origin": None}
+        elif _deeper_remedial(session):
+            # 还没到上限，继续下探一层
             strategy = "simplify"
         else:
-            session["hint_count"] = hint_count + 1
-            strategy = "hint"
-    elif not is_correct and session.get("hint_count", 0) < MAX_HINTS:
+            # 第 4 层仍答错（或没题可出了）→ 停止生成问题，揭示答案
+            origin = _end_remedial(session)
+            session["hint_count"] = 0
+            strategy = "reveal_answer"
+            force_turn_type = "remedial_exhausted"
+            answer_reveal = {
+                "current": _revealed(content),
+                "origin": _revealed(origin or {}),
+            }
+    elif is_correct:
+        session["step_index"] = index + 1
+        session["hint_count"] = 0
+        strategy = "advance"
+        answer_reveal = {"current": _revealed(content), "origin": None}
+    elif _start_remedial(session, origin_index=index, origin_step=step):
+        # 正式题答错 → 进入补救第 1 层
+        strategy = "simplify"
+    elif session.get("hint_count", 0) < MAX_HINTS:
         session["hint_count"] = session.get("hint_count", 0) + 1
         strategy = "hint"
     else:
         session["step_index"] = index + 1
-        strategy = "advance" if is_correct else "re_explain"
+        session["hint_count"] = 0
+        strategy = "re_explain"
+        answer_reveal = {"current": _revealed(content), "origin": None}
 
-    # 跳过不需要学生作答的步骤：
-    #   - explain（讲解卡片）不是问题，不该等作答，其文字并入下一轮
-    #   - 概念题答对了就不必再问降级题
+    # 跳过不需要学生作答的步骤：explain（讲解卡片）不是问题，不该等作答，
+    # 其文字并入下一轮。
     preamble: list[str] = []
     while session["step_index"] < len(plan):
         upcoming = plan[session["step_index"]]
         if upcoming["kind"] == "explain":
             preamble.append(upcoming["content"]["text"])
-            session["step_index"] += 1
-            continue
-        if upcoming["kind"] == "remedial" and is_correct:
             session["step_index"] += 1
             continue
         break
@@ -647,15 +841,33 @@ def submit_answer(
         kind=kind,
         hint_count=session.get("hint_count", 0),
     )
+    if in_remedial and not is_correct and strategy == "simplify":
+        feedback = (
+            f"还是不对。我们把这一步再拆细一点"
+            f"（第 {_remedial_depth(session)}/{MAX_REMEDIAL_DEPTH} 层）。"
+        )
+    if strategy == "reveal_answer":
+        feedback = (
+            "这道题我们换个方式讲。"
+            "下面直接给你正确答案和解析 —— 看完我们就继续下一题。"
+        )
 
-    # 答对且当前步骤带解析 → 立刻把解析给出来
+    # 答对且当前步骤带解析 → 立刻把解析给出来（保持原有语义）
     explanation = (
         content["explanation"] if (is_correct and content.get("explanation")) else None
     )
 
     if preamble:
         feedback = "\n\n".join([feedback, *preamble])
-    turn = _render_turn(session, after_wrong=not is_correct, feedback=feedback)
+    turn = _render_turn(
+        session,
+        after_wrong=not is_correct,
+        feedback=feedback,
+        strategy=strategy,
+        answer_reveal=answer_reveal,
+    )
+    if force_turn_type:
+        turn["turn_type"] = force_turn_type
     record = _persist_turn(session, turn)
     _save(session)
 
@@ -670,6 +882,8 @@ def submit_answer(
             "feedback": feedback,
             "explanation": explanation,
             "strategy": strategy,
+            "remedial_depth": _remedial_depth(session),
+            "remedial_exhausted": strategy == "reveal_answer",
         },
         "knowledge_changes": [
             c.model_dump(mode="json") for c in evidence_changes

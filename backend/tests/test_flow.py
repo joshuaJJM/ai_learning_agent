@@ -357,11 +357,20 @@ def test_unknown_knowledge_point_returns_error(
 # ---------------------------------------------------------------------------
 
 def _current_expected_answer(session_id: str) -> str | None:
-    """白盒读取当前步骤的标准答案（客户端当然看不到，这是测试特权）。"""
+    """白盒读取当前步骤的标准答案（客户端当然看不到，这是测试特权）。
+
+    注意要**补救优先**：补救题不在 plan 里，而是挂在 session["remedial"] 上。
+    只读 plan[step_index] 的话，补救期间会读到触发补救的那道正式题 ——
+    之前这个 helper 就是这么写的，靠 demo 脚本里 concept 与 remedial 的答案
+    恰好都是 A 才没暴露。
+    """
     from app import repositories
 
     session = repositories.get_tutor_session(session_id)
     assert session is not None
+    remedial = session.get("remedial")
+    if remedial:
+        return remedial["step"]["content"].get("answer")
     plan = session["plan"]
     index = session["step_index"]
     if index >= len(plan):

@@ -1,15 +1,27 @@
 """AI Tutor 接口。
 
 刻意不做成 `POST /chat`——Tutor 是有状态的 Session（契约 §九）。
+
+提交作答支持两种返回：
+
+  - `stream: false`（默认）→ 普通 JSON，契约不变
+  - `stream: true`          → SSE：`meta` → `delta`×N → `turn` → `done`
+
+**服务端始终是 Tutor 状态的唯一权威**：当前阶段、下一教学策略、补救层级、
+正确答案、是否结束补救、掌握度变化、会话是否完成，全部由服务端决定。
+`delta` 只承载自然语言，客户端**不要**从里面解析题目或选项 ——
+所有可交互数据都通过最终的结构化 `turn` 事件下发。
 """
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import binascii
-from typing import Any
+from typing import Any, AsyncIterator
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
+from fastapi.responses import StreamingResponse
 
 from .. import repositories
 from ..dependencies import (
@@ -24,6 +36,7 @@ from ..errors import (
     SESSION_NOT_FOUND,
     WRONG_QUESTION_NOT_FOUND,
     ApiError,
+    request_id_of,
 )
 from ..schemas import (
     TutorAnswerRequest,
@@ -31,6 +44,12 @@ from ..schemas import (
     TutorSessionResponse,
     TutorTurnResponse,
 )
+from ..sse import SSE_HEADERS, chunk_text, sse_frame
+
+# 流式打字机的节奏。tutor 的文案来自教学脚本（确定性文本），
+# 这里按片下发只是为了前端能边收边渲染，不涉及模型调用。
+STREAM_CHUNK_CHARS = 18
+STREAM_CHUNK_DELAY = 0.012
 from ..services import tutor_service
 
 router = APIRouter(prefix="/api/v1/tutor", tags=["tutor"])
@@ -117,20 +136,126 @@ async def get_session(
     return TutorSessionResponse(**tutor_service.session_response(session))
 
 
+def _turn_body(session_id: str, result: dict[str, Any]) -> dict[str, Any]:
+    session = result["session"]
+    return {
+        "tutor_session_id": session_id,
+        "evaluation": result["evaluation"],
+        "turn": result["turn"],
+        "phase": session["phase"],
+        "completed": session["completed"],
+        "progress": result["turn"]["progress"],
+        "student_understanding": session["student_understanding"],
+        "knowledge_changes": result["knowledge_changes"],
+        "next_action": session.get("next_action"),
+    }
+
+
+async def _stream_turn(
+    body: dict[str, Any], request_id: str
+) -> AsyncIterator[str]:
+    """把一轮作答渲染成 SSE。
+
+    事件顺序固定：`meta` → `delta`×N → `turn` → `done`。
+
+    - `delta` 只是自然语言的打字机效果，**不是权威数据**
+    - `turn` 才是最终权威结构化结果，所有可交互 UI 都读它
+    - 客户端应以 `turn` 为准覆盖 delta 累积出来的文本
+    """
+    turn = body["turn"]
+    try:
+        yield sse_frame(
+            "meta",
+            {
+                "request_id": request_id,
+                "tutor_session_id": body["tutor_session_id"],
+                "seq": turn["seq"],
+                "phase": body["phase"],
+                "turn_type": turn["turn_type"],
+                "remedial_depth": turn.get("remedial_depth", 0),
+            },
+        )
+        for piece in chunk_text(turn["text"], STREAM_CHUNK_CHARS):
+            if piece:
+                yield sse_frame("delta", {"content": piece})
+                if STREAM_CHUNK_DELAY:
+                    await asyncio.sleep(STREAM_CHUNK_DELAY)
+        yield sse_frame("turn", turn)
+        yield sse_frame(
+            "done",
+            {
+                "request_id": request_id,
+                "seq": turn["seq"],
+                "phase": body["phase"],
+                "completed": body["completed"],
+                "progress": body["progress"],
+                "student_understanding": body["student_understanding"],
+            },
+        )
+    except Exception as exc:  # noqa: BLE001 — 流已经开出去了，只能以事件收尾
+        yield sse_frame(
+            "error",
+            {
+                "error_code": "INTERNAL_ERROR",
+                "message": "生成这一轮时出错",
+                "request_id": request_id,
+                "detail": type(exc).__name__,
+            },
+        )
+
+
+def _stream_response(body: dict[str, Any], request_id: str) -> StreamingResponse:
+    return StreamingResponse(
+        _stream_turn(body, request_id),
+        media_type="text/event-stream",
+        headers=SSE_HEADERS,
+    )
+
+
 @router.post(
     "/sessions/{session_id}/turns",
     response_model=TutorTurnResponse,
     summary="提交作答，Agent 决定下一步",
+    responses={
+        200: {
+            "description": (
+                "默认返回 JSON。请求体带 `\"stream\": true` 时改为 "
+                "`text/event-stream`：meta → delta×N → turn → done。"
+            ),
+            "content": {
+                "text/event-stream": {
+                    "schema": {"type": "string"},
+                    "example": (
+                        'event: meta\n'
+                        'data: {"request_id":"...","tutor_session_id":"tut_...",'
+                        '"seq":3,"phase":"diagnose","turn_type":"simpler_question",'
+                        '"remedial_depth":1}\n\n'
+                        'event: delta\n'
+                        'data: {"content":"还是不对。我们把这一步再拆细一点"}\n\n'
+                        'event: turn\n'
+                        'data: {"turn_id":"turn_...","seq":3,'
+                        '"turn_type":"simpler_question","choices":[...],'
+                        '"strategy":"simplify","remedial_depth":1,'
+                        '"answer_reveal":null,...}\n\n'
+                        'event: done\n'
+                        'data: {"request_id":"...","seq":3,"completed":false,...}\n\n'
+                    ),
+                }
+            },
+        }
+    },
 )
 async def submit_turn(
     session_id: str,
     payload: TutorAnswerRequest,
+    request: Request,
     user: dict[str, Any] = Depends(current_user),
     header_key: str | None = Depends(idempotency_key_header),
-) -> TutorTurnResponse:
+) -> Any:
     endpoint = f"POST /api/v1/tutor/sessions/{session_id}/turns"
     raw_key = resolve_idempotency_key(header_key, payload.client_request_id)
     idem_key = f"tutor:{user['user_id']}:{session_id}:{raw_key}" if raw_key else None
+    request_id = request_id_of(request)
 
     # **先占位再干活**：只「先查缓存」的话，两个并发请求会同时未命中，
     # 于是各追一条 turn、各写一次 Evidence，掌握度被算两遍。
@@ -139,11 +264,16 @@ async def submit_turn(
     ):
         cached = repositories.get_idempotent_response(idem_key)
         if cached:
+            # 重放：校验/计算都不用再做，直接按原来的方式回放
+            if payload.stream:
+                return _stream_response(cached, request_id)
             return TutorTurnResponse(**cached)
         raise ApiError(
             IDEMPOTENCY_CONFLICT, "同一个请求正在处理中，请稍后重试"
         )
 
+    # 先把所有可能失败的事做完 —— 这样 404 / 409 走正常的 HTTP 状态码，
+    # 而不是在已经开流之后再塞一个 error 事件。
     try:
         result = tutor_service.submit_answer(
             user["user_id"],
@@ -161,18 +291,10 @@ async def submit_turn(
             repositories.release_idempotency(idem_key)
         raise ApiError(SESSION_COMPLETED, "这个 Session 已经完成了") from exc
 
-    session = result["session"]
-    body = {
-        "tutor_session_id": session_id,
-        "evaluation": result["evaluation"],
-        "turn": result["turn"],
-        "phase": session["phase"],
-        "completed": session["completed"],
-        "progress": result["turn"]["progress"],
-        "student_understanding": session["student_understanding"],
-        "knowledge_changes": result["knowledge_changes"],
-        "next_action": session.get("next_action"),
-    }
+    body = _turn_body(session_id, result)
     if idem_key:
         repositories.put_idempotent_response(idem_key, user["user_id"], endpoint, body)
+
+    if payload.stream:
+        return _stream_response(body, request_id)
     return TutorTurnResponse(**body)

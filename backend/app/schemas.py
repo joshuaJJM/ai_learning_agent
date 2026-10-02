@@ -37,9 +37,24 @@ TutorTurnType = Literal[
     "simpler_question",
     "guided_practice",
     "independent_practice",
+    # 补救做到第 4 层仍答错 → 停止出题，改为揭示答案并允许进入下一题
+    "remedial_exhausted",
     "summary",
 ]
 TutorSource = Literal["knowledge_point", "wrong_question", "uploaded_question"]
+
+#: 服务端对「下一步怎么教」的决定。客户端只呈现，不要自己推断。
+TutorStrategy = Literal[
+    "advance",  # 答对了，进入下一步
+    "simplify",  # 答错 → 换更简单的问题（进入/继续补救）
+    "hint",  # 同一步再试一次
+    "re_explain",  # 连续错且没得再降级，重新讲
+    "reveal_answer",  # 补救已到上限 → 揭示答案 + 解析，允许进入下一题
+    "finish",  # 结束
+]
+
+#: 补救最多 4 层，不存在第 5 层。
+MAX_REMEDIAL_DEPTH = 4
 
 NextActionKind = Literal[
     "start_tutor",
@@ -573,16 +588,44 @@ class TutorProgress(BaseModel):
     percent: float
 
 
+class TutorRevealedAnswer(BaseModel):
+    """一道题的答案与解析。"""
+
+    question_id: str | None = None
+    question_text: str | None = None
+    correct_key: str
+    explanation: str | None = None
+
+
+class TutorAnswerReveal(BaseModel):
+    """揭示答案。
+
+    **补救进行中 `TutorTurn.answer_reveal` 恒为 `null`** —— 绝不提前泄漏
+    正式题的正确答案。它只在两种时刻出现：
+
+      1. 学生**答对**了当前这道题（`current` = 这道题的答案与解析）
+      2. 补救到达第 4 层仍答错（`current` = 最后一道补救题，
+         `origin` = 触发补救的那道正式题）
+    """
+
+    current: TutorRevealedAnswer | None = None
+    origin: TutorRevealedAnswer | None = None
+
+
 class TutorTurn(BaseModel):
     """Tutor 的一轮输出。按 `turn_type` 选择渲染方式，不要把 `text` 当成整段 Markdown。
 
       - `concept_question`      概念选择题（配 choices）
-      - `simpler_question`      学生答错后换的更简单的问题
+      - `simpler_question`      学生答错后换的更简单的问题（补救中，见 `remedial_depth`）
       - `hint`                  提示条，同一题再试
       - `explanation`           讲解卡片，`allow_free_text=false`，**不需要作答**
       - `guided_practice`       分步引导
       - `independent_practice`  独立练习（没有提示，产生的 Evidence 才算数）
+      - `remedial_exhausted`    补救 4 层仍错，已揭示答案，可进入下一题
       - `summary`               总结卡片，此时 session 已 completed
+
+    `remedial_depth`：0 表示不在补救中；1–4 表示当前是第几层补救题。
+    `answer_reveal`：见 `TutorAnswerReveal`，补救进行中恒为 `null`。
     """
 
     turn_id: str
@@ -595,18 +638,20 @@ class TutorTurn(BaseModel):
     progress: TutorProgress
     completed: bool = False
     question_id: str | None = None
+    strategy: TutorStrategy | None = Field(
+        default=None, description="产生这一轮的教学策略，由服务端决定"
+    )
+    remedial_depth: int = Field(
+        default=0, ge=0, le=MAX_REMEDIAL_DEPTH, description="0=不在补救；1..4=第几层"
+    )
+    answer_reveal: TutorAnswerReveal | None = None
     created_at: datetime
 
 
 class TutorEvaluation(BaseModel):
-    """对学生这次作答的判定，以及 Agent 因此选择的策略。
+    """对学生这次作答的判定，以及服务端因此选择的策略。
 
-    `strategy` 取值：
-      - `advance`     答对了，进入下一步
-      - `simplify`    **答错 → 换成更简单的问题**（Agent 改变教学策略）
-      - `hint`        同一步再试一次，给提示
-      - `re_explain`  连续错，重新讲
-      - `finish`      结束
+    `strategy` 取值见 `TutorStrategy`。
     """
 
     correctness: Correctness
@@ -615,7 +660,13 @@ class TutorEvaluation(BaseModel):
     expected_key: str | None = None
     feedback: str
     explanation: str | None = None
-    strategy: Literal["advance", "simplify", "re_explain", "hint", "finish"]
+    strategy: TutorStrategy
+    remedial_depth: int = Field(
+        default=0, ge=0, le=MAX_REMEDIAL_DEPTH, description="作答后所处的补救层级"
+    )
+    remedial_exhausted: bool = Field(
+        default=False, description="补救是否已到上限（此时已揭示答案）"
+    )
 
 
 class TutorSessionResponse(BaseModel):
@@ -644,6 +695,13 @@ class TutorAnswerRequest(BaseModel):
     text: str | None = Field(default=None, description="自由输入作答")
     self_reported_confidence: Literal["sure", "guess", "unsure"] | None = None
     client_request_id: str | None = None
+    stream: bool = Field(
+        default=False,
+        description=(
+            "true → 返回 SSE（text/event-stream）；"
+            "false/缺省 → 维持原有 JSON 契约"
+        ),
+    )
 
 
 class TutorTurnResponse(BaseModel):

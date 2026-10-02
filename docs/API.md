@@ -757,12 +757,13 @@ POST /api/v1/tutor/sessions/{session_id}/turns
 
 ```json
 { "selected_key": "B", "text": null, "self_reported_confidence": "guess",
-  "client_request_id": "<可选幂等键>" }
+  "client_request_id": "<可选幂等键>", "stream": false }
 ```
 
 - 选择题传 `selected_key`（`"A"`~`"D"`）
 - 开放题传 `text`
 - 「我不确定」传 `self_reported_confidence: "unsure"`
+- `stream: true` → 返回 SSE（见 §5.2.2）；缺省或 `false` → 维持下面的 JSON 契约
 
 返回 `TutorTurnResponse`：`evaluation` + 下一轮 `turn` + `phase` + `completed` +
 `knowledge_changes` + `next_action`。
@@ -776,14 +777,24 @@ POST /api/v1/tutor/sessions/{session_id}/turns
     "chosen_key": "B", "expected_key": "A",
     "feedback": "先别急着看答案。再读一遍题目，想想关键的那一步是什么。",
     "explanation": null,
-    "strategy": "simplify"
+    "strategy": "simplify",
+    "remedial_depth": 1,
+    "remedial_exhausted": false
   },
   "turn": {
+    "turn_id": "turn_9c1d", "seq": 2,
     "turn_type": "simpler_question",
     "text": "…换一个更简单的问题…",
-    "choices": [ "…" ],
+    "choices": [ { "key": "A", "text": "…" } ],
+    "allow_free_text": false,
     "phase": "diagnose",
-    "progress": { "step": 1, "total_steps": 5, "percent": 0.2 }
+    "progress": { "step": 1, "total_steps": 5, "percent": 0.2 },
+    "completed": false,
+    "question_id": "math.derivative.comprehensive.1bd577aaf5",
+    "strategy": "simplify",
+    "remedial_depth": 1,
+    "answer_reveal": null,
+    "created_at": "2026-10-02T12:00:00+00:00"
   },
   "phase": "diagnose",
   "completed": false,
@@ -796,15 +807,119 @@ POST /api/v1/tutor/sessions/{session_id}/turns
 }
 ```
 
-`strategy` 说明 Agent 为什么这样走：
+#### `strategy`：服务端对「下一步怎么教」的决定
+
+客户端只呈现，**不要自己推断**。
 
 | strategy | 含义 | 客户端建议 |
 |---|---|---|
 | `advance` | 答对了，进入下一步 | 正常推进 |
-| `simplify` | **答错 → 换成更简单的问题** | 换个语气，鼓励一下 |
+| `simplify` | **答错 → 换成更简单的问题**（进入或继续补救） | 换个语气，鼓励一下 |
 | `hint` | 同一步再试一次，给提示 | 提示样式 |
-| `re_explain` | 连续错，重新讲 | 讲解卡片 |
+| `re_explain` | 连续错且没得再降级，重新讲 | 讲解卡片 |
+| `reveal_answer` | 补救到上限 → 揭示答案 + 解析 | 展示解析，并允许「下一题」 |
 | `finish` | 结束 | 播放总结 |
+
+#### `remedial_depth`：补救层级（0–4）
+
+正式题答错后进入 **补救（remedial）**，最多 **4 层**：
+
+- `0` = 不在补救中
+- `1`–`4` = 当前处于第几层补救
+- **不存在第 5 层**
+
+| 情形 | 行为 |
+|---|---|
+| 正式题答错 | 进入补救第 1 层，`strategy: "simplify"`，`turn_type: "simpler_question"` |
+| 补救第 1–3 层答错 | 下探一层，`remedial_depth` +1 |
+| **任意一层答对** | 结束补救，`remedial_depth` 归 0，回到正常教学/下一正式题流程 |
+| **第 4 层仍答错** | 停止继续出题 → `turn_type: "remedial_exhausted"`、`strategy: "reveal_answer"`，`answer_reveal` 给出答案与解析，并允许进入下一题 |
+
+补救**不计入进度**（`progress.step` 不动）——学生不该因为被补救而显得进度落后。
+
+#### `answer_reveal`：什么时候能看到正确答案
+
+补救期间**绝不**提前泄漏正式题的答案。
+
+| 时刻 | `answer_reveal` |
+|---|---|
+| 补救第 1–4 层进行中 | `null` |
+| 学生**答对**当前题 | `{ current: {…}, origin: null }` |
+| **第 4 层仍答错** | `{ current: {…最后一道补救题}, origin: {…触发补救的正式题} }` |
+
+```json
+"answer_reveal": {
+  "current": { "question_id": "…", "question_text": "…",
+               "correct_key": "B", "explanation": "…" },
+  "origin":  { "question_id": "…", "question_text": "…",
+               "correct_key": "A", "explanation": "…" }
+}
+```
+
+`origin` 只在补救结束时出现一次。此前客户端**拿不到**它，所以不要在
+第 1–3 层就显示「正确答案是 X」。
+
+### 5.2.2 流式返回（打字机效果）
+
+请求体加 `"stream": true`，接口改为返回 `text/event-stream`。
+
+```http
+POST /api/v1/tutor/sessions/{session_id}/turns
+Content-Type: application/json
+Accept: text/event-stream
+
+{ "selected_key": "B", "stream": true }
+```
+
+事件顺序固定：**`meta` → `delta`×N → `turn` → `done`**
+
+```
+event: meta
+data: {"request_id":"3f9a","tutor_session_id":"tut_5e8f","seq":2,
+       "phase":"diagnose","turn_type":"simpler_question","remedial_depth":1}
+
+event: delta
+data: {"content":"还是不对。我们把这一步再拆细一点"}
+
+event: delta
+data: {"content":"（第 1/4 层）。\n\n…"}
+
+event: turn
+data: {"turn_id":"turn_9c1d","seq":2,"turn_type":"simpler_question",
+       "choices":[{"key":"A","text":"…"}],"strategy":"simplify",
+       "remedial_depth":1,"answer_reveal":null,"progress":{…},"completed":false}
+
+event: done
+data: {"request_id":"3f9a","seq":2,"phase":"diagnose","completed":false,
+       "progress":{"step":1,"total_steps":5,"percent":0.2},
+       "student_understanding":0.281}
+```
+
+| 事件 | 载荷 | 用途 |
+|---|---|---|
+| `meta` | `request_id` / `tutor_session_id` / `seq` / `phase` / `turn_type` / `remedial_depth` | 建流、埋点 |
+| `delta` | `{ content }` | **只用于自然语言打字机显示** |
+| `turn` | 完整的 `TutorTurn` | **权威结构化数据**，所有可交互 UI 都读它 |
+| `done` | `seq` / `phase` / `completed` / `progress` / `student_understanding` | 收尾 |
+| `error` | `error_code` / `message` / `request_id` | 流已经开出去之后才发生错误时收尾 |
+
+**给客户端的四条要求：**
+
+1. **不要从 `delta` 的自然语言里解析 `question` / `choices`。**
+   所有可交互数据（题目、选项、策略、层级、答案揭示、进度）一律以
+   `turn` 事件为准。
+2. `delta` 只是渲染便利。以 `turn.text` 覆盖 delta 累积出来的文本。
+3. **错误处理分两段**：校验（session 不存在 = 404、已完成 = 409）
+   在开流**之前**完成，此时返回的是**普通 JSON 错误体**，不是 SSE。
+   只有开流之后才发生的异常才会以 `error` 事件收尾。
+   所以客户端要**先看 HTTP 状态码**，非 2xx 时按统一 JSON 错误体解析。
+4. 响应头带 `X-Accel-Buffering: no`。若你们前面还有反代，也要关掉缓冲，
+   否则流会被攒成一次性输出。
+
+**幂等**：`stream` 与幂等键正交。同一个 `Idempotency-Key` 重放时，
+`delta` 会照常重放（前端逻辑统一），但**不会**重复追 turn、也不会重复写 Evidence。
+JSON 提交与流式提交共用同一个幂等缓存 —— 先用 JSON、再用同一个 key 走流式，
+拿到的是同一个 `turn_id`。
 
 ### 5.3 教学轮次类型（决定用什么 Native UI）
 
@@ -813,12 +928,14 @@ POST /api/v1/tutor/sessions/{session_id}/turns
 | turn_type | 建议 UI |
 |---|---|
 | `concept_question` | 概念选择题（`choices` 单选 + 「我不确定」） |
-| `simpler_question` | 同样式，但语气更简单、标注「换个角度」 |
+| `simpler_question` | 同样式，但语气更简单、标注「换个角度」，可显示第几层补救 |
 | `hint` | 提示条 + 同一题的选项 |
 | `explanation` | 讲解卡片（`allow_free_text: false`，**无需作答，不会等待提交**） |
 | `guided_practice` | 分步引导题 |
 | `independent_practice` | 独立练习（强调「这次没有提示」） |
+| `remedial_exhausted` | **补救到上限**：展示 `answer_reveal` 的解析卡片 + 「下一题」按钮 |
 | `summary` | 总结卡片 + 掌握度变化动画 |
+
 
 `phase` 取值：`diagnose` → `teach` → `guided_practice` → `independent_practice` → `completed`
 
