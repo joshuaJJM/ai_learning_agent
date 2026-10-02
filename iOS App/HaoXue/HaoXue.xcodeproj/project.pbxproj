@@ -1,0 +1,554 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 110;
+	objects = {
+
+/* Begin PBXContainerItemProxy section */
+		1E17B558306F265500D19BCC /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 1E17B540306F265300D19BCC /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 1E17B547306F265300D19BCC;
+			remoteInfo = HaoXue;
+		};
+		1E17B562306F265500D19BCC /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 1E17B540306F265300D19BCC /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 1E17B547306F265300D19BCC;
+			remoteInfo = HaoXue;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		1E17B548306F265300D19BCC /* HaoXue.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HaoXue.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		1E17B557306F265500D19BCC /* HaoXueTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HaoXueTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		1E17B561306F265500D19BCC /* HaoXueUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HaoXueUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		1E17B54A306F265300D19BCC /* HaoXue */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = HaoXue;
+			sourceTree = "<group>";
+		};
+		1E17B55A306F265500D19BCC /* HaoXueTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = HaoXueTests;
+			sourceTree = "<group>";
+		};
+		1E17B564306F265500D19BCC /* HaoXueUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = HaoXueUITests;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		1E17B545306F265300D19BCC /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			files = (
+			);
+		};
+		1E17B554306F265500D19BCC /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			files = (
+			);
+		};
+		1E17B55E306F265500D19BCC /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			files = (
+			);
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		1E17B53F306F265300D19BCC = {
+			isa = PBXGroup;
+			children = (
+				1E17B54A306F265300D19BCC /* HaoXue */,
+				1E17B55A306F265500D19BCC /* HaoXueTests */,
+				1E17B564306F265500D19BCC /* HaoXueUITests */,
+				1E17B549306F265300D19BCC /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		1E17B549306F265300D19BCC /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				1E17B548306F265300D19BCC /* HaoXue.app */,
+				1E17B557306F265500D19BCC /* HaoXueTests.xctest */,
+				1E17B561306F265500D19BCC /* HaoXueUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		1E17B547306F265300D19BCC /* HaoXue */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1E17B569306F265500D19BCC /* Build configuration list for PBXNativeTarget "HaoXue" */;
+			buildPhases = (
+				1E17B544306F265300D19BCC /* Sources */,
+				1E17B545306F265300D19BCC /* Frameworks */,
+				1E17B546306F265300D19BCC /* Resources */,
+			);
+			buildRules = (
+			);
+			fileSystemSynchronizedGroups = (
+				1E17B54A306F265300D19BCC /* HaoXue */,
+			);
+			name = HaoXue;
+			productName = HaoXue;
+			productReference = 1E17B548306F265300D19BCC /* HaoXue.app */;
+			productType = "com.apple.product-type.application";
+		};
+		1E17B556306F265500D19BCC /* HaoXueTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1E17B56C306F265500D19BCC /* Build configuration list for PBXNativeTarget "HaoXueTests" */;
+			buildPhases = (
+				1E17B553306F265500D19BCC /* Sources */,
+				1E17B554306F265500D19BCC /* Frameworks */,
+				1E17B555306F265500D19BCC /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				1E17B559306F265500D19BCC /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				1E17B55A306F265500D19BCC /* HaoXueTests */,
+			);
+			name = HaoXueTests;
+			productName = HaoXueTests;
+			productReference = 1E17B557306F265500D19BCC /* HaoXueTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		1E17B560306F265500D19BCC /* HaoXueUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1E17B56F306F265500D19BCC /* Build configuration list for PBXNativeTarget "HaoXueUITests" */;
+			buildPhases = (
+				1E17B55D306F265500D19BCC /* Sources */,
+				1E17B55E306F265500D19BCC /* Frameworks */,
+				1E17B55F306F265500D19BCC /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				1E17B563306F265500D19BCC /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				1E17B564306F265500D19BCC /* HaoXueUITests */,
+			);
+			name = HaoXueUITests;
+			productName = HaoXueUITests;
+			productReference = 1E17B561306F265500D19BCC /* HaoXueUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		1E17B540306F265300D19BCC /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2700;
+				LastUpgradeCheck = 2700;
+				TargetAttributes = {
+					1E17B547306F265300D19BCC = {
+						CreatedOnToolsVersion = 27.0;
+					};
+					1E17B556306F265500D19BCC = {
+						CreatedOnToolsVersion = 27.0;
+						TestTargetID = 1E17B547306F265300D19BCC;
+					};
+					1E17B560306F265500D19BCC = {
+						CreatedOnToolsVersion = 27.0;
+						TestTargetID = 1E17B547306F265300D19BCC;
+					};
+				};
+			};
+			buildConfigurationList = 1E17B543306F265300D19BCC /* Build configuration list for PBXProject "HaoXue" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 1E17B53F306F265300D19BCC;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 1E17B549306F265300D19BCC /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				1E17B547306F265300D19BCC /* HaoXue */,
+				1E17B556306F265500D19BCC /* HaoXueTests */,
+				1E17B560306F265500D19BCC /* HaoXueUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		1E17B546306F265300D19BCC /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			files = (
+			);
+		};
+		1E17B555306F265500D19BCC /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			files = (
+			);
+		};
+		1E17B55F306F265500D19BCC /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			files = (
+			);
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		1E17B544306F265300D19BCC /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			files = (
+			);
+		};
+		1E17B553306F265500D19BCC /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			files = (
+			);
+		};
+		1E17B55D306F265500D19BCC /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			files = (
+			);
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		1E17B559306F265500D19BCC /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 1E17B547306F265300D19BCC /* HaoXue */;
+			targetProxy = 1E17B558306F265500D19BCC /* PBXContainerItemProxy */;
+		};
+		1E17B563306F265500D19BCC /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 1E17B547306F265300D19BCC /* HaoXue */;
+			targetProxy = 1E17B562306F265500D19BCC /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		1E17B567306F265500D19BCC /* Debug configuration for PBXProject "HaoXue" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 79W6NG56BQ;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		1E17B568306F265500D19BCC /* Release configuration for PBXProject "HaoXue" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 79W6NG56BQ;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		1E17B56A306F265500D19BCC /* Debug configuration for PBXNativeTarget "HaoXue" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 79W6NG56BQ;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.TNTstudio.personalLearningAgent.HaoXue;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		1E17B56B306F265500D19BCC /* Release configuration for PBXNativeTarget "HaoXue" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 79W6NG56BQ;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.TNTstudio.personalLearningAgent.HaoXue;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		1E17B56D306F265500D19BCC /* Debug configuration for PBXNativeTarget "HaoXueTests" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 79W6NG56BQ;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.TNTstudio.personalLearningAgent.HaoXueTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/HaoXue.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/HaoXue";
+			};
+			name = Debug;
+		};
+		1E17B56E306F265500D19BCC /* Release configuration for PBXNativeTarget "HaoXueTests" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 79W6NG56BQ;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.TNTstudio.personalLearningAgent.HaoXueTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/HaoXue.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/HaoXue";
+			};
+			name = Release;
+		};
+		1E17B570306F265500D19BCC /* Debug configuration for PBXNativeTarget "HaoXueUITests" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 79W6NG56BQ;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.TNTstudio.personalLearningAgent.HaoXueUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = HaoXue;
+			};
+			name = Debug;
+		};
+		1E17B571306F265500D19BCC /* Release configuration for PBXNativeTarget "HaoXueUITests" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 79W6NG56BQ;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.TNTstudio.personalLearningAgent.HaoXueUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = HaoXue;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		1E17B543306F265300D19BCC /* Build configuration list for PBXProject "HaoXue" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1E17B567306F265500D19BCC /* Debug configuration for PBXProject "HaoXue" */,
+				1E17B568306F265500D19BCC /* Release configuration for PBXProject "HaoXue" */,
+			);
+			defaultConfigurationName = Release;
+		};
+		1E17B569306F265500D19BCC /* Build configuration list for PBXNativeTarget "HaoXue" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1E17B56A306F265500D19BCC /* Debug configuration for PBXNativeTarget "HaoXue" */,
+				1E17B56B306F265500D19BCC /* Release configuration for PBXNativeTarget "HaoXue" */,
+			);
+			defaultConfigurationName = Release;
+		};
+		1E17B56C306F265500D19BCC /* Build configuration list for PBXNativeTarget "HaoXueTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1E17B56D306F265500D19BCC /* Debug configuration for PBXNativeTarget "HaoXueTests" */,
+				1E17B56E306F265500D19BCC /* Release configuration for PBXNativeTarget "HaoXueTests" */,
+			);
+			defaultConfigurationName = Release;
+		};
+		1E17B56F306F265500D19BCC /* Build configuration list for PBXNativeTarget "HaoXueUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1E17B570306F265500D19BCC /* Debug configuration for PBXNativeTarget "HaoXueUITests" */,
+				1E17B571306F265500D19BCC /* Release configuration for PBXNativeTarget "HaoXueUITests" */,
+			);
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 1E17B540306F265300D19BCC /* Project object */;
+	validationLevel = 1;
+}
