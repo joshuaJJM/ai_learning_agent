@@ -113,12 +113,14 @@ _MYSQL_SCHEMA: tuple[str, ...] = (
         wrong_question_id   VARCHAR(64) NOT NULL,
         user_id             VARCHAR(64) NOT NULL,
         knowledge_point_id  VARCHAR(64) NULL,
+        book_id             VARCHAR(64) NULL,
         status              VARCHAR(32) NOT NULL DEFAULT 'open',
         created_at          VARCHAR(40) NOT NULL,
         updated_at          VARCHAR(40) NOT NULL,
         doc                 LONGTEXT    NOT NULL,
         PRIMARY KEY (wrong_question_id),
-        KEY idx_wq_user_kp (user_id, knowledge_point_id)
+        KEY idx_wq_user_kp (user_id, knowledge_point_id),
+        KEY idx_wq_book (user_id, book_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
     """
@@ -271,6 +273,7 @@ SQLITE_SCHEMA: tuple[str, ...] = (
         wrong_question_id   TEXT PRIMARY KEY,
         user_id             TEXT NOT NULL,
         knowledge_point_id  TEXT,
+        book_id             TEXT,
         status              TEXT NOT NULL DEFAULT 'open',
         created_at          TEXT NOT NULL,
         updated_at          TEXT NOT NULL,
@@ -278,6 +281,7 @@ SQLITE_SCHEMA: tuple[str, ...] = (
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_wq_user_kp ON wrong_questions(user_id, knowledge_point_id)",
+    "CREATE INDEX IF NOT EXISTS idx_wq_book ON wrong_questions(user_id, book_id)",
     """
     CREATE TABLE IF NOT EXISTS analyses (
         analysis_id  TEXT PRIMARY KEY,
@@ -475,6 +479,7 @@ def init_db() -> None:
             conn.execute(statement)
         conn.commit()
         _run_migrations(conn)
+        ensure_batch_uniqueness(conn)
         _initialized = True
 
 
@@ -490,6 +495,14 @@ def init_db() -> None:
 _COLUMN_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     # 上传批次号：按用户递增，给前端的「近 50 批」列表用
     ("analyses", "batch_number", "INT NOT NULL DEFAULT 0"),
+    # 错题所属图书：筛选必须在 SQL 里做，不能先 LIMIT 再在 Python 里过滤
+    ("wrong_questions", "book_id", "VARCHAR(64) NULL"),
+)
+
+# (表名, 索引名, 列, 是否唯一)
+_INDEX_MIGRATIONS: tuple[tuple[str, str, str, bool], ...] = (
+    ("analyses", "idx_analyses_batch", "user_id, batch_number", False),
+    ("wrong_questions", "idx_wq_book", "user_id, book_id", False),
 )
 
 
@@ -533,12 +546,11 @@ def _run_migrations(conn: Any) -> None:
         applied.append(f"{table}.{column}")
 
     # 新加的列通常也要配索引
-    for table, index_name, columns in (
-        ("analyses", "idx_analyses_batch", "user_id, batch_number"),
-    ):
+    for table, index_name, columns, unique in _INDEX_MIGRATIONS:
         if index_name in _index_names(conn, table):
             continue
-        conn.execute(f"CREATE INDEX {index_name} ON {table} ({columns})")
+        keyword = "UNIQUE INDEX" if unique else "INDEX"
+        conn.execute(f"CREATE {keyword} {index_name} ON {table} ({columns})")
         conn.commit()
         applied.append(index_name)
 
@@ -546,6 +558,71 @@ def _run_migrations(conn: Any) -> None:
         import logging
 
         logging.getLogger("haoxue").info("数据库迁移已应用: %s", ", ".join(applied))
+
+
+def _backfill_batch_numbers(conn: Any) -> int:
+    """给历史分析补批次号（迁移加列时默认全是 0）。
+
+    必须在建 (user_id, batch_number) 唯一索引**之前**跑：
+    同一用户的多行如果都是 0，唯一索引根本建不起来。
+    """
+    rows = conn.execute(
+        "SELECT user_id, analysis_id FROM analyses WHERE batch_number = 0 "
+        "ORDER BY user_id, created_at, analysis_id"
+    ).fetchall()
+    if not rows:
+        return 0
+
+    counters: dict[str, int] = {}
+    for row in rows:
+        try:
+            user_id, analysis_id = str(row["user_id"]), str(row["analysis_id"])
+        except (KeyError, TypeError):
+            user_id, analysis_id = str(row[0]), str(row[1])
+        counters[user_id] = counters.get(user_id, 0) + 1
+        execute = getattr(conn, "execute")
+        if _use_mysql():
+            execute(
+                "UPDATE analyses SET batch_number = %s WHERE analysis_id = %s",
+                (counters[user_id], analysis_id),
+            )
+        else:
+            execute(
+                "UPDATE analyses SET batch_number = ? WHERE analysis_id = ?",
+                (counters[user_id], analysis_id),
+            )
+    conn.commit()
+    return len(rows)
+
+
+def ensure_batch_uniqueness(conn: Any) -> None:
+    """给 (user_id, batch_number) 加唯一约束（幂等，可重复调用）。
+
+    并发上传时 `MAX(batch_number) + 1` 会算出同一个号。有了唯一索引，
+    插入冲突会直接报错，由 repositories.insert_analysis 重试拿下一个号 ——
+    这是「用户内递增且唯一」的真正保证，而不是靠时序运气。
+    """
+    index_name = "uk_analyses_batch"
+    if index_name in _index_names(conn, "analyses"):
+        return
+
+    backfilled = _backfill_batch_numbers(conn)
+    conn.execute(
+        f"CREATE UNIQUE INDEX {index_name} ON analyses (user_id, batch_number)"
+    )
+    conn.commit()
+
+    import logging
+
+    logging.getLogger("haoxue").info(
+        "已建立批次号唯一约束 %s（回填 %d 行历史数据）", index_name, backfilled
+    )
+
+
+def is_duplicate_error(exc: Exception) -> bool:
+    """判断异常是不是唯一键冲突（两种方言的报错文案不同）。"""
+    text = str(exc).lower()
+    return "duplicate" in text or "unique" in text or "1062" in text
 
 
 def reset_connection_cache() -> None:

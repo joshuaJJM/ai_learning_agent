@@ -102,6 +102,18 @@ async def submit_turn(
     payload: TutorAnswerRequest,
     user: dict[str, Any] = Depends(current_user),
 ) -> TutorTurnResponse:
+    # 幂等：同一个 client_request_id 重试直接回放上次响应。
+    # 不加这层的话，重试会再追一条 turn 并**再写一次 Evidence**，掌握度被重复更新。
+    idem_key = (
+        f"tutor:{user['user_id']}:{session_id}:{payload.client_request_id}"
+        if payload.client_request_id
+        else None
+    )
+    if idem_key:
+        cached = repositories.get_idempotent_response(idem_key)
+        if cached:
+            return TutorTurnResponse(**cached)
+
     try:
         result = tutor_service.submit_answer(
             user["user_id"],
@@ -116,14 +128,22 @@ async def submit_turn(
         raise ApiError(SESSION_COMPLETED, "这个 Session 已经完成了") from exc
 
     session = result["session"]
-    return TutorTurnResponse(
-        tutor_session_id=session_id,
-        evaluation=result["evaluation"],
-        turn=result["turn"],
-        phase=session["phase"],
-        completed=session["completed"],
-        progress=result["turn"]["progress"],
-        student_understanding=session["student_understanding"],
-        knowledge_changes=result["knowledge_changes"],
-        next_action=session.get("next_action"),
-    )
+    body = {
+        "tutor_session_id": session_id,
+        "evaluation": result["evaluation"],
+        "turn": result["turn"],
+        "phase": session["phase"],
+        "completed": session["completed"],
+        "progress": result["turn"]["progress"],
+        "student_understanding": session["student_understanding"],
+        "knowledge_changes": result["knowledge_changes"],
+        "next_action": session.get("next_action"),
+    }
+    if idem_key:
+        repositories.put_idempotent_response(
+            idem_key,
+            user["user_id"],
+            f"POST /api/v1/tutor/sessions/{session_id}/turns",
+            body,
+        )
+    return TutorTurnResponse(**body)

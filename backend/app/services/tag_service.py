@@ -1,4 +1,4 @@
-﻿"""标签计分与基于标签的练习推荐。
+"""标签计分与基于标签的练习推荐。
 
 规则（按需求，刻意做得简单，后续可能改）：
 
@@ -188,7 +188,8 @@ def pick_questions(
 ) -> list[dict[str, Any]]:
     """挑练习题。
 
-    返回 `[{tag, tag_score, question_id}]`，按「最弱标签优先」的顺序。
+    返回 `[{tag, tag_score, question_id}]`，**整组题尽量都出自最弱的那个标签**
+    （出不满才顺延到下一个标签），这样 `target_tag` 表达的「本次专练某一标签」才成立。
     一道题只会被选中一次。
     """
     current = scores(user_id)
@@ -203,6 +204,10 @@ def pick_questions(
     used: set[str] = set(exclude_question_ids)
     picked: list[dict[str, Any]] = []
 
+    # 先把这个标签名下的题**出满**，出不满才轮到下一个标签。
+    #
+    # 早先的写法是「每个标签只取一道就换下一个」，于是 count=5 会拿到
+    # 5 个不同标签的题，和 target_tag 的语义矛盾。
     for tag, tag_score in ordered:
         if len(picked) >= limit:
             break
@@ -214,14 +219,16 @@ def pick_questions(
         if not candidates:
             continue
         candidates.sort(key=key)
-        chosen = candidates[0]
-        used.add(chosen)
-        picked.append(
-            {
-                "tag": tag,
-                "tag_score": tag_score,
-                "question_id": chosen,
-                "question_tags": list(by_question.get(chosen, ())),
+        for chosen in candidates:
+            if len(picked) >= limit:
+                break
+            used.add(chosen)
+            picked.append(
+                {
+                    "tag": tag,
+                    "tag_score": tag_score,
+                    "question_id": chosen,
+                    "question_tags": list(by_question.get(chosen, ())),
             }
         )
 

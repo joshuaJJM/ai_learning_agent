@@ -231,7 +231,9 @@ def create_analysis(
         "updated_at": now,
         "finished_at": None,
     }
-    repositories.save_analysis(doc)
+    # 首次插入用 insert_analysis：并发下批次号撞车会自动换号重试
+    repositories.insert_analysis(doc)
+    batch_number = doc["batch_number"]
     if client_request_id:
         repositories.put_idempotent_response(
             f"homework:{user_id}:{client_request_id}",

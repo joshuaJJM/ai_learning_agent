@@ -87,6 +87,7 @@ GET /api/v1/health       # 同上（等价别名）
 | `INVALID_IMAGE` | 400 | 图片为空/过大/类型不支持 |
 | `INVALID_SERIAL_NUMBER` | 400 | 序列号无效或已被使用 |
 | `SESSION_COMPLETED` | 409 | Session 已结束，不能再作答 |
+| `QUESTION_NOT_IN_SESSION` | 400 | 提交的题不是当前练习的**当前这一题** |
 | `IDEMPOTENCY_CONFLICT` | 409 | 幂等键冲突 |
 | `QUESTION_NOT_RECOGNIZED` | 422 | 没识别出题目 |
 | `VALIDATION_ERROR` | 422 | 请求参数不合法 |
@@ -886,7 +887,7 @@ POST /api/v1/practice/sessions/{session_id}/answers
 
 | 优先级 | 规则 | 说明 |
 |---|---|---|
-| 1 | 必须包含**分数最低**的标签 | — |
+| 1 | **整组题都出自分数最低的那个标签** | 出不满（该标签题量不够）才顺延到下一个标签 —— 这样 `target_tag` 的「本次专练某一标签」才成立 |
 | 2 | 该题**所有标签分数之和**升序 | 一题覆盖两个都很弱的标签（−3、−3 → −6）比只覆盖一个（−3）优先；若另一标签已很强（+10），和变大自然靠后 |
 | 3 | 最近 5 天做过的题降权 | 不是排除，保证一定有题 |
 | 4 | 题号 | 结果可复现 |
@@ -903,8 +904,19 @@ POST /api/v1/practice/sessions/{session_id}/answers
   "is_correct": false,
   "delta": -1,
   "tags": ["基本求导公式与运算法则", "函数关系式与导数的综合应用"]
-}
+},
+"replayed": false
 ```
+
+**练习作答的三条保护**（都返回统一错误体）：
+
+| 情况 | 结果 |
+|---|---|
+| 提交的题不属于本次练习 | `400 QUESTION_NOT_IN_SESSION`，**不写 Evidence** |
+| 提交的是本组里还没轮到的那道题 | 同上 |
+| 同一题重复提交（网络重试） | `200`，`replayed: true`，原样返回上次结果，**不重复计分** |
+
+最后一题答完后会话即 `completed`；此时对该题的重试仍然走回放（返回 200 而不是 409）。
 
 ### 6.5.5 会话里的标签元信息
 
@@ -1055,6 +1067,20 @@ Demo 可用的兑换码（`POST /books/book.derivative.advanced/redeem`）：
 |---|---|
 | 导数基础训练 | `HAOXUE-DERI-0001`（默认已拥有） |
 | 导数综合应用 | `HAOXUE-ADVD-0002` |
+
+通用序列号必须严格符合 `HAOXUE-XXXX-XXXX-XXXX`（`[A-Z0-9]{4}` × 3 段），
+否则返回 `400 INVALID_SERIAL_NUMBER`。
+
+**一个序列号只能兑换一本书**：
+
+| 情况 | 结果 |
+|---|---|
+| 该序列号已被**其他用户**用过 | `400 INVALID_SERIAL_NUMBER` |
+| 自己用同一个序列号**重复兑换同一本书** | `200`，`entitled: true`，回「你之前已经兑换过这本书了」 |
+| 自己用同一个序列号兑换**另一本书** | `400 INVALID_SERIAL_NUMBER`，且**不会真的授予**那本书 |
+
+最后一条是刻意的：早期实现会说「你已拥有 B」，但库里其实只有 A，
+用户以为 B 到手了 —— 接口撒谎比报错严重得多。
 
 订阅信息目前是假数据（`¥20/月`），**不接真实支付**。
 

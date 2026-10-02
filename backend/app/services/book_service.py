@@ -7,12 +7,17 @@ Book + Entitlement，后面接 StoreKit 服务端校验时不用改结构。
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
 from .. import db, repositories
 
 BOOKS_PATH = Path(__file__).resolve().parent.parent / "seed" / "books.json"
+
+# 通用序列号的格式。登记在册的那两个是精确匹配，其余必须符合这个形状 ——
+# 之前只判断 "以 HAOXUE- 开头且长度 >= 12"，等于任何自造串都能解锁任意图书。
+SERIAL_PATTERN = re.compile(r"^HAOXUE-[A-Z0-9]{4}(-[A-Z0-9]{4}){2}$")
 
 _books_cache: list[dict[str, Any]] | None = None
 _subscription_cache: dict[str, Any] | None = None
@@ -123,8 +128,7 @@ def redeem(user_id: str, book_id: str, serial_number: str) -> dict[str, Any]:
 
     expected = (target.get("demo_serial") or "").upper()
     valid = bool(serial) and (
-        serial == expected
-        or (serial.startswith("HAOXUE-") and len(serial) >= 12)
+        serial == expected or SERIAL_PATTERN.match(serial) is not None
     )
     if not valid:
         return {
@@ -134,13 +138,22 @@ def redeem(user_id: str, book_id: str, serial_number: str) -> dict[str, Any]:
         }
 
     existing = repositories.find_entitlement_by_serial(serial)
-    if existing is not None and existing["user_id"] != user_id:
-        return {
-            "ok": False,
-            "error_code": "INVALID_SERIAL_NUMBER",
-            "message": "这个序列号已经被其他账号使用过了",
-        }
-    if existing is not None and existing["user_id"] == user_id:
+    if existing is not None:
+        if existing["user_id"] != user_id:
+            return {
+                "ok": False,
+                "error_code": "INVALID_SERIAL_NUMBER",
+                "message": "这个序列号已经被其他账号使用过了",
+            }
+        # 同一用户重复用同一序列号：**只有兑换的就是同一本书**才算「已拥有」。
+        # 否则会说谎：拿 A 的序列号去兑 B，接口回「你已拥有 B」，
+        # 但库里其实只有 A，用户以为 B 到手了。
+        if existing.get("book_id") != book_id:
+            return {
+                "ok": False,
+                "error_code": "INVALID_SERIAL_NUMBER",
+                "message": "这个序列号已经用来兑换过其他书了",
+            }
         return {
             "ok": True,
             "entitlement_id": existing["entitlement_id"],

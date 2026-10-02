@@ -315,6 +315,41 @@ def session_response(session: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _attempt_response(
+    session: dict[str, Any],
+    attempt: dict[str, Any],
+    question: BankQuestion,
+    *,
+    replayed: bool,
+) -> dict[str, Any]:
+    """从一条已存在的作答记录拼响应。重复提交时用它回放，不再重复计分。"""
+    ids = session.get("question_ids", [])
+    attempts = session.get("attempts", [])
+    finished = session.get("status") == "completed"
+    is_correct = attempt.get("correctness") == "correct"
+    return {
+        "practice_session_id": session["practice_session_id"],
+        "question_id": question.id,
+        "correctness": attempt.get("correctness", "wrong"),
+        "is_correct": is_correct,
+        "correct_answer": question.answer,
+        "explanation": question.explanation or None,
+        "knowledge_changes": attempt.get("knowledge_changes", []),
+        "tag_changes": attempt.get("tag_changes"),
+        "next_question": None if finished else current_question(session),
+        "session_completed": finished,
+        "answered": len(attempts),
+        "correct": sum(1 for a in attempts if a.get("correctness") == "correct"),
+        "total": len(ids),
+        "replayed": replayed,
+        "next_action": recommendation_service.next_action(
+            session["user_id"], preferred_kp_id=session.get("knowledge_point_id")
+        ).model_dump(mode="json")
+        if finished
+        else None,
+    }
+
+
 def submit_answer(
     user_id: str,
     session_id: str,
@@ -326,38 +361,43 @@ def submit_answer(
     session = repositories.get_practice_session(session_id)
     if session is None or session.get("user_id") != user_id:
         raise LookupError("session")
-    if session.get("status") == "completed":
-        raise RuntimeError("completed")
 
     question = get_bank().get(question_id)
     if question is None:
         raise LookupError("question")
 
     chosen = (selected_key or "").strip().upper() or None
+
+    # 检查顺序很重要：**先回放，再校验**。
+    #
+    # 最后一题答完时 served_index 已经越界、会话也已 completed，
+    # 此时的重试应该拿到上次结果，而不是被判成「不是当前题」或 409。
+    previous = next(
+        (a for a in session.get("attempts", []) if a.get("question_id") == question_id),
+        None,
+    )
+    if previous is not None:
+        # 同一题重复提交（手机网络重试很常见）直接回放，
+        # 不再写 Evidence、不再动标签 —— 否则重试一次就多记一次分。
+        return _attempt_response(session, previous, question, replayed=True)
+
+    # 未提交过的题：必须是**当前这一题**。
+    #
+    # 只校验「属于本 Session」还不够：那仍然允许提前提交后面的题、
+    # 或把整组题乱序刷掉。提交任意一道题库题目会写 Evidence、动标签、
+    # 推进会话 —— 等于绕过整套推荐逻辑污染掌握度。
+    ids = session.get("question_ids", [])
+    current_index = session.get("served_index", 0)
+    if current_index >= len(ids) or ids[current_index] != question_id:
+        raise PermissionError("question_not_in_session")
+
+    if session.get("status") == "completed":
+        raise RuntimeError("completed")
+
     is_correct = chosen == question.answer
 
-    # 允许重名提交同一题：覆盖该题的作答记录，避免刷分
-    attempts = [a for a in session.get("attempts", []) if a.get("question_id") != question_id]
-
-    now = db.to_iso(db.utcnow())
-    attempts.append(
-        {
-            "question_id": question_id,
-            "selected_key": chosen,
-            "correctness": "correct" if is_correct else "wrong",
-            "created_at": now,
-        }
-    )
-    session["attempts"] = attempts
-
-    # 推进到下一题
-    ids = session.get("question_ids", [])
-    try:
-        answered_index = ids.index(question_id)
-    except ValueError:
-        answered_index = session.get("served_index", 0)
-    session["served_index"] = max(session.get("served_index", 0), answered_index + 1)
-
+    # 先算增量，再落记录 —— 这样作答记录里带着本次的知识点/标签变动，
+    # 回放时才能原样返回。
     changes = knowledge_service.apply_evidence(
         user_id,
         [
@@ -377,15 +417,32 @@ def submit_answer(
             if knowledge.is_known(kp_id)
         ],
     )
+    # 标签计分：答对则该题所有标签 +1，答错 -1
+    tag_update = tag_service.apply_answer(user_id, question_id, is_correct)
+
+    now = db.to_iso(db.utcnow())
+    attempts = list(session.get("attempts", []))
+    attempts.append(
+        {
+            "question_id": question_id,
+            "selected_key": chosen,
+            "correctness": "correct" if is_correct else "wrong",
+            "created_at": now,
+            "knowledge_changes": [c.model_dump(mode="json") for c in changes],
+            "tag_changes": tag_update,
+        }
+    )
+    session["attempts"] = attempts
+
+    # 推进到下一题
+    answered_index = ids.index(question_id)
+    session["served_index"] = max(session.get("served_index", 0), answered_index + 1)
 
     session["updated_at"] = now
     finished = session["served_index"] >= len(ids)
     if finished:
         session["status"] = "completed"
     repositories.save_practice_session(session)
-
-    # 标签计分：答对则该题所有标签 +1，答错 -1
-    tag_update = tag_service.apply_answer(user_id, question_id, is_correct)
 
     return {
         "practice_session_id": session_id,
@@ -402,6 +459,7 @@ def submit_answer(
         "answered": len(attempts),
         "correct": sum(1 for a in attempts if a.get("correctness") == "correct"),
         "total": len(ids),
+        "replayed": False,
         "next_action": recommendation_service.next_action(
             user_id, preferred_kp_id=session.get("knowledge_point_id")
         ).model_dump(mode="json")

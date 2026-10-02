@@ -307,14 +307,60 @@ def get_analysis(analysis_id: str) -> dict[str, Any] | None:
 def next_batch_number(user_id: str) -> int:
     """该用户下一个上传批次号（从 1 开始）。
 
-    单用户 Demo 用 max+1 足够；批次号只用于展示与排序，
-    真正的稳定标识仍然是 analysis_id。
+    只用于**候选**值：并发下两个请求可能算出同一个号，
+    真正的唯一性由 (user_id, batch_number) 唯一索引 + 插入重试保证。
     """
     row = db.query_one(
         "SELECT COALESCE(MAX(batch_number), 0) AS n FROM analyses WHERE user_id = ?",
         [user_id],
     )
     return int(row["n"] if row else 0) + 1
+
+
+def insert_analysis(doc: dict[str, Any], *, max_attempts: int = 8) -> dict[str, Any]:
+    """**首次**插入一条分析记录，批次号冲突时换一个号重试。
+
+    这里不能用 upsert：MySQL 的 `ON DUPLICATE KEY UPDATE` 会被任意唯一键
+    （包括批次号）触发，一旦批次号撞车就会去改**别人那一行**。
+    所以首次插入用普通 INSERT，撞了就重试。
+    """
+    columns = [
+        "analysis_id",
+        "user_id",
+        "status",
+        "batch_number",
+        "created_at",
+        "updated_at",
+        "doc",
+    ]
+    placeholders = ", ".join("?" for _ in columns)
+    sql = f"INSERT INTO analyses ({', '.join(columns)}) VALUES ({placeholders})"
+
+    for attempt in range(max_attempts):
+        if attempt > 0:
+            doc["batch_number"] = next_batch_number(doc["user_id"])
+        try:
+            db.execute(
+                sql,
+                [
+                    doc["analysis_id"],
+                    doc["user_id"],
+                    doc["status"],
+                    int(doc.get("batch_number") or 0),
+                    doc["created_at"],
+                    doc["updated_at"],
+                    json.dumps(doc, ensure_ascii=False),
+                ],
+            )
+            return doc
+        except Exception as exc:  # noqa: BLE001
+            if not db.is_duplicate_error(exc):
+                raise
+            try:
+                db.get_conn().rollback()
+            except Exception:  # noqa: BLE001
+                pass
+    raise RuntimeError("无法分配唯一的上传批次号，请重试")
 
 
 def list_analyses(user_id: str, limit: int = 20) -> list[dict[str, Any]]:
@@ -355,6 +401,7 @@ def save_wrong_question(doc: dict[str, Any]) -> None:
         user_id=doc["user_id"],
         knowledge_point_id=doc.get("knowledge_point_id"),
         status=doc.get("status", "open"),
+        book_id=doc.get("book_id"),
         created_at=doc["created_at"],
         updated_at=doc["updated_at"],
     )
@@ -380,22 +427,21 @@ def list_wrong_questions(
     if status:
         clauses.append("status = ?")
         params.append(status)
-    items = db.list_docs(
+    # book_id 与时间必须在 SQL 里过滤：先 LIMIT 再在 Python 里筛，
+    # 符合条件的记录如果排在 limit 之外就会被漏掉，接口会错误返回空。
+    if book_id:
+        clauses.append("book_id = ?")
+        params.append(book_id)
+    if since is not None:
+        clauses.append("created_at >= ?")
+        params.append(db.to_iso(since))
+    return db.list_docs(
         "wrong_questions",
         " AND ".join(clauses),
         params,
         order_by="created_at DESC",
         limit=limit,
     )
-    if book_id:
-        items = [i for i in items if i.get("book_id") == book_id]
-    if since:
-        items = [
-            i
-            for i in (items)
-            if (db.from_iso(i.get("created_at")) or db.utcnow()) >= since
-        ]
-    return items
 
 
 def count_wrong_questions(user_id: str, status: str | None = None) -> int:

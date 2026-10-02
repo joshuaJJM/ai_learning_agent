@@ -10,6 +10,7 @@ from .. import repositories
 from ..dependencies import current_user
 from ..errors import (
     NO_QUESTIONS_AVAILABLE,
+    QUESTION_NOT_IN_SESSION,
     SESSION_COMPLETED,
     SESSION_NOT_FOUND,
     ApiError,
@@ -91,6 +92,17 @@ async def submit_answer(
     payload: PracticeAnswerRequest,
     user: dict[str, Any] = Depends(current_user),
 ) -> PracticeAnswerResponse:
+    # 幂等：同一个 client_request_id 重试直接回放上次响应，不重复计分
+    idem_key = (
+        f"practice:{user['user_id']}:{session_id}:{payload.client_request_id}"
+        if payload.client_request_id
+        else None
+    )
+    if idem_key:
+        cached = repositories.get_idempotent_response(idem_key)
+        if cached:
+            return PracticeAnswerResponse(**cached)
+
     try:
         result = practice_service.submit_answer(
             user["user_id"],
@@ -99,10 +111,23 @@ async def submit_answer(
             selected_key=payload.selected_key,
             answer_text=payload.answer_text,
         )
+    except PermissionError as exc:
+        # 题目不属于本 Session —— 拒绝，避免凭空写 Evidence / 动标签
+        raise ApiError(
+            QUESTION_NOT_IN_SESSION, "这道题不属于当前这次练习"
+        ) from exc
     except LookupError as exc:
         if str(exc) == "'question'":
             raise ApiError("NOT_FOUND", "题目不存在") from exc
         raise ApiError(SESSION_NOT_FOUND, "练习 Session 不存在") from exc
     except RuntimeError as exc:
         raise ApiError(SESSION_COMPLETED, "这次练习已经结束了") from exc
+
+    if idem_key:
+        repositories.put_idempotent_response(
+            idem_key,
+            user["user_id"],
+            f"POST /api/v1/practice/sessions/{session_id}/answers",
+            result,
+        )
     return PracticeAnswerResponse(**result)

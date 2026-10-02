@@ -10,9 +10,6 @@
 Observe → Understand → Decide → Teach → Practice → Evaluate → Update → Re-plan
 ```
 
-掌握度（`43% → 51%`）是这条链路的输出，由服务端计算并作为唯一事实来源下发 ——
-所以 iOS 拿到的永远是一个已经算好的数字，不需要、也不应该自己复现算法。
-
 ---
 
 ## 线上服务

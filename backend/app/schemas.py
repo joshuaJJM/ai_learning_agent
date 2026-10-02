@@ -720,6 +720,8 @@ class PracticeAnswerResponse(BaseModel):
     explanation: str | None = None
     knowledge_changes: list[KnowledgeChange] = Field(default_factory=list)
     tag_changes: TagChange | None = None
+    # 同一题重复提交（网络重试）时服务端回放上次结果，不重复计分
+    replayed: bool = False
     next_question: PracticeQuestion | None = None
     session_completed: bool = False
     answered: int = 0

@@ -393,6 +393,27 @@ def _save(session: dict[str, Any]) -> None:
 # 创建 session
 # ---------------------------------------------------------------------------
 
+def _resolve_knowledge_point(user_id: str, candidate: str | None) -> str:
+    """挑一个**真实存在**的知识点。
+
+    这里原来会回退到 "math.derivative" —— 那是旧知识树的父节点，换成扁平的
+    17 个清单后已经不存在了。后果很隐蔽：Tutor 会从整个题库随便选题，
+    而且提交后的 Evidence 会被 knowledge_service 静默忽略，
+    学生"学完了"但掌握度一动不动。
+
+    现在按「给定值 → 该用户最弱知识点 → 清单第一个」的顺序兜底。
+    """
+    if candidate and knowledge.is_known(candidate):
+        return candidate
+    weak = knowledge_service.weakest_points(user_id, limit=1)
+    if weak:
+        return weak[0].knowledge_point_id
+    points = knowledge.all_points()
+    if not points:
+        raise LookupError("no_knowledge_points")
+    return points[0].id
+
+
 async def create_session(
     user_id: str,
     *,
@@ -407,9 +428,10 @@ async def create_session(
 
     if source_type == "wrong_question":
         item = repositories.get_wrong_question(wrong_question_id or "")
-        if item is None:
+        # 必须校验归属：知道别人的错题 ID 就能拿它建自己的 Session
+        if item is None or item.get("user_id") != user_id:
             raise LookupError("wrong_question")
-        knowledge_point_id = item.get("knowledge_point_id") or "math.derivative"
+        knowledge_point_id = item.get("knowledge_point_id")
         source_id = item["wrong_question_id"]
         upload_note = f"我们来重新搞懂这道题（第 {item.get('question_number', '')} 题）。"
     elif source_type == "uploaded_question":
@@ -418,15 +440,13 @@ async def create_session(
             raise ValueError("question_not_recognized")
         knowledge_point_id = analysis["knowledge_point_ids"][0]
         source_id = None
+        point = knowledge.get_point(knowledge_point_id)
         upload_note = (
-            f"我看了你拍的这道题，它主要考「"
-            f"{knowledge.get_point(knowledge_point_id).name if knowledge.get_point(knowledge_point_id) else '导数'}」。"
+            f"我看了你拍的这道题，它主要考「{point.name if point else '导数'}」。"
             f"我们先把它背后的概念弄清楚。"
         )
 
-    kp_id = knowledge_point_id or "math.derivative"
-    if not knowledge.is_known(kp_id):
-        kp_id = "math.derivative"
+    kp_id = _resolve_knowledge_point(user_id, knowledge_point_id)
 
     estimate = knowledge_service.mastery_of(user_id, kp_id)
     difficulty = estimate.mastery
