@@ -1,6 +1,6 @@
 # Phase 0 — Frontend Bootstrap 设计规格咩
 
-日期：2026-10-02，当前阶段为设计审阅，尚未批准实施咩
+日期：2026-10-02，本次三项修订完成且无新增设计变化后，按人类的条件批准完成 spec review gate，可进入 writing-plans，尚未批准产品代码实施咩
 
 ## 1. 目标与依据咩
 
@@ -47,11 +47,17 @@ Backend 是学习数据的 Source of Truth，Frontend 展示后端提供的掌�
 ## 5. 数据流与注入咩
 
 ```text
-未来 Backend JSON → Codable DTO → Mapper → Domain → Provider → ViewModel → View
-当前 Swift fixtures → Mock Provider → Domain → ViewModel → Development View
+SwiftUI View → presentation state / ViewModel
+ViewModel
+   ↓ depends on
+Provider Protocol (returns Domain Model)
+   ├── MockDataProvider → Swift Fixtures → Domain
+   └── LiveDataProvider → APIClient → Codable DTO → Mapper → Domain
 ```
 
-占位 View 只消费 presentation state，显示「好学」「Development Build」和加载成功后的「Mock Data Ready」，不直接读取 fixture 或调用 APIClient 咩
+上图表示依赖和内部组合，Domain 是 Provider 向上返回的结果，ViewModel 只依赖 Provider protocol，Mock 从 Swift fixtures 提供 Domain，Live 内部组合 APIClient、DTO 与 Mapper 后向上返回 Domain 咩
+
+占位 View 只消费 presentation state / ViewModel，显示「好学」「Development Build」和加载成功后的「Mock Data Ready」，不直接访问 Provider、fixture、DTO 或 APIClient 咩
 
 App composition root 负责选择 Mock 或 Live 并注入依赖，默认使用 Mock，配置与学习业务数据分离咩
 
@@ -111,7 +117,9 @@ Tutor 调整快照供 Phase 1/3 消费，Phase 0 不实现回答驱动的分支�
 
 ## 9. Networking 与 Adapter 咩
 
-提供可注入 URLSession 的最小 APIClient，使用 async/await 和泛型 Decodable 接收结果，支持配置 base URL、HTTP method、相对路径、headers、可选 body、timeout 与可选 client request ID 咩
+Phase 0 不建设通用 networking framework，只实现证明未来 LiveDataProvider seam 所需的基础设施，没有当前 Phase 0 consumer 的能力保持最小或延后咩
+
+提供可注入 URLSession 的最小 APIClient，使用 async/await、URLRequest 与泛型 Decodable 验证 transport、解码和错误映射，base URL 与 timeout 保留最小配置能力，不为未来 endpoint、上传、重试、认证或幂等建设复杂 request builder 咩
 
 base URL 由 App 配置外部注入，默认 Mock 不需要 base URL，不写入协调服务地址，也不硬编码未确认的业务服务地址咩
 
@@ -123,7 +131,7 @@ base URL 由 App 配置外部注入，默认 Mock 不需要 base URL，不写入
 
 以测试专用 Codable payload 验证 transport 解码和 Mapper seam，明确其属于测试数据，不能作为正式 API_CONTRACT 咩
 
-不实现自动重试、幂等行为、认证系统、上传协议或 integration flow，client request ID 仅预留传递能力咩
+不实现自动重试、幂等行为、认证系统、上传协议或 integration flow，client request ID 仅保留设计能力，当前无实际 consumer 时不为它扩展实现代码咩
 
 ## 10. Git 与私密文件咩
 
@@ -150,6 +158,8 @@ ignore 不能识别任意源码内的 token，因此每次提交还必须检查 
 使用现有 Tests target 验证 Mock 读取与未知 ID 错误、Demo 快照一致性、Live 未接入错误、网络成功解码及 HTTP/解码/超时错误、DTO→Domain 测试 seam 咩
 
 网络测试注入 URLProtocol 或等价 stub，不请求真实 Backend，启动 UI test 验证占位页出现 Mock Data Ready，不进行性能基准或视觉 polish 咩
+
+timeout 测试由 URLProtocol 或等价 stub 直接产生 `URLError(.timedOut)`，断言映射为 Frontend 类型化 timeout error，不通过真实等待、sleep 或外部网络制造超时，以避免慢速和 flaky tests 咩
 
 运行相关 `test_sim` 并记录实际结果，单独的 UI snapshot 超时不作为 blocker，但 build 或相关 tests 失败必须报告并修复，不能把未运行测试标为通过咩
 
