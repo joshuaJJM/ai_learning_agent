@@ -58,6 +58,43 @@ GET /api/v1/health       # 同上（等价别名）
                          # 返回 status / llm_mode / 题库题数 / 运行时长
 ```
 
+### 契约常量（请从这里拉，不要手抄文档）
+
+```http
+GET /api/v1/meta/error-codes        # 全部错误码 + 默认 HTTP 状态 + 含义
+GET /api/v1/meta/knowledge-points   # 全部知识点（id + 名称 + 描述）
+```
+
+两个都是纯常量、不需要鉴权。客户端应当**在构建/启动时拉一次**，
+据此生成错误文案映射表，而不是照着文档硬编码 —— 文档会过期，接口不会。
+
+```json
+// GET /api/v1/meta/error-codes
+{
+  "count": 18,
+  "codes": ["INVALID_IMAGE", "UNAUTHORIZED", "..."],
+  "items": [
+    { "error_code": "INVALID_IMAGE", "http_status": 400,
+      "description": "图片为空 / 过大 / 不是图片" }
+  ]
+}
+```
+
+另外，`error_code` 在 **OpenAPI schema 里也是 enum**：
+
+```
+GET /openapi.json
+  → components.schemas.ErrorCode.enum   # 18 个取值
+  → components.schemas.ErrorInfo.properties.error_code.$ref → ErrorCode
+```
+
+所以用 OpenAPI 生成客户端的团队可以直接拿到类型安全的枚举，不用手写。
+
+> 错误码只有**一个事实来源**（`app/errors.py` 的 `_CODES`），
+> 它同时派生枚举、HTTP 状态映射、本文档的表格与上面那个接口 ——
+> 所以「文档写了但后端不抛」这种漂移在结构上不可能发生。
+> 表是 `python tools/sync_error_codes.py` 生成的，别手改。
+
 ### 统一错误格式
 
 所有错误响应体固定为：
@@ -75,24 +112,24 @@ GET /api/v1/health       # 同上（等价别名）
 
 | error_code | HTTP | 含义 |
 |---|---|---|
-| `UNAUTHORIZED` | 401 | token 无效/过期 |
-| `SESSION_EXPIRED` | 401 | 会话过期 |
-| `BOOK_NOT_OWNED` | 403 | 未拥有该题库 |
+| `INVALID_IMAGE` | 400 | 图片为空 / 过大 / 不是图片 |
+| `INVALID_SERIAL_NUMBER` | 400 | 序列号无效、格式不对，或已用于兑换其他书 |
+| `QUESTION_NOT_IN_SESSION` | 400 | 提交的题不是当前练习的当前这一题 |
+| `UNAUTHORIZED` | 401 | 未认证，或 token 无效 |
 | `ANALYSIS_NOT_FOUND` | 404 | 分析任务不存在 |
-| `SESSION_NOT_FOUND` | 404 | Tutor/练习 Session 不存在 |
-| `KNOWLEDGE_POINT_NOT_FOUND` | 404 | 知识点 id 不存在 |
-| `WRONG_QUESTION_NOT_FOUND` | 404 | 错题不存在 |
 | `BOOK_NOT_FOUND` | 404 | 图书不存在 |
-| `NO_QUESTIONS_AVAILABLE` | 404 | 该组题已做完 |
-| `INVALID_IMAGE` | 400 | 图片为空/过大/类型不支持 |
-| `INVALID_SERIAL_NUMBER` | 400 | 序列号无效或已被使用 |
+| `KNOWLEDGE_POINT_NOT_FOUND` | 404 | 知识点 id 不存在 |
+| `NOT_FOUND` | 404 | 目标资源不存在 |
+| `NO_QUESTIONS_AVAILABLE` | 404 | 这一组题已经做完了 |
+| `SESSION_NOT_FOUND` | 404 | Tutor / 练习 Session 不存在 |
+| `WRONG_QUESTION_NOT_FOUND` | 404 | 错题不存在 |
+| `IDEMPOTENCY_CONFLICT` | 409 | 同一个幂等键的请求正在处理中，稍后重试 |
 | `SESSION_COMPLETED` | 409 | Session 已结束，不能再作答 |
-| `QUESTION_NOT_IN_SESSION` | 400 | 提交的题不是当前练习的**当前这一题** |
-| `IDEMPOTENCY_CONFLICT` | 409 | 幂等键冲突 |
-| `QUESTION_NOT_RECOGNIZED` | 422 | 没识别出题目 |
+| `QUESTION_NOT_RECOGNIZED` | 422 | 没有从图片中识别出题目 |
 | `VALIDATION_ERROR` | 422 | 请求参数不合法 |
-| `VLM_TIMEOUT` | 504 | 视觉模型超时 |
-| `INTERNAL_ERROR` | 500 | 服务端异常 |
+| `INTERNAL_ERROR` | 500 | 服务端内部错误 |
+| `SERVICE_UNAVAILABLE` | 503 | 依赖的服务暂时不可用 |
+| `VLM_TIMEOUT` | 504 | 视觉模型超时或不可用 |
 
 ### 幂等（重要）
 

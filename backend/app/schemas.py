@@ -15,6 +15,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from .errors import ErrorCode
+
 # ---------------------------------------------------------------------------
 # 字面量类型（= 契约里的枚举）
 # ---------------------------------------------------------------------------
@@ -170,8 +172,29 @@ class TagScoresResponse(BaseModel):
 
 
 class ErrorInfo(BaseModel):
-    error_code: str
+    """统一错误体。
+
+    `error_code` 的类型是 `ErrorCode` 枚举，所以 OpenAPI schema 里会渲染成
+    **enum** —— 前端可以直接从 `/openapi.json` 或 `GET /api/v1/meta/error-codes`
+    生成映射表，不用手抄文档。
+    """
+
+    error_code: ErrorCode
     message: str
+
+
+class ErrorCodeEntry(BaseModel):
+    error_code: ErrorCode
+    http_status: int
+    description: str
+
+
+class ErrorCodeCatalogResponse(BaseModel):
+    """全部错误码。前端的错误文案映射表可以直接由它生成。"""
+
+    count: int
+    codes: list[ErrorCode] = Field(default_factory=list)
+    items: list[ErrorCodeEntry] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------

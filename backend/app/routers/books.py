@@ -10,7 +10,6 @@ from .. import repositories
 from ..dependencies import current_user, idempotency_key_header
 from ..errors import (
     BOOK_NOT_FOUND,
-    BOOK_NOT_OWNED,
     IDEMPOTENCY_CONFLICT,
     ApiError,
 )

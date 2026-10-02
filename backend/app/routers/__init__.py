@@ -7,6 +7,7 @@ from . import (  # noqa: F401
     home,
     homework,
     knowledge,
+    meta,
     practice,
     tags,
     tutor,
@@ -24,5 +25,6 @@ ALL_ROUTERS = (
     tags.router,
     books.router,
     books.entitlements_router,
+    meta.router,
     ai.router,
 )
