@@ -29,6 +29,8 @@ struct KnowledgeChange: Equatable {
     let beforeMastery: Double?
     let afterMastery: Double?
     let summary: String
+    var delta: Double? = nil
+    var evidenceCount: Int? = nil
 }
 
 struct WrongQuestion: Equatable {

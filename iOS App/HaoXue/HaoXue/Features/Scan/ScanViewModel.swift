@@ -2,13 +2,14 @@ import Foundation
 import Observation
 import UIKit
 
-enum ScanFlowState { case review, preparing, uploading, queued, processing, completed, failed }
+enum ScanFlowState: Equatable { case review, preparing, uploading, queued, processing, completed, failed }
 
 @MainActor @Observable
 final class ScanViewModel {
     private(set) var pages: [ScanPage] = []
     private(set) var state: ScanFlowState = .review
     private(set) var analysis: AnalysisResponse?
+    private(set) var completedResult: HomeworkAnalysisResult?
     private(set) var analysisID: String?
     private(set) var errorCode: String?
     private(set) var isMock = false
@@ -17,12 +18,13 @@ final class ScanViewModel {
     private var task: Task<Void, Never>?
     private var taskGeneration = 0
     private var pollCount = 0
-    private let live: LiveAnalysisService
+    private let live: any AnalysisServing
     private let mock = MockAnalysisService()
     private let preparation = ImagePreparationService()
 
-    init(baseURL: URL = AppConfiguration.demoBackendURL) {
-        live = LiveAnalysisService(baseURL: baseURL, client: APIClient(timeout: 60))
+    init(baseURL: URL? = nil, liveService: (any AnalysisServing)? = nil) {
+        live = liveService ?? LiveAnalysisService(baseURL: baseURL ?? AppConfiguration.demoBackendURL,
+                                                  client: APIClient(timeout: 60))
         isMock = ProcessInfo.processInfo.environment["HAOXUE_MOCK_MODE"] == "1"
     }
 
@@ -59,6 +61,7 @@ final class ScanViewModel {
         preparedImages = nil
         analysisID = nil
         analysis = nil
+        completedResult = nil
         errorCode = nil
         pollCount = 0
         launch()
@@ -82,6 +85,7 @@ final class ScanViewModel {
         pages = []
         state = .review
         analysis = nil
+        completedResult = nil
         analysisID = nil
         idempotencyKey = nil
         preparedImages = nil
@@ -110,12 +114,14 @@ final class ScanViewModel {
                     }
                     self.state = .uploading
                     let created = try await self.service.create(images: self.preparedImages!, key: self.idempotencyKey!)
+                    guard !Task.isCancelled, self.taskGeneration == generation else { return }
                     self.analysisID = created.analysisID
                     self.state = .queued
                 }
                 guard let id = self.analysisID else { return }
                 while !Task.isCancelled {
                     let response = try await self.service.get(id: id)
+                    guard !Task.isCancelled, self.taskGeneration == generation else { return }
                     self.pollCount += 1
                     let progress = response.progress
                     let stages = progress?.stages.map { "\($0.key):\($0.state.rawValue)" }.joined(separator: ",") ?? "none"
@@ -124,7 +130,15 @@ final class ScanViewModel {
                     switch response.status {
                     case .queued: self.state = .queued
                     case .processing: self.state = .processing
-                    case .completed: self.state = .completed; return
+                    case .completed:
+                        guard self.isMock || response.result != nil else {
+                            self.errorCode = "RESULT_UNAVAILABLE"
+                            self.state = .failed
+                            return
+                        }
+                        self.completedResult = response.result
+                        self.state = .completed
+                        return
                     case .failed:
                         self.errorCode = response.error?.errorCode ?? "ANALYSIS_FAILED"
                         self.state = .failed
@@ -140,9 +154,15 @@ final class ScanViewModel {
                 return
             } catch {
                 ScanDiagnostics.log("FLOW error=\(error) analysis_id=\(self.analysisID ?? "nil") state=\(self.state)")
-                self.errorCode = (error as? NetworkError).flatMap {
-                    if case let .backend(code, _, _, _) = $0 { return code }; return nil
-                } ?? "NETWORK_ERROR"
+                if let network = error as? NetworkError {
+                    switch network {
+                    case .backend(let code, _, _, _): self.errorCode = code
+                    case .decoding: self.errorCode = "RESULT_UNAVAILABLE"
+                    default: self.errorCode = "NETWORK_ERROR"
+                    }
+                } else {
+                    self.errorCode = error is DecodingError ? "RESULT_UNAVAILABLE" : "NETWORK_ERROR"
+                }
                 self.state = .failed
             }
         }

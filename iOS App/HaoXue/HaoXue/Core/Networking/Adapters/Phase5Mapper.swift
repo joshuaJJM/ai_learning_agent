@@ -81,7 +81,8 @@ struct Phase5Mapper {
                                knowledgeChanges: dto.knowledgeChanges.map {
                                    KnowledgeChange(knowledgePointID: $0.knowledgePointId,
                                                    beforeMastery: $0.before, afterMastery: $0.after,
-                                                   summary: $0.name)
+                                                   summary: $0.name, delta: $0.delta,
+                                                   evidenceCount: $0.evidenceCount)
                                }, newWrongQuestions: dto.newWrongQuestions.map(summary),
                                nextAction: dto.nextAction.map(action), error: dto.error,
                                warnings: dto.warnings, generatedBy: dto.generatedBy,

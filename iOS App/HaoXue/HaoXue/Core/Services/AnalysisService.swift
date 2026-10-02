@@ -69,7 +69,7 @@ struct LiveAnalysisService: AnalysisServing {
         ScanDiagnostics.log("POLL http=\(response.statusCode) analysis_id=\(id)")
         try client.validate(response, data: data)
         do {
-            return try JSONDecoder().decode(AnalysisResponse.self, from: data)
+            return try AnalysisResponse.decodeBackend(data)
         } catch {
             ScanDiagnostics.log("POLL decode_error=\(error) analysis_id=\(id)")
             throw error

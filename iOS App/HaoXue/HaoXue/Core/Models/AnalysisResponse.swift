@@ -8,7 +8,23 @@ struct AnalysisStage: Decodable, Identifiable {
     let labelZH: String
     let state: AnalysisStageState
     var id: String { key }
-    enum CodingKeys: String, CodingKey { case key, state, labelZH = "label_zh" }
+    enum CodingKeys: String, CodingKey {
+        case key, state, labelZH = "label_zh", labelZh
+    }
+
+    init(key: String, labelZH: String, state: AnalysisStageState) {
+        self.key = key
+        self.labelZH = labelZH
+        self.state = state
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        key = try values.decode(String.self, forKey: .key)
+        state = try values.decode(AnalysisStageState.self, forKey: .state)
+        labelZH = try values.decodeIfPresent(String.self, forKey: .labelZH)
+            ?? values.decode(String.self, forKey: .labelZh)
+    }
 }
 
 struct AnalysisProgress: Decodable {
@@ -20,6 +36,26 @@ struct AnalysisProgress: Decodable {
         case percent, stages
         case currentStageKey = "current_stage_key"
         case currentStageLabelZH = "current_stage_label_zh"
+        case convertedStageKey = "currentStageKey"
+        case convertedStageLabel = "currentStageLabelZh"
+    }
+
+    init(percent: Double, currentStageKey: String?, currentStageLabelZH: String?,
+         stages: [AnalysisStage]) {
+        self.percent = percent
+        self.currentStageKey = currentStageKey
+        self.currentStageLabelZH = currentStageLabelZH
+        self.stages = stages
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        percent = try values.decode(Double.self, forKey: .percent)
+        stages = try values.decode([AnalysisStage].self, forKey: .stages)
+        currentStageKey = try values.decodeIfPresent(String.self, forKey: .currentStageKey)
+            ?? values.decodeIfPresent(String.self, forKey: .convertedStageKey)
+        currentStageLabelZH = try values.decodeIfPresent(String.self, forKey: .currentStageLabelZH)
+            ?? values.decodeIfPresent(String.self, forKey: .convertedStageLabel)
     }
 }
 
@@ -34,8 +70,36 @@ struct AnalysisResponse: Decodable {
     let status: AnalysisPhase
     let progress: AnalysisProgress?
     let error: AnalysisFailure?
+    let result: HomeworkAnalysisResult?
     enum CodingKeys: String, CodingKey {
         case analysisID = "analysis_id", status, progress, error
+    }
+
+    init(analysisID: String, status: AnalysisPhase, progress: AnalysisProgress?,
+         error: AnalysisFailure?, result: HomeworkAnalysisResult? = nil) {
+        self.analysisID = analysisID
+        self.status = status
+        self.progress = progress
+        self.error = error
+        self.result = result
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        analysisID = try values.decode(String.self, forKey: .analysisID)
+        status = try values.decode(AnalysisPhase.self, forKey: .status)
+        progress = try values.decodeIfPresent(AnalysisProgress.self, forKey: .progress)
+        error = try values.decodeIfPresent(AnalysisFailure.self, forKey: .error)
+        result = nil
+    }
+
+    static func decodeBackend(_ data: Data) throws -> AnalysisResponse {
+        let poll = try JSONDecoder().decode(AnalysisResponse.self, from: data)
+        guard poll.status == .completed else { return poll }
+        let completed = try BackendJSON.decoder.decode(AnalysisResultDTO.self, from: data)
+        return AnalysisResponse(analysisID: poll.analysisID, status: poll.status,
+                                progress: poll.progress, error: poll.error,
+                                result: Phase5Mapper().analysis(completed))
     }
 }
 

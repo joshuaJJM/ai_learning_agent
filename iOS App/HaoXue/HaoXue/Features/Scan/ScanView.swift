@@ -4,7 +4,8 @@ import VisionKit
 
 struct ScanView: View {
     let store: DemoScenarioStore
-    let onStart: () -> Void
+    let onStart: (String?) -> Void
+    let onReturnHome: () -> Void
     @State private var model = ScanViewModel()
     @State private var selectedID: UUID?
     @State private var selectedPhotos: [PhotosPickerItem] = []
@@ -12,6 +13,7 @@ struct ScanView: View {
     @State private var showingScanner = false
     @State private var showingCameraAlert = false
     @State private var importError = false
+    @State private var showingResult = false
 
     var body: some View {
         ScrollView {
@@ -20,11 +22,14 @@ struct ScanView: View {
                 if model.pages.isEmpty { emptyState } else {
                     pageCarousel
                     if model.canEdit { reviewControls } else {
-                        AnalysisProgressView(model: model, onResult: store.showScanResult,
+                        AnalysisProgressView(model: model, onResult: {
+                            if model.isMock { store.showScanResult() }
+                            else if model.completedResult != nil { showingResult = true }
+                        },
                                              onNewScan: store.resetScanResult)
                     }
                 }
-                if model.state == .completed && store.scanAnalysisCompleted { scanResult }
+                if model.isMock && model.state == .completed && store.scanAnalysisCompleted { scanResult }
             }
             .padding(.horizontal, 20)
             .padding(.top, 26)
@@ -85,6 +90,19 @@ struct ScanView: View {
         }
         .onAppear { model.resume() }
         .onDisappear { model.stop() }
+        .onChange(of: model.state) { _, state in
+            if state == .completed, !model.isMock, model.completedResult != nil {
+                showingResult = true
+            }
+        }
+        .navigationDestination(isPresented: $showingResult) {
+            if let result = model.completedResult {
+                AnalysisResultView(result: result, onStartTutor: onStart) {
+                    showingResult = false
+                    onReturnHome()
+                }
+            }
+        }
     }
 
     private var header: some View {
@@ -254,7 +272,8 @@ struct ScanView: View {
                 Text("分析结果预览").font(.headline)
                 Text("完整题目结果将在后续集成阶段接入。你可以继续体验现有学习演示。")
                     .font(.subheadline).foregroundStyle(DemoStyle.secondary)
-                Button("开始学习", action: onStart).buttonStyle(PrimaryScanButtonStyle())
+                Button("开始学习") { onStart(nil) }
+                    .buttonStyle(PrimaryScanButtonStyle())
             }
         }
     }
@@ -305,7 +324,7 @@ private struct AnalysisProgressView: View {
                     .buttonStyle(PrimaryScanButtonStyle())
                 }
                 if model.state == .completed {
-                    Text("你的学习状态已经更新")
+                    Text("本次分析结果已准备好")
                         .font(.subheadline).foregroundStyle(DemoStyle.secondary)
                     Button("查看分析结果", action: onResult)
                         .buttonStyle(PrimaryScanButtonStyle())

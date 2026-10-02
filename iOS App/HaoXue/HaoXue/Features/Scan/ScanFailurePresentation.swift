@@ -12,6 +12,7 @@ struct ScanFailurePresentation {
         case "VLM_TIMEOUT": "服务器分析超时，请再试一次。"
         case "NETWORK_ERROR": "连接暂时中断，重新尝试会继续当前任务。"
         case "ANALYSIS_FAILED": "服务器未能完成分析，请再试一次。"
+        case "RESULT_UNAVAILABLE": "分析结果暂时无法显示，请重试。"
         case .some(let code): "分析未完成（\(code)），请再试一次。"
         case .none: "分析未完成，请再试一次。"
         }
