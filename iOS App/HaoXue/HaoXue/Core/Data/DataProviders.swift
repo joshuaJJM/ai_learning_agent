@@ -20,6 +20,11 @@ import Foundation
     func fetchWrongQuestion(id: String) async throws -> WrongQuestionDetail
     func updateWrongQuestion(id: String, status: String) async throws -> WrongQuestionDetail
 }
+@MainActor protocol KnowledgeDataProviding {
+    func fetchKnowledgeDetail(id: String) async throws -> KnowledgePointDetail
+    func fetchKnowledgeOverview() async throws -> KnowledgeOverview
+    func fetchRelatedWrongQuestions(knowledgePointID: String) async throws -> [WrongQuestionSummary]
+}
 
 enum ProviderError: Error, Equatable {
     case unknownFixtureID(String)

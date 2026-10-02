@@ -4,6 +4,7 @@ struct AnalysisResultView: View {
     let result: HomeworkAnalysisResult
     let onStartTutor: (String?) -> Void
     let onOpenWrongQuestion: (String) -> Void
+    let onOpenKnowledge: (String) -> Void
     let onReturnHome: () -> Void
 
     @State private var showsCorrectQuestions = false
@@ -176,7 +177,7 @@ struct AnalysisResultView: View {
                     VStack(alignment: .leading, spacing: 7) {
                         Text("相关知识点").font(.caption).foregroundStyle(DemoStyle.secondary)
                         ForEach(Array(question.knowledgePoints.enumerated()), id: \.offset) { _, point in
-                            Button(point.name) { notice = .knowledgePoint(point.id) }
+                            Button(point.name) { onOpenKnowledge(point.id) }
                                 .multilineTextAlignment(.leading)
                         }
                     }
@@ -212,7 +213,7 @@ struct AnalysisResultView: View {
 
     private func knowledgeChangeRow(_ change: KnowledgeChange) -> some View {
         VStack(alignment: .leading, spacing: 7) {
-            Button(change.summary) { notice = .knowledgePoint(change.knowledgePointID) }
+            Button(change.summary) { onOpenKnowledge(change.knowledgePointID) }
                 .font(.headline)
                 .multilineTextAlignment(.leading)
             HStack(spacing: 11) {
@@ -240,18 +241,16 @@ struct AnalysisResultView: View {
     }
 
     private enum Notice {
-        case knowledgePoint(String), practice
+        case practice
 
         var title: String {
             switch self {
-            case .knowledgePoint: "知识点详情即将开放"
             case .practice: "针对练习即将开放"
             }
         }
 
         var message: String {
             switch self {
-            case .knowledgePoint: "知识点详情将在后续阶段接入。"
             case .practice: "练习功能将在后续阶段接入。"
             }
         }

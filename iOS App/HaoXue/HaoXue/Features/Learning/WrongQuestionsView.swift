@@ -3,11 +3,27 @@ import SwiftUI
 struct WrongQuestionsView: View {
     let model: WrongQuestionsListViewModel
     let onOpen: (String) -> Void
+    let onOpenKnowledgeOverview: () -> Void
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                DemoPageHeader(title: "错题", subtitle: "从每次作答中找到下一步。")
+                DemoPageHeader(title: "学习", subtitle: "从已有的学习证据找到下一步。")
+                Button(action: onOpenKnowledgeOverview) {
+                    DemoCard {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text("知识状态").font(.headline).foregroundStyle(.primary)
+                                Text("查看掌握度与学习证据")
+                                    .font(.subheadline).foregroundStyle(DemoStyle.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+                DemoSectionTitle(title: "错题")
                 switch model.phase {
                 case .idle, .loading:
                     ProgressView("正在获取错题")
@@ -85,15 +101,17 @@ struct WrongQuestionsView: View {
 struct WrongQuestionDetailView: View {
     @Environment(\.dismiss) private var dismiss
     let onStartTutor: (String) -> Void
+    let onOpenKnowledge: (String) -> Void
     let onChanged: () -> Void
     @State private var model: WrongQuestionDetailViewModel
-    @State private var showsKnowledgeShell = false
-    @State private var selectedKnowledgeName = ""
 
     init(id: String, provider: any WrongQuestionDataProviding,
-         onStartTutor: @escaping (String) -> Void, onChanged: @escaping () -> Void) {
+         onStartTutor: @escaping (String) -> Void,
+         onOpenKnowledge: @escaping (String) -> Void,
+         onChanged: @escaping () -> Void) {
         _model = State(initialValue: WrongQuestionDetailViewModel(id: id, provider: provider))
         self.onStartTutor = onStartTutor
+        self.onOpenKnowledge = onOpenKnowledge
         self.onChanged = onChanged
     }
 
@@ -128,15 +146,6 @@ struct WrongQuestionDetailView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("关闭") { dismiss() }
             }
-        }
-        .navigationDestination(isPresented: $showsKnowledgeShell) {
-            VStack(spacing: 12) {
-                Text(selectedKnowledgeName).font(.title2.bold())
-                Text("知识点的完整学习证据将在下一阶段呈现。")
-                    .foregroundStyle(DemoStyle.secondary)
-            }
-            .padding(24)
-            .navigationTitle("相关知识点")
         }
         .task { await model.loadIfNeeded() }
         .refreshable { await model.refresh() }
@@ -202,17 +211,19 @@ struct WrongQuestionDetailView: View {
             if let name = detail.summary.knowledgePointName {
                 DemoSectionTitle(title: "相关知识点")
                 DemoCard {
-                    Button {
-                        selectedKnowledgeName = name
-                        showsKnowledgeShell = true
-                    } label: {
-                        HStack {
-                            Text(name).multilineTextAlignment(.leading)
-                            Spacer(minLength: 8)
-                            Image(systemName: "chevron.right")
+                    if let id = detail.summary.knowledgePointID {
+                        Button {
+                            onOpenKnowledge(id)
+                        } label: {
+                            HStack {
+                                Text(name).multilineTextAlignment(.leading)
+                                Spacer(minLength: 8)
+                                Image(systemName: "chevron.right")
+                            }
                         }
+                    } else {
+                        Text(name)
                     }
-                    .disabled(detail.summary.knowledgePointID == nil)
                 }
             }
             HStack {

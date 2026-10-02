@@ -2,6 +2,43 @@ import XCTest
 
 final class HaoXueUITests: XCTestCase {
     @MainActor
+    func testLiveKnowledgeFromHomeOverviewAndWrongQuestion() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        let pointName = "利用导数判断函数单调性与单调区间"
+
+        app.launch()
+        let homePoint = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", pointName)).firstMatch
+        XCTAssertTrue(homePoint.waitForExistence(timeout: 20))
+        homePoint.tap()
+        XCTAssertTrue(app.navigationBars["知识点详情"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts[pointName].exists)
+        XCTAssertTrue(app.staticTexts["学习证据"].exists)
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "继续学习")).firstMatch.exists)
+
+        app.terminate()
+        app.launch()
+        app.tabBars.buttons["学习"].tap()
+        app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "知识状态")).firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["知识状态"].waitForExistence(timeout: 15))
+        let overviewPoint = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", pointName)).firstMatch
+        XCTAssertTrue(overviewPoint.waitForExistence(timeout: 15))
+        overviewPoint.tap()
+        XCTAssertTrue(app.navigationBars["知识点详情"].waitForExistence(timeout: 15))
+
+        app.terminate()
+        app.launch()
+        app.tabBars.buttons["学习"].tap()
+        let wrong = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "第 17 题")).firstMatch
+        XCTAssertTrue(wrong.waitForExistence(timeout: 20))
+        wrong.tap()
+        XCTAssertTrue(app.navigationBars["错题详情"].waitForExistence(timeout: 15))
+        app.buttons[pointName].tap()
+        XCTAssertTrue(app.navigationBars["知识点详情"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts[pointName].exists)
+    }
+
+    @MainActor
     func testLiveWrongQuestionFromLearningAndHome() {
         continueAfterFailure = false
         let app = XCUIApplication()

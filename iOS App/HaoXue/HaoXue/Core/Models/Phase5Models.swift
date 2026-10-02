@@ -166,3 +166,26 @@ struct KnowledgePointDetail {
     let recommendedAction: NextLearningAction?
     let updatedAt: Date
 }
+
+struct KnowledgeOverview {
+    struct Node {
+        let id: String
+        let name: String
+        let description: String
+        let mastery: Double
+        let confidence: Double
+        let evidenceCount: Int
+        let trend: String
+        let children: [Node]
+    }
+    struct WeakPoint {
+        let id: String
+        let name: String
+        let reason: String
+    }
+    let nodes: [Node]
+    let weakest: [WeakPoint]
+    let totalEvidence: Int
+    let updatedAt: Date
+    var weakestIDs: Set<String> { Set(weakest.map(\.id)) }
+}

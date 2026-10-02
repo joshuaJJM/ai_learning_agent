@@ -1,7 +1,7 @@
 import Foundation
 
 @MainActor
-struct LiveDataProvider: HomeDataProviding, HomeSnapshotProviding, AnalysisDataProviding, TutorDataProviding, PracticeDataProviding, WrongQuestionDataProviding {
+struct LiveDataProvider: HomeDataProviding, HomeSnapshotProviding, AnalysisDataProviding, TutorDataProviding, PracticeDataProviding, WrongQuestionDataProviding, KnowledgeDataProviding {
     private let client: APIClient
     private let configuration: AppConfiguration
     private let mapper = Phase5Mapper()
@@ -95,6 +95,14 @@ struct LiveDataProvider: HomeDataProviding, HomeSnapshotProviding, AnalysisDataP
 
     func fetchKnowledgeTree() async throws -> KnowledgeTreeDTO {
         try await get("knowledge")
+    }
+
+    func fetchKnowledgeOverview() async throws -> KnowledgeOverview {
+        mapper.knowledgeOverview(try await fetchKnowledgeTree())
+    }
+
+    func fetchRelatedWrongQuestions(knowledgePointID: String) async throws -> [WrongQuestionSummary] {
+        try await fetchWrongQuestions(knowledgePointID: knowledgePointID, limit: 100)
     }
 
     func fetchErrorCodes() async throws -> ErrorCodeCatalogDTO {

@@ -124,7 +124,7 @@ struct Phase5Mapper {
 
     func knowledge(_ dto: KnowledgeDetailDTO) -> KnowledgePointDetail {
         KnowledgePointDetail(id: dto.knowledgePointId, name: dto.name,
-            description: dto.description, subject: dto.subject, mastery: dto.mastery,
+            description: dto.description, subject: dto.subject ?? "", mastery: dto.mastery,
             confidence: dto.confidence, trend: dto.trend, evidenceCount: dto.evidenceCount,
             correctCount: dto.correctCount, partialCount: dto.partialCount,
             wrongCount: dto.wrongCount, recentPerformance: dto.recentPerformance.map {
@@ -142,5 +142,19 @@ struct Phase5Mapper {
             }, prerequisites: dto.prerequisites.map { ($0.knowledgePointId, $0.name, $0.weight) },
             masteryExplanation: dto.masteryExplanation,
             recommendedAction: dto.recommendedAction.map(action), updatedAt: dto.updatedAt)
+    }
+
+    func knowledgeOverview(_ dto: KnowledgeTreeDTO) -> KnowledgeOverview {
+        func node(_ dto: KnowledgeTreeDTO.Node) -> KnowledgeOverview.Node {
+            KnowledgeOverview.Node(id: dto.knowledgePointId, name: dto.name,
+                                   description: dto.description ?? "", mastery: dto.mastery,
+                                   confidence: dto.confidence, evidenceCount: dto.evidenceCount,
+                                   trend: dto.trend, children: (dto.children ?? []).map(node))
+        }
+        return KnowledgeOverview(nodes: dto.tree.map(node),
+                                 weakest: dto.weakest.map {
+                                     KnowledgeOverview.WeakPoint(id: $0.knowledgePointId,
+                                                                 name: $0.name, reason: $0.reason)
+                                 }, totalEvidence: dto.totalEvidence, updatedAt: dto.updatedAt)
     }
 }

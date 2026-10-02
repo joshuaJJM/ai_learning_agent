@@ -228,12 +228,12 @@ struct KnowledgeTreeDTO: Decodable {
     struct Node: Decodable {
         let knowledgePointId: String
         let name: String
-        let description: String
+        let description: String?
         let mastery: Double
         let confidence: Double
         let evidenceCount: Int
         let trend: String
-        let children: [Node]
+        let children: [Node]?
     }
     struct WeakPoint: Decodable {
         let knowledgePointId: String
@@ -244,7 +244,7 @@ struct KnowledgeTreeDTO: Decodable {
         let reason: String
     }
     let userId: String
-    let subject: String
+    let subject: String?
     let updatedAt: Date
     let tree: [Node]
     let weakest: [WeakPoint]
@@ -284,7 +284,7 @@ struct KnowledgeDetailDTO: Decodable {
     let knowledgePointId: String
     let name: String
     let description: String
-    let subject: String
+    let subject: String?
     let mastery: Double
     let confidence: Double
     let trend: String

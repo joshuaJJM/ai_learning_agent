@@ -4,6 +4,7 @@ struct HomeView: View {
     let model: HomeViewModel
     let onStartTutor: (String?) -> Void
     let onOpenWrongQuestion: (String) -> Void
+    let onOpenKnowledge: (String) -> Void
     @State private var showsAllKnowledge = false
     @State private var notice: Notice?
 
@@ -159,22 +160,25 @@ struct HomeView: View {
     }
 
     private func knowledgeRow(_ point: HomeSnapshot.KnowledgeSummary, weakestID: String?) -> some View {
-        VStack(spacing: 9) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(point.name).font(.headline)
-                Spacer(minLength: 8)
-                Text(point.mastery.demoPercent)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(DemoStyle.secondary)
-            }
-            MasteryBar(value: point.mastery, color: point.isWeak ? .orange : .blue)
-            if point.id == weakestID {
-                Text("当前重点 · \(trendLabel(point.trend))")
-                    .font(.caption)
-                    .foregroundStyle(DemoStyle.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+        Button { onOpenKnowledge(point.id) } label: {
+            VStack(spacing: 9) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(point.name).font(.headline)
+                    Spacer(minLength: 8)
+                    Text(point.mastery.demoPercent)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(DemoStyle.secondary)
+                }
+                MasteryBar(value: point.mastery, color: point.isWeak ? .orange : .blue)
+                if point.id == weakestID {
+                    Text("当前重点 · \(trendLabel(point.trend))")
+                        .font(.caption)
+                        .foregroundStyle(DemoStyle.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
         }
+        .buttonStyle(.plain)
     }
 
     private func trendLabel(_ trend: String) -> String {
