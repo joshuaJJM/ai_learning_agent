@@ -123,25 +123,20 @@ def test_verification_can_be_pinned_to_the_primary_model() -> None:
 
 
 # ---------------------------------------------------------------------------
-# VLM 兜底链
+# VLM 识别链（直接调生产代码，不抄一份）
 # ---------------------------------------------------------------------------
 
 def _chain(settings: Settings) -> list[str]:
-    """复刻 analyze_images 里的兜底链构造。"""
-    llm = LlmClient(settings)
-    models = [settings.vlm_model]
-    if (
-        settings.vlm_fallback_model
-        and settings.vlm_fallback_model != settings.vlm_model
-    ):
-        models.append(settings.vlm_fallback_model)
-    if llm.backup_configured and settings.backup_llm_model not in models:
-        models.append(settings.backup_llm_model)
-    return models
+    return vlm_service.recognition_models(settings, LlmClient(settings))
 
 
-def test_vlm_chain_ends_with_the_other_vendor() -> None:
-    assert _chain(_settings()) == [PRIMARY, FALLBACK, BACKUP]
+def test_vlm_chain_puts_deepseek_before_the_weaker_fallback() -> None:
+    """★ 质量优先：DeepSeek 识别质量最高（只是慢），必须排在 8B 之前。"""
+    assert _chain(_settings()) == [PRIMARY, BACKUP, FALLBACK]
+
+
+def test_vlm_chain_starts_with_the_primary_model() -> None:
+    assert _chain(_settings())[0] == PRIMARY
 
 
 def test_vlm_chain_has_no_backup_when_unconfigured() -> None:
@@ -153,6 +148,10 @@ def test_backup_model_is_not_duplicated_in_the_chain() -> None:
     assert _chain(_settings(backup_llm_model=PRIMARY, vlm_fallback_model=PRIMARY)) == [
         PRIMARY
     ]
+
+
+def test_fallback_is_dropped_when_it_equals_the_primary() -> None:
+    assert _chain(_settings(vlm_fallback_model=PRIMARY)) == [PRIMARY, BACKUP]
 
 
 def test_health_reports_the_backup_provider(client) -> None:

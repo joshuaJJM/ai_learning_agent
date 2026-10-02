@@ -79,20 +79,26 @@ GET /api/v1/health       # 同上（等价别名）
 
 ### 模型与容错策略
 
-| 角色 | 模型 | 厂商 |
-|---|---|---|
-| 图片识别（主） | `Qwen/Qwen3-VL-32B-Instruct` | SiliconFlow |
-| 图片识别（备） | `Qwen/Qwen3-VL-8B-Instruct` | SiliconFlow |
-| 图片识别（**跨厂商兜底**） | `deepseek-flash` | DeepSeek |
-| 二次求解校验 | `deepseek-flash` | DeepSeek |
+| 顺序 | 角色 | 模型 | 厂商 |
+|---|---|---|---|
+| 1 | 图片识别（主） | `Qwen/Qwen3-VL-32B-Instruct` | SiliconFlow |
+| 2 | 图片识别（**质量兜底**） | `deepseek-flash` | DeepSeek |
+| 3 | 图片识别（最后备选） | `Qwen/Qwen3-VL-8B-Instruct` | SiliconFlow |
+| — | 二次求解校验 | `deepseek-flash` | DeepSeek |
 
-- **识别链是逐级降级的**：主 → 备 → 跨厂商兜底。全都失败才算失败。
-- **二次求解校验刻意用另一个厂商的模型**：识别是视觉模型、校验是文本模型，
+- **识别按质量优先降级**：主 → DeepSeek → 8B。
+  DeepSeek 的识别质量其实最高（只是慢一些），所以排在 8B 之前 ——
+  宁可多等一会儿，也不要一个较差的识别结果。全部失败才算失败。
+- **二次求解校验用另一个厂商的模型**：识别是视觉模型、校验是文本模型，
   两边异构，独立性更好 —— 同一家的模型容易犯同样的错。
   校验结果与识别不一致时，该题判为 `unknown`（**不计入掌握度**）。
 - `deepseek-flash` 是**推理模型**（思维链放在 `reasoning_content`，
   且思考 token 计入 `max_tokens`）。开启 JSON 模式后它的推理量会大幅下降，
   实测同一张图从 10.2s 降到 1.9s。
+
+> 降级到后面几个模型时会明显变慢（每个模型最多试 5 次）。
+> 如果某个分析任务耗时异常长，先看 `warnings` 里有没有
+> 「主 VLM 未成功，已降级到 …」。
 
 > 上传大图时若一次要识别十几道题，模型输出可能很长。
 > 后端会检查 `finish_reason`：一旦是被 `max_tokens` 截断，

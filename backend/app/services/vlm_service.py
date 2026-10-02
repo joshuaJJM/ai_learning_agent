@@ -487,6 +487,22 @@ async def verify_answers(
     return warnings
 
 
+def recognition_models(settings: Any, llm: LlmClient) -> list[str]:
+    """图片识别的降级链，按**质量优先**排序。
+
+        主（Qwen3-VL-32B）→ DeepSeek（质量最高，只是慢）→ 备（Qwen3-VL-8B）
+
+    逐级降级，全都失败才算失败。抽成函数是为了让测试直接用它 ——
+    测试里再抄一份的话，两份迟早长歪。
+    """
+    models: list[str] = [settings.vlm_model]
+    if llm.backup_configured and settings.backup_llm_model not in models:
+        models.append(settings.backup_llm_model)
+    if settings.vlm_fallback_model and settings.vlm_fallback_model not in models:
+        models.append(settings.vlm_fallback_model)
+    return models
+
+
 # ---------------------------------------------------------------------------
 # 调用
 # ---------------------------------------------------------------------------
@@ -507,13 +523,8 @@ async def analyze_images(
     llm = client or get_llm()
     prompt = build_prompt(subject, topic)
 
-    models = [settings.vlm_model]
-    if settings.vlm_fallback_model and settings.vlm_fallback_model != settings.vlm_model:
-        models.append(settings.vlm_fallback_model)
-    # 最后一道防线：**另一个厂商**的模型。主厂商整体挂掉时（实测遇到过
-    # SiliconFlow 返 500），同一家的备选模型会一起哑，只有换厂商才救得回来。
-    if llm.backup_configured and settings.backup_llm_model not in models:
-        models.append(settings.backup_llm_model)
+    # 识别链：主 → DeepSeek → 备（8B），**质量优先**
+    models = recognition_models(settings, llm)
 
     semaphore = asyncio.Semaphore(VLM_CONCURRENCY)
 
