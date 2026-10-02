@@ -17,6 +17,8 @@ struct TutorView: View {
             }
             .padding(.horizontal, 22)
             .padding(.vertical, 19)
+            .background(DemoStyle.background)
+            .overlay(alignment: .bottom) { Divider().opacity(0.3) }
 
             ScrollView {
                 if store.tutorStep == .completion {
@@ -25,6 +27,7 @@ struct TutorView: View {
                     questionContent
                 }
             }
+            .background(Color(uiColor: .systemBackground))
             .safeAreaInset(edge: .bottom) {
                 VStack(spacing: 17) {
                     Button(action: primaryAction) {
@@ -54,7 +57,8 @@ struct TutorView: View {
                 .padding(.horizontal, 22)
                 .padding(.top, 16)
                 .padding(.bottom, 10)
-                .background(.background)
+                .background(DemoStyle.background)
+                .overlay(alignment: .top) { Divider().opacity(0.3) }
             }
         }
         .background(.background)
