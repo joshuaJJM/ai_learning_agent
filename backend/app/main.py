@@ -43,7 +43,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     stats = bank.stats()
     settings = get_settings()
 
-    logger.info("数据库: %s", db.db_path())
+    logger.info(
+        "存储: %s (%s)", db.storage_label(), "MySQL" if settings.use_mysql else "SQLite"
+    )
     logger.info("图书: %d 本", books)
     logger.info("题库: %d 个 bank / %d 道题", stats["bank_count"], stats["question_count"])
     for warning in bank.report.warnings:
@@ -123,7 +125,7 @@ async def health() -> HealthResponse:
         llm_mode=llm.mode,  # type: ignore[arg-type]
         llm_model=settings.llm_model,
         vlm_model=settings.vlm_model,
-        database=str(db.db_path()),
+        database=db.storage_label(),
         bank_count=stats["bank_count"],
         question_count=stats["question_count"],
         uptime_seconds=round(time.time() - STARTED_AT, 2),

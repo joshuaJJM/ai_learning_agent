@@ -2,6 +2,11 @@
 api-key.txt
 .env
 backend/.env
+# 服务器专用环境文件（含 MySQL 密码）
+.env.server
+backend/.env.server
+.env.local
+backend/.env.local
 *.key
 *.pem
 

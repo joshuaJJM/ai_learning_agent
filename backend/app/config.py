@@ -37,6 +37,14 @@ class Settings(BaseSettings):
     force_mock_llm: bool = False
 
     # ---- 存储 ----
+    # 生产用 MySQL（远端 127.0.0.1，仅服务器内可连）；本地开发与测试回落到 SQLite。
+    # 只要 MYSQL_HOST 配了就走 MySQL。
+    mysql_host: str = ""
+    mysql_port: int = 3306
+    mysql_user: str = ""
+    mysql_password: str = ""
+    mysql_database: str = "hackathon"
+    # 没配 MySQL 时用这个 SQLite 文件
     database_path: str = "data/haoxue.db"
 
     # ---- 服务监听 ----
@@ -61,6 +69,15 @@ class Settings(BaseSettings):
     @property
     def llm_enabled(self) -> bool:
         return bool(self.llm_api_key) and not self.force_mock_llm
+
+    @property
+    def use_mysql(self) -> bool:
+        """配了 host + user 就用 MySQL，否则用 SQLite（本地开发/测试）。"""
+        return bool(self.mysql_host and self.mysql_user)
+
+    @property
+    def storage_backend(self) -> str:
+        return "mysql" if self.use_mysql else "sqlite"
 
 
 @lru_cache(maxsize=1)

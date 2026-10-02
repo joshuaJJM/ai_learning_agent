@@ -6,6 +6,9 @@ pydantic-settings==2.15.0
 httpx==0.28.1
 python-multipart==0.0.32
 
+# 生产用 MySQL（远端 127.0.0.1，仅服务器内可连）；本地开发用 SQLite，无需装
+PyMySQL==1.1.1
+
 # 仅部署脚本 tools/remote.py 需要
 paramiko==5.0.0
 

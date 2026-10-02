@@ -513,24 +513,25 @@ def find_entitlement_by_serial(serial: str) -> dict[str, Any] | None:
 # ---------------------------------------------------------------------------
 
 def get_idempotent_response(key: str) -> dict[str, Any] | None:
-    row = db.query_one(
-        "SELECT response FROM idempotency WHERE key = ?", [key]
-    )
-    if row is None:
-        return None
-    try:
-        return json.loads(row["response"])
-    except json.JSONDecodeError:
-        return None
+    """幂等命中检查。
+
+    列名用 `idem_key` 而不是 `key` —— `key` 是 MySQL 保留字。
+    走文档表接口，两种方言都不用特殊语法。
+    """
+    return db.get_doc("idempotency", "idem_key", key)
 
 
 def put_idempotent_response(
     key: str, user_id: str | None, endpoint: str, response: dict[str, Any]
 ) -> None:
-    db.execute(
-        "INSERT OR REPLACE INTO idempotency (key, user_id, endpoint, response, created_at) "
-        "VALUES (?, ?, ?, ?, ?)",
-        [key, user_id, endpoint, json.dumps(response, ensure_ascii=False), db.to_iso(db.utcnow())],
+    db.upsert_doc(
+        "idempotency",
+        "idem_key",
+        key,
+        response,
+        user_id=user_id,
+        endpoint=endpoint,
+        created_at=db.to_iso(db.utcnow()),
     )
 
 

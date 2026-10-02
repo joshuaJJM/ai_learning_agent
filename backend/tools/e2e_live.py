@@ -1,4 +1,4 @@
-"""端到端联调脚本（**打真实模型**）。
+﻿"""端到端联调脚本（**打真实模型**）。
 
 与 pytest 不同，这个脚本不 mock 任何东西：
 真的起 HTTP 请求、真的调 VLM、真的跑后台分析任务、真的轮询。
@@ -56,7 +56,9 @@ def main() -> int:
     show("1. /health", health)
     check("health.ok", health["status"] == "ok", f"llm_mode={health['llm_mode']}")
     check("模型已接入", health["llm_mode"] == "live", "未配 key 或开了 Mock")
-    check("题库已加载", health["question_count"] == 44, f"{health['question_count']} 题")
+    check("题库已加载", health["question_count"] == 32, f"{health['question_count']} 题")
+    check("存储后端", "mysql" in health["database"] or "sqlite" in health["database"],
+          health["database"])
 
     # 2) Demo 用户
     demo = client.get("/api/v1/auth/demo-user").json()
@@ -66,7 +68,7 @@ def main() -> int:
     # 3) 播种历史 → 确认综合应用落在 43% 附近
     seeded = client.post("/api/v1/demo/seed", headers=headers).json()
     show("3. Demo 种子后的掌握度", seeded["mastery"])
-    comp = seeded["mastery"]["math.derivative.comprehensive"]["mastery"]
+    comp = seeded["mastery"]["math.derivative.monotonicity_applications"]["mastery"]
     check("综合应用 ≈ 43%", 0.40 <= comp <= 0.47, f"实际 {comp:.1%}")
 
     # 4) 首页
@@ -74,7 +76,7 @@ def main() -> int:
     show("4. 首页 Next Action", home["next_action"])
     check(
         "首页指向薄弱点",
-        home["next_action"]["knowledge_point_id"] == "math.derivative.comprehensive",
+        home["next_action"]["knowledge_point_id"] == "math.derivative.monotonicity_applications",
         home["next_action"]["title"],
     )
 
@@ -139,7 +141,7 @@ def main() -> int:
         headers=headers,
         json={
             "source_type": "knowledge_point",
-            "knowledge_point_id": "math.derivative.comprehensive",
+            "knowledge_point_id": "math.derivative.monotonicity_applications",
         },
     ).json()
     show("6. Tutor 首轮", {
@@ -175,7 +177,7 @@ def main() -> int:
     practice = client.post(
         "/api/v1/practice/sessions",
         headers=headers,
-        json={"knowledge_point_id": "math.derivative.comprehensive", "count": 3},
+        json={"knowledge_point_id": "math.derivative.monotonicity_applications", "count": 3},
     ).json()
     show("8. 练习推荐", {
         "knowledge_point_name": practice["knowledge_point_name"],

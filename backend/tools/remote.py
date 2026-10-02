@@ -262,7 +262,12 @@ def main() -> int:
     p_deploy = sub.add_parser("deploy", help="上传 backend/ 到远端")
     p_deploy.add_argument("--dir", default=None, help="远端目标目录")
     p_deploy.add_argument(
-        "--with-env", action="store_true", help="同时上传本地 .env（含密钥）"
+        "--with-env", action="store_true", help="同时上传本地环境文件（含密钥）"
+    )
+    p_deploy.add_argument(
+        "--env-file",
+        default=".env",
+        help="要上传的环境文件名（相对 backend/）。服务器用 .env.server 走 MySQL",
     )
     p_deploy.add_argument(
         "--restart", action="store_true", help="上传后重启服务"
@@ -328,12 +333,12 @@ def main() -> int:
                     print("清理远端残留: 无")
 
             if args.with_env:
-                local_env = BACKEND_ROOT / ".env"
+                local_env = BACKEND_ROOT / args.env_file
                 if not local_env.exists():
-                    print("!! 本地没有 .env，跳过", file=sys.stderr)
+                    print(f"!! 找不到 {args.env_file}，跳过", file=sys.stderr)
                 else:
                     remote.put_file(local_env, posixpath.join(target, ".env"))
-                    print("已上传 .env（含密钥）")
+                    print(f"已上传 {args.env_file} -> .env（含密钥）")
 
             if args.restart:
                 print(_service(remote, "restart"))

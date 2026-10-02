@@ -265,6 +265,39 @@ cd backend && .venv/bin/python tools/probe_models.py --vision
 
 ---
 
+## 存储
+
+生产用 **MySQL 5.7**（远端 `127.0.0.1:3306`，只允许服务器内连接）；
+本地开发与测试自动回落到 SQLite —— 所以本地不需要装 MySQL。
+
+只要配了 `MYSQL_HOST` + `MYSQL_USER` 就走 MySQL：
+
+```ini
+MYSQL_HOST=127.0.0.1
+MYSQL_PORT=3306
+MYSQL_USER=hackathon
+MYSQL_PASSWORD=***
+MYSQL_DATABASE=hackathon
+DATABASE_PATH=data/haoxue.db      # 没配 MySQL 时用这个
+```
+
+两种方言的差异**全部收敛在 `app/db.py`**：占位符（统一写 `?`，出口翻译成 `%s`）、
+upsert 语法（`ON CONFLICT` / `ON DUPLICATE KEY UPDATE`）、索引写法
+（MySQL 5.7 的 `CREATE INDEX` 不支持 `IF NOT EXISTS`，所以索引写在建表语句里）。
+业务层和 `repositories.py` 完全不感知用的是哪个。
+
+部署时服务器用**单独的环境文件**，别把 MySQL 配置混进本地开发用的 `.env`：
+
+```bash
+.venv/bin/python tools/remote.py deploy --prune --with-env --env-file .env.server --restart
+```
+
+> `--prune` 会删掉远端 `app/` `tools/` `tests/` 里本地已不存在的文件。
+> 不加的话，本地删掉的文件会永远留在远端 —— 题库换代时踩过这个坑
+> （旧的 6 个 bank 仍在，服务加载出 76 道题而不是 32 道）。
+
+---
+
 ## 测试
 
 ```bash
@@ -310,7 +343,7 @@ cd backend
 | 多用户 | 只考虑单用户 Demo | 数据已按 `user_id` 分表，结构不用改 |
 | 传输 | 明文 HTTP | 上 HTTPS |
 | 图片留存 | 上传图片留盘供错题回看 | 对象存储 + 生命周期策略 + 用户可删除 |
-| 数据库 | SQLite + WAL，单进程 | PostgreSQL |
+| 数据库 | MySQL 5.7（生产）/ SQLite（本地开发与测试） | 已上 MySQL，后续补连接池与只读副本 |
 | 分析任务 | FastAPI BackgroundTasks + 轮询 | 消息队列 + worker（对外契约不用变） |
 | 支付 | 假数据 | StoreKit 服务端校验 |
 | 学科 | 只做高中数学·函数/导数 | 扩展题库与知识点树 |
