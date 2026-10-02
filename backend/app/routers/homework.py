@@ -2,8 +2,14 @@
 
 异步：POST 立刻返回 analysis_id（202），客户端轮询 GET。
 
-幂等（契约 §22）：支持 `Idempotency-Key` 请求头，以及表单里的
-`client_request_id`。手机网络不稳时 iOS 重试不会把 Mastery 更新两次。
+幂等：支持 `Idempotency-Key`（以及 `X-Idempotency-Key`）请求头，
+以及表单里的 `client_request_id`。手机网络不稳时 iOS 重试不会把
+Mastery 更新两次。
+
+**注意**：幂等键统一走 `dependencies.idempotency_key_header`，
+不要在这里自己写 `Header(alias=...)` —— 之前这个接口就是自己写的，
+只认标准头，导致文档承诺的 `X-Idempotency-Key` 别名在这里失效。
+tests/test_idempotency_headers.py 有一条结构性测试盯着这件事。
 """
 
 from __future__ import annotations
@@ -16,13 +22,16 @@ from fastapi import (
     Depends,
     File,
     Form,
-    Header,
     UploadFile,
     status,
 )
 
 from .. import repositories
-from ..dependencies import current_user
+from ..dependencies import (
+    current_user,
+    idempotency_key_header,
+    resolve_idempotency_key,
+)
 from ..errors import ANALYSIS_NOT_FOUND, INVALID_IMAGE, ApiError
 from ..schemas import (
     AnalysisCreateResponse,
@@ -52,7 +61,7 @@ async def create_analysis(
     book_id: str | None = Form(default=None),
     source_name: str | None = Form(default=None, description="例如：某作业本第 32 页"),
     client_request_id: str | None = Form(default=None),
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    header_key: str | None = Depends(idempotency_key_header),
     user: dict[str, Any] = Depends(current_user),
 ) -> AnalysisCreateResponse:
     if not images:
@@ -95,7 +104,7 @@ async def create_analysis(
         topic=topic,
         book_id=book_id,
         source_name=source_name,
-        client_request_id=idempotency_key or client_request_id,
+        client_request_id=resolve_idempotency_key(header_key, client_request_id),
     )
 
     # 已经跑完（幂等命中缓存）就不再排任务
