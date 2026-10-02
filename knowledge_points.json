@@ -1,0 +1,73 @@
+{
+  "version": 2,
+  "knowledge_points": [
+    {
+      "id": "math.derivative.monotonicity",
+      "name": "利用导数判断函数单调性与单调区间"
+    },
+    {
+      "id": "math.derivative.monotonicity_parameter",
+      "name": "利用单调性或导数恒成立求参数"
+    },
+    {
+      "id": "math.derivative.monotonicity_applications",
+      "name": "导数与函数性质综合应用"
+    },
+    {
+      "id": "math.derivative.extrema",
+      "name": "利用导数判断与求解极值"
+    },
+    {
+      "id": "math.derivative.extrema_parameter",
+      "name": "根据极值或最值条件求参数"
+    },
+    {
+      "id": "math.derivative.absolute_extrema",
+      "name": "利用导数求函数最值"
+    },
+    {
+      "id": "math.function.parity_and_monotonicity",
+      "name": "函数奇偶性与单调性综合判断"
+    },
+    {
+      "id": "math.derivative.definition",
+      "name": "导数定义与极限"
+    },
+    {
+      "id": "math.derivative.meaning",
+      "name": "导数的几何意义与瞬时变化率"
+    },
+    {
+      "id": "math.derivative.rules",
+      "name": "基本求导公式与运算法则"
+    },
+    {
+      "id": "math.derivative.function_relations",
+      "name": "函数关系式与导数的综合应用"
+    },
+    {
+      "id": "math.function.symmetry_periodicity_derivative",
+      "name": "奇偶性、对称性与周期性中的导数关系"
+    },
+    {
+      "id": "math.derivative.tangent_slope",
+      "name": "切线斜率与倾斜角"
+    },
+    {
+      "id": "math.derivative.tangent_equation",
+      "name": "曲线切线方程"
+    },
+    {
+      "id": "math.derivative.tangent_count",
+      "name": "切线条数与公切线"
+    },
+    {
+      "id": "math.derivative.tangent_relations",
+      "name": "切线的平行与垂直关系"
+    },
+    {
+      "id": "math.derivative.tangent_optimization",
+      "name": "切线相关的最值问题"
+    }
+  ]
+}
