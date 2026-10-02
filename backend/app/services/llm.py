@@ -87,6 +87,22 @@ JSON_RETRY_HINT = (
     "3. 最后一项后面不要留多余的逗号。"
 )
 
+#: 输出被 `max_tokens` 截断时，最多放大到这个预算再试。
+#:
+#: 真实事故：一张有 9 道题的试卷，VLM 要给每题写 diagnosis + explanation，
+#: 3000 token 直接在中途被切断 → JSON 非法 → 原样重试 5 次，每次都同样被切断，
+#: 白等 9 分钟然后整体失败。`finish_reason == "length"` 是明确信号，
+#: 遇到它必须**放大预算**，而不是重发同一个请求。
+MAX_OUTPUT_TOKENS = 16000
+
+
+def _finish_reason(reply: LlmReply) -> str | None:
+    """取 provider 返回的 finish_reason（`length` = 被 max_tokens 截断）。"""
+    choices = reply.raw.get("choices") if isinstance(reply.raw, dict) else None
+    if not choices:
+        return None
+    return choices[0].get("finish_reason")
+
 
 def _strip_fence(text: str) -> str:
     fenced = _JSON_FENCE.search(text)
@@ -451,13 +467,15 @@ class LlmClient:
         attempts = max(1, attempts)
         request_messages = list(messages)
         last_text = ""
+        budget = max_tokens
+        truncated_ever = False
 
         for attempt in range(attempts):
             reply = await self.complete(
                 request_messages,
                 model=model,
                 temperature=temperature,
-                max_tokens=max_tokens,
+                max_tokens=budget,
                 json_mode=True,
                 vision=vision,
                 retries=retries,
@@ -467,6 +485,15 @@ class LlmClient:
                 return parsed, reply
 
             last_text = reply.text
+
+            # 被 max_tokens 截断 → 原样重试毫无意义（同样的输入会得到同样被切断
+            # 的输出，纯烧时间）。放大预算重发才有用。
+            if _finish_reason(reply) == "length":
+                truncated_ever = True
+                if budget < MAX_OUTPUT_TOKENS:
+                    budget = min(budget * 2, MAX_OUTPUT_TOKENS)
+                    continue
+
             if attempt + 1 < attempts:
                 request_messages = [
                     *messages,
@@ -474,6 +501,12 @@ class LlmClient:
                     {"role": "user", "content": JSON_RETRY_HINT},
                 ]
 
+        if truncated_ever:
+            raise LlmUnavailable(
+                f"模型输出被 max_tokens 截断（已放大到 {budget} 仍不完整）。"
+                f"这次请求要的 JSON 太长，应提高 max_tokens 或减少一次识别的题目数。"
+                f"最后一次输出: {last_text[:200]}"
+            )
         raise LlmUnavailable(
             f"连续 {attempts} 次未返回合法 JSON，最后一次输出: {last_text[:200]}"
         )

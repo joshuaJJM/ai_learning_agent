@@ -512,7 +512,9 @@ async def analyze_images(
                         [build_user_message(prompt, [(raw, mime)])],
                         model=model,
                         temperature=0.1,
-                        max_tokens=3000,
+                        # 一张试卷可能有十几道题，每题还要写 diagnosis + explanation。
+                        # 3000 会在中途截断（实测 9 道题就爆了），所以给足。
+                        max_tokens=8000,
                         vision=True,
                         retries=0,
                         attempts=JSON_ATTEMPTS_PER_MODEL,
