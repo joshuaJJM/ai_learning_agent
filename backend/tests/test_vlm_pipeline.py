@@ -105,6 +105,27 @@ def _images(count: int) -> list[tuple[bytes, str]]:
     return [(b"\x89PNG fake " + bytes([i]), "image/png") for i in range(count)]
 
 
+def test_prompt_lists_every_knowledge_point() -> None:
+    """prompt 必须把全部知识点列出来。
+
+    这里踩过一个大坑：过滤条件曾写成"只列有子节点的知识点"，
+    换成扁平清单后清单变空，模型稳定返回空题目（前端表现为
+    QUESTION_NOT_RECOGNIZED），而且耗时只有 2-3 秒。
+    """
+    from app import knowledge
+    from app.services.vlm_service import build_prompt
+
+    prompt = build_prompt()
+    for point in knowledge.all_points():
+        assert point.id in prompt, f"prompt 里缺少知识点 {point.id}"
+        assert point.name in prompt, f"prompt 里缺少知识点名称 {point.name}"
+
+    # 而且清单不能是空的
+    listed = [p for p in knowledge.all_points() if f"  - {p.id}:" in prompt]
+    assert len(listed) == len(knowledge.all_points())
+    assert len(listed) > 0
+
+
 def test_images_are_processed_in_parallel() -> None:
     client = FakeVlm(delay=0.08)
 

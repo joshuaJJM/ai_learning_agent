@@ -273,10 +273,14 @@ def raw_questions_from_payload(payload: dict[str, Any]) -> list[RawQuestion]:
 # ---------------------------------------------------------------------------
 
 def build_prompt(subject: str = "mathematics", topic: str | None = None) -> str:
+    # 只列叶子知识点（没有子节点的）。官方清单是扁平的，所以这里就是全部 7 个。
+    #
+    # 注意这里曾经写成 `if knowledge.children_of(point.id)` —— 只列"有子节点的"，
+    # 于是换成扁平清单后清单为空，模型拿到残缺 prompt 后稳定返回空题目。
+    # test_vlm_pipeline 里有用例锁住"每个知识点都必须出现在 prompt 里"。
+    leaves = [p for p in knowledge.all_points() if not knowledge.children_of(p.id)]
     kp_lines = "\n".join(
-        f"  - {point.id}: {point.name}（{point.description}）"
-        for point in knowledge.all_points()
-        if knowledge.children_of(point.id)
+        f"  - {point.id}: {point.name}（{point.description}）" for point in leaves
     )
     error_lines = "\n".join(
         f"  - {code}: {label}"
