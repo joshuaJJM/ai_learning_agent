@@ -1,68 +1,25 @@
 import SwiftUI
 
 struct HomeView: View {
-    let store: DemoScenarioStore
-    let onStart: () -> Void
+    let model: HomeViewModel
+    let onStartTutor: (String?) -> Void
+    @State private var showsAllKnowledge = false
+    @State private var notice: Notice?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                DemoPageHeader(title: "好学", subtitle: "这里是今天最值得关注的学习状态。")
-                DemoSectionTitle(title: "下一步")
-                DemoCard {
-                    VStack(alignment: .leading, spacing: 15) {
-                        Text(store.home.nextStep).font(.title2.bold())
-                        Text(store.nextStepDetail).foregroundStyle(DemoStyle.secondary)
-                        Button(action: onStart) {
-                            HStack {
-                                Text("继续学习")
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                            }
-                            .font(.headline)
-                        }
-                        .accessibilityLabel("开始下一步学习")
-                        .padding(.top, 8)
-                    }
-                }
-                DemoSectionTitle(title: "知识状态").padding(.top, 18)
-                DemoCard {
-                    VStack(spacing: 19) {
-                        ForEach(store.subjects, id: \.name) { subject in
-                            VStack(spacing: 9) {
-                                HStack {
-                                    Text(subject.name).font(.headline)
-                                    Spacer()
-                                    Text(subject.mastery.demoPercent).foregroundStyle(DemoStyle.secondary)
-                                }
-                                MasteryBar(value: subject.mastery, color: color(for: subject.colorName))
-                            }
-                        }
-                    }
-                }
-                Text("其他学科为演示数据")
-                    .font(.caption)
-                    .foregroundStyle(DemoStyle.secondary)
-                DemoSectionTitle(title: "错题").padding(.top, 14)
-                DemoCard {
-                    VStack(alignment: .leading, spacing: 0) {
-                        ForEach(Array(store.recentWrongQuestions.enumerated()), id: \.offset) { index, question in
-                            if index > 0 { Divider().padding(.vertical, 14) }
-                            Text(question.title).font(.headline)
-                            Text(question.detail).font(.subheadline).foregroundStyle(DemoStyle.secondary)
-                                .padding(.top, 5)
-                        }
-                    }
-                }
-                if let change = store.home.recentChanges.first {
-                    DemoSectionTitle(title: "最近变化").padding(.top, 14)
-                    DemoCard {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(store.lessonTitle).font(.headline)
-                            Text("\((change.beforeMastery ?? 0).demoPercent) → \((change.afterMastery ?? 0).demoPercent)")
-                                .font(.title2.bold()).foregroundStyle(.green)
-                        }
-                    }
+                switch model.phase {
+                case .idle, .loading:
+                    ProgressView("正在获取学习状态")
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 100)
+                case .failed:
+                    errorContent
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 100)
+                case .loaded:
+                    if let home = model.snapshot { homeContent(home) }
                 }
             }
             .padding(.horizontal, 20)
@@ -70,13 +27,192 @@ struct HomeView: View {
             .padding(.bottom, 32)
         }
         .background(DemoStyle.background)
+        .refreshable { await model.refresh() }
+        .task { await model.loadIfNeeded() }
+        .alert(notice?.title ?? "", isPresented: Binding(
+            get: { notice != nil }, set: { if !$0 { notice = nil } }
+        )) {
+            Button("好") { notice = nil }
+        } message: {
+            Text(notice?.message ?? "")
+        }
     }
 
-    private func color(for name: String) -> Color {
-        switch name {
-        case "green": .green
-        case "orange": .orange
-        default: .blue
+    private var errorContent: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "wifi.exclamationmark")
+                .font(.largeTitle)
+                .foregroundStyle(DemoStyle.secondary)
+            Text(model.errorMessage ?? "暂时无法获取学习状态")
+                .foregroundStyle(DemoStyle.secondary)
+                .multilineTextAlignment(.center)
+            Button("重新加载") { Task { await model.refresh() } }
+                .font(.headline)
+        }
+    }
+
+    private func homeContent(_ home: HomeSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            DemoPageHeader(title: "好学", subtitle: home.greeting)
+
+            DemoSectionTitle(title: "下一步")
+            DemoCard {
+                VStack(alignment: .leading, spacing: 15) {
+                    Text(home.nextAction.title).font(.title2.bold())
+                    Text(home.nextAction.reason)
+                        .foregroundStyle(DemoStyle.secondary)
+                    if HomeActionRoute(home.nextAction) != .none {
+                        Button { perform(home.nextAction) } label: {
+                            HStack {
+                                Text(home.nextAction.buttonTitle)
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                            }
+                            .font(.headline)
+                        }
+                        .accessibilityLabel(home.nextAction.buttonTitle)
+                        .padding(.top, 8)
+                    }
+                }
+            }
+
+            DemoSectionTitle(title: "知识状态").padding(.top, 18)
+            DemoCard {
+                if home.knowledgeSummary.isEmpty && home.weakest == nil {
+                    emptyText("暂无知识状态")
+                } else {
+                    VStack(spacing: 19) {
+                        ForEach(visibleKnowledge(home), id: \.id) { point in
+                            knowledgeRow(point, weakestID: home.weakest?.id)
+                        }
+                        if allKnowledge(home).count > 3 {
+                            Button(showsAllKnowledge ? "收起" : "查看全部知识点") {
+                                showsAllKnowledge.toggle()
+                            }
+                            .font(.subheadline.weight(.semibold))
+                        }
+                    }
+                }
+            }
+
+            DemoSectionTitle(title: "最近错题").padding(.top, 14)
+            DemoCard {
+                if home.recentWrongQuestions.isEmpty {
+                    emptyText("最近没有错题")
+                } else {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(home.recentWrongQuestions.enumerated()), id: \.element.id) { index, question in
+                            if index > 0 { Divider().padding(.vertical, 14) }
+                            Button { notice = .wrongQuestion } label: {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text("第 \(question.questionNumber) 题 · \(question.content)")
+                                        .font(.headline)
+                                        .foregroundStyle(.primary)
+                                        .multilineTextAlignment(.leading)
+                                    Text(question.errorLabel ?? question.knowledgePointName ?? "待复习")
+                                        .font(.subheadline)
+                                        .foregroundStyle(DemoStyle.secondary)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                    }
+                }
+            }
+
+            DemoSectionTitle(title: "最近学习").padding(.top, 14)
+            DemoCard {
+                if home.recentActivities.isEmpty {
+                    emptyText("暂无最近学习记录")
+                } else {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(home.recentActivities.enumerated()), id: \.offset) { index, activity in
+                            if index > 0 { Divider().padding(.vertical, 14) }
+                            HStack(alignment: .top, spacing: 12) {
+                                VStack(alignment: .leading, spacing: 5) {
+                                    Text(activity.title).font(.headline)
+                                    Text(activity.subtitle)
+                                        .font(.subheadline)
+                                        .foregroundStyle(DemoStyle.secondary)
+                                }
+                                Spacer(minLength: 8)
+                                Text(activity.occurredAt, format: .dateTime.month().day())
+                                    .font(.caption)
+                                    .foregroundStyle(DemoStyle.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func visibleKnowledge(_ home: HomeSnapshot) -> [HomeSnapshot.KnowledgeSummary] {
+        let knowledge = allKnowledge(home)
+        return showsAllKnowledge ? knowledge : Array(knowledge.prefix(3))
+    }
+
+    private func allKnowledge(_ home: HomeSnapshot) -> [HomeSnapshot.KnowledgeSummary] {
+        guard let weakest = home.weakest else { return home.knowledgeSummary }
+        return [weakest] + home.knowledgeSummary.filter { $0.id != weakest.id }
+    }
+
+    private func knowledgeRow(_ point: HomeSnapshot.KnowledgeSummary, weakestID: String?) -> some View {
+        VStack(spacing: 9) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(point.name).font(.headline)
+                Spacer(minLength: 8)
+                Text(point.mastery.demoPercent)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(DemoStyle.secondary)
+            }
+            MasteryBar(value: point.mastery, color: point.isWeak ? .orange : .blue)
+            if point.id == weakestID {
+                Text("当前重点 · \(trendLabel(point.trend))")
+                    .font(.caption)
+                    .foregroundStyle(DemoStyle.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    private func trendLabel(_ trend: String) -> String {
+        switch trend {
+        case "improving": "正在提升"
+        case "declining": "近期回落"
+        case "stable": "保持稳定"
+        default: "持续关注"
+        }
+    }
+
+    private func emptyText(_ message: String) -> some View {
+        Text(message).font(.subheadline).foregroundStyle(DemoStyle.secondary)
+    }
+
+    private func perform(_ action: NextLearningAction) {
+        switch HomeActionRoute(action) {
+        case .tutor(let knowledgePointID): onStartTutor(knowledgePointID)
+        case .wrongQuestion: notice = .wrongQuestion
+        case .practice: notice = .practice
+        case .none: break
+        }
+    }
+
+    private enum Notice {
+        case wrongQuestion, practice
+
+        var title: String {
+            switch self {
+            case .wrongQuestion: "错题复习即将开放"
+            case .practice: "针对练习即将开放"
+            }
+        }
+
+        var message: String {
+            switch self {
+            case .wrongQuestion: "错题详情将在后续阶段接入。"
+            case .practice: "练习功能将在后续阶段接入。"
+            }
         }
     }
 }

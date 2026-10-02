@@ -53,7 +53,7 @@ struct MasteryBar: View {
             }
         }
         .frame(height: 7)
-        .accessibilityLabel("掌握度 \(Int(value * 100))%")
+        .accessibilityLabel("掌握度 \(value.demoPercent)")
     }
 }
 

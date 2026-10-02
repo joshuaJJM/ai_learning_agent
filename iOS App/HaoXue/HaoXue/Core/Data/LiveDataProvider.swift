@@ -1,7 +1,7 @@
 import Foundation
 
 @MainActor
-struct LiveDataProvider: HomeDataProviding, AnalysisDataProviding, TutorDataProviding, PracticeDataProviding {
+struct LiveDataProvider: HomeDataProviding, HomeSnapshotProviding, AnalysisDataProviding, TutorDataProviding, PracticeDataProviding {
     private let client: APIClient
     private let configuration: AppConfiguration
     private let mapper = Phase5Mapper()

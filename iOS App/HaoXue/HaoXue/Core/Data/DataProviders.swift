@@ -3,6 +3,9 @@ import Foundation
 @MainActor protocol HomeDataProviding {
     func fetchHome() async throws -> HomeState
 }
+@MainActor protocol HomeSnapshotProviding {
+    func fetchHomeSnapshot() async throws -> HomeSnapshot
+}
 @MainActor protocol AnalysisDataProviding {
     func fetchAnalysis(id: String) async throws -> UploadAnalysis
 }
