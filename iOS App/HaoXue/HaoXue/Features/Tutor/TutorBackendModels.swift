@@ -106,6 +106,7 @@ struct TutorTurnResponseDTO: Decodable {
 struct TutorCreateRequestDTO: Encodable {
     let sourceType: String
     let knowledgePointId: String?
+    let wrongQuestionId: String?
     let clientRequestId: String
 }
 

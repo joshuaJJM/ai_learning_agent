@@ -1,7 +1,7 @@
 import Foundation
 
 @MainActor
-struct LiveDataProvider: HomeDataProviding, HomeSnapshotProviding, AnalysisDataProviding, TutorDataProviding, PracticeDataProviding {
+struct LiveDataProvider: HomeDataProviding, HomeSnapshotProviding, AnalysisDataProviding, TutorDataProviding, PracticeDataProviding, WrongQuestionDataProviding {
     private let client: APIClient
     private let configuration: AppConfiguration
     private let mapper = Phase5Mapper()
@@ -65,6 +65,10 @@ struct LiveDataProvider: HomeDataProviding, HomeSnapshotProviding, AnalysisDataP
         return dto.items.map(mapper.summary)
     }
 
+    func fetchWrongQuestions() async throws -> [WrongQuestionSummary] {
+        try await fetchWrongQuestions(limit: 100)
+    }
+
     func fetchWrongQuestion(id: String) async throws -> WrongQuestionDetail {
         let dto: WrongQuestionDetailDTO = try await get("wrong-questions/\(id)")
         return mapper.wrongQuestion(dto)
@@ -78,6 +82,10 @@ struct LiveDataProvider: HomeDataProviding, HomeSnapshotProviding, AnalysisDataP
         request.httpBody = try JSONEncoder().encode(WrongQuestionPatchDTO(status: status, favorite: favorite))
         let dto: WrongQuestionDetailDTO = try await client.send(request, as: WrongQuestionDetailDTO.self)
         return mapper.wrongQuestion(dto)
+    }
+
+    func updateWrongQuestion(id: String, status: String) async throws -> WrongQuestionDetail {
+        try await updateWrongQuestion(id: id, status: Optional(status), favorite: nil)
     }
 
     func fetchKnowledgeDetail(id: String) async throws -> KnowledgePointDetail {

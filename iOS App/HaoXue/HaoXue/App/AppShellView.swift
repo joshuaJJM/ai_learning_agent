@@ -6,14 +6,24 @@ struct AppShellView: View {
     @State private var showingTutor = false
     @State private var selectedTab = 0
     @State private var tutorKnowledgePointID: String?
+    @State private var tutorWrongQuestionID: String?
+    @State private var pendingTutorWrongQuestionID: String?
+    @State private var selectedWrongQuestion: WrongQuestionRoute?
     @State private var homeModel = HomeViewModel(provider: LiveDataProvider(
+        client: APIClient(), configuration: AppConfiguration(mode: .live)))
+    @State private var wrongQuestionsModel = WrongQuestionsListViewModel(provider: LiveDataProvider(
         client: APIClient(), configuration: AppConfiguration(mode: .live)))
     private var usesMockTutor: Bool { ProcessInfo.processInfo.arguments.contains("-useMockTutor") }
 
-    private func openTutor(knowledgePointID: String? = nil) {
+    private func openTutor(knowledgePointID: String? = nil, wrongQuestionID: String? = nil) {
         if usesMockTutor { store.startLesson() }
         tutorKnowledgePointID = knowledgePointID
+        tutorWrongQuestionID = wrongQuestionID
         showingTutor = true
+    }
+
+    private func openWrongQuestion(_ id: String) {
+        selectedWrongQuestion = WrongQuestionRoute(id: id)
     }
 
     private func closeTutor() {
@@ -27,18 +37,26 @@ struct AppShellView: View {
                 if usesMockTutor {
                     DemoHomeView(store: store) { openTutor() }
                 } else {
-                    HomeView(model: homeModel, onStartTutor: { openTutor(knowledgePointID: $0) })
+                    HomeView(model: homeModel, onStartTutor: { openTutor(knowledgePointID: $0) },
+                             onOpenWrongQuestion: openWrongQuestion)
                 }
             }
             .tabItem { Label("首页", systemImage: "house") }
             .tag(0)
             NavigationStack {
                 ScanView(store: store, onStart: { openTutor(knowledgePointID: $0) },
+                         onOpenWrongQuestion: openWrongQuestion,
                          onReturnHome: { selectedTab = 0 })
             }
                 .tabItem { Label("扫描", systemImage: "viewfinder") }
                 .tag(1)
-            StudyView(store: store, onStart: { openTutor() })
+            Group {
+                if usesMockTutor {
+                    StudyView(store: store, onStart: { openTutor() })
+                } else {
+                    WrongQuestionsView(model: wrongQuestionsModel, onOpen: openWrongQuestion)
+                }
+            }
                 .tabItem { Label("学习", systemImage: "book.closed") }
                 .tag(2)
             SettingsView(store: store)
@@ -48,6 +66,29 @@ struct AppShellView: View {
         .tint(.blue)
         .onChange(of: selectedTab) { _, tab in
             if tab == 0, !usesMockTutor { Task { await homeModel.refresh() } }
+            if tab == 2, !usesMockTutor { Task { await wrongQuestionsModel.refresh() } }
+        }
+        .sheet(item: $selectedWrongQuestion, onDismiss: {
+            if let id = pendingTutorWrongQuestionID {
+                pendingTutorWrongQuestionID = nil
+                openTutor(wrongQuestionID: id)
+            }
+        }) { route in
+            NavigationStack {
+                WrongQuestionDetailView(id: route.id,
+                                        provider: LiveDataProvider(client: APIClient(),
+                                            configuration: AppConfiguration(mode: .live)),
+                                        onStartTutor: { id in
+                                            pendingTutorWrongQuestionID = id
+                                            selectedWrongQuestion = nil
+                                        },
+                                        onChanged: {
+                                            Task {
+                                                await wrongQuestionsModel.refresh()
+                                                await homeModel.refresh()
+                                            }
+                                        })
+            }
         }
         .fullScreenCover(isPresented: $showingTutor) {
             if usesMockTutor {
@@ -55,7 +96,8 @@ struct AppShellView: View {
             } else {
                 RemoteTutorView(
                     service: TutorRemoteService(baseURL: AppConfiguration.demoBackendURL,
-                                                knowledgePointID: tutorKnowledgePointID),
+                                                knowledgePointID: tutorKnowledgePointID,
+                                                wrongQuestionID: tutorWrongQuestionID),
                     masteryService: MasteryOverviewService(baseURL: AppConfiguration.demoBackendURL)
                 ) {
                     closeTutor()
@@ -63,4 +105,8 @@ struct AppShellView: View {
             }
         }
     }
+}
+
+private struct WrongQuestionRoute: Identifiable {
+    let id: String
 }

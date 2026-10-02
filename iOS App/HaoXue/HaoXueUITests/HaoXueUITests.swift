@@ -2,6 +2,28 @@ import XCTest
 
 final class HaoXueUITests: XCTestCase {
     @MainActor
+    func testLiveWrongQuestionFromLearningAndHome() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launch()
+        app.tabBars.buttons["学习"].tap()
+        let firstWrong = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "第 17 题")).firstMatch
+        XCTAssertTrue(firstWrong.waitForExistence(timeout: 20))
+        firstWrong.tap()
+        XCTAssertTrue(app.navigationBars["错题详情"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts["你的答案"].exists)
+        XCTAssertTrue(app.staticTexts["正确答案"].exists)
+        XCTAssertTrue(app.staticTexts["函数性质转换错误"].exists)
+        XCTAssertTrue(app.buttons["针对这个问题学习"].exists)
+        app.buttons["关闭"].tap()
+        app.tabBars.buttons["首页"].tap()
+        let homeWrong = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "第 17 题")).firstMatch
+        XCTAssertTrue(homeWrong.waitForExistence(timeout: 20))
+        homeWrong.tap()
+        XCTAssertTrue(app.navigationBars["错题详情"].waitForExistence(timeout: 15))
+    }
+
+    @MainActor
     func testFreshScannerOpens() {
         let app = XCUIApplication()
         app.launch()

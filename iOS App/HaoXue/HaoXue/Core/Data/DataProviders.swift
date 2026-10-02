@@ -15,6 +15,11 @@ import Foundation
 @MainActor protocol PracticeDataProviding {
     func fetchPracticeSession(id: String) async throws -> PracticeSession
 }
+@MainActor protocol WrongQuestionDataProviding {
+    func fetchWrongQuestions() async throws -> [WrongQuestionSummary]
+    func fetchWrongQuestion(id: String) async throws -> WrongQuestionDetail
+    func updateWrongQuestion(id: String, status: String) async throws -> WrongQuestionDetail
+}
 
 enum ProviderError: Error, Equatable {
     case unknownFixtureID(String)

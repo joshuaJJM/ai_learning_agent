@@ -3,6 +3,7 @@ import SwiftUI
 struct AnalysisResultView: View {
     let result: HomeworkAnalysisResult
     let onStartTutor: (String?) -> Void
+    let onOpenWrongQuestion: (String) -> Void
     let onReturnHome: () -> Void
 
     @State private var showsCorrectQuestions = false
@@ -47,7 +48,7 @@ struct AnalysisResultView: View {
                                 .foregroundStyle(DemoStyle.secondary)
                             ForEach(Array(result.newWrongQuestions.enumerated()), id: \.offset) { index, wrong in
                                 if index > 0 { Divider() }
-                                Button { notice = .wrongQuestion(wrong.id) } label: {
+                                Button { onOpenWrongQuestion(wrong.id) } label: {
                                     VStack(alignment: .leading, spacing: 5) {
                                         Text("第 \(wrong.questionNumber) 题 · \(wrong.content)")
                                             .foregroundStyle(.primary)
@@ -232,18 +233,17 @@ struct AnalysisResultView: View {
     private func perform(_ action: NextLearningAction) {
         switch HomeActionRoute(action) {
         case .tutor(let id): onStartTutor(id)
-        case .wrongQuestion(let id): notice = .wrongQuestion(id)
+        case .wrongQuestion(let id): onOpenWrongQuestion(id)
         case .practice: notice = .practice
         case .none: break
         }
     }
 
     private enum Notice {
-        case wrongQuestion(String), knowledgePoint(String), practice
+        case knowledgePoint(String), practice
 
         var title: String {
             switch self {
-            case .wrongQuestion: "错题详情即将开放"
             case .knowledgePoint: "知识点详情即将开放"
             case .practice: "针对练习即将开放"
             }
@@ -251,7 +251,6 @@ struct AnalysisResultView: View {
 
         var message: String {
             switch self {
-            case .wrongQuestion: "错题详情将在后续阶段接入。"
             case .knowledgePoint: "知识点详情将在后续阶段接入。"
             case .practice: "练习功能将在后续阶段接入。"
             }

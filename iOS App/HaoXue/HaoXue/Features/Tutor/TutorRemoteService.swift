@@ -24,13 +24,16 @@ protocol TutorRemoteServing {
 final class TutorRemoteService: TutorRemoteServing {
     let baseURL: URL
     let knowledgePointID: String?
+    let wrongQuestionID: String?
     private let session: URLSession
     private let client: APIClient
     private var answeringTurnIDs: [String: String] = [:]
 
-    init(baseURL: URL, knowledgePointID: String? = nil, session: URLSession = .shared) {
+    init(baseURL: URL, knowledgePointID: String? = nil, wrongQuestionID: String? = nil,
+         session: URLSession = .shared) {
         self.baseURL = baseURL
         self.knowledgePointID = knowledgePointID
+        self.wrongQuestionID = wrongQuestionID
         self.session = session
         client = APIClient(session: session, timeout: 60)
     }
@@ -41,7 +44,9 @@ final class TutorRemoteService: TutorRemoteServing {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(key, forHTTPHeaderField: "Idempotency-Key")
         request.httpBody = try TutorJSON.encoder.encode(
-            TutorCreateRequestDTO(sourceType: "knowledge_point", knowledgePointId: knowledgePointID,
+            TutorCreateRequestDTO(sourceType: wrongQuestionID == nil ? "knowledge_point" : "wrong_question",
+                                  knowledgePointId: wrongQuestionID == nil ? knowledgePointID : nil,
+                                  wrongQuestionId: wrongQuestionID,
                                   clientRequestId: key)
         )
         return request
