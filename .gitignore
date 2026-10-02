@@ -1,0 +1,20 @@
+# Local secrets and coordination
+.env
+.env.*
+!.env.example
+LOCAL_COORDINATION.md
+*.pem
+*.p12
+*.key
+Secrets/
+PrivateImages/
+PrivateDemoData/
+
+# macOS and Xcode local state
+.DS_Store
+DerivedData/
+build/
+*.xcuserstate
+xcuserdata/
+.xcodebuildmcp/
+*.log
