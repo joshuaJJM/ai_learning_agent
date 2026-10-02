@@ -1,7 +1,7 @@
 import Foundation
 
 enum AnalysisPhase: String, Decodable { case queued, processing, completed, failed }
-enum AnalysisStageState: String, Decodable { case done, active, pending }
+enum AnalysisStageState: String, Decodable { case done, active, pending, failed }
 
 struct AnalysisStage: Decodable, Identifiable {
     let key: String

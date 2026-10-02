@@ -2,6 +2,53 @@ import XCTest
 
 final class HaoXueUITests: XCTestCase {
     @MainActor
+    func testFreshScannerOpens() {
+        let app = XCUIApplication()
+        app.launch()
+        app.tabBars.buttons["扫描"].tap()
+        app.buttons["扫描文档"].tap()
+        XCTAssertTrue(app.buttons["Cancel"].waitForExistence(timeout: 5))
+        app.buttons["Cancel"].tap()
+    }
+    @MainActor
+    func testPhotoPickerCanOpenScannerImmediately() {
+        let app = XCUIApplication()
+        app.launch()
+        app.tabBars.buttons["扫描"].tap()
+        app.buttons["从照片选择"].tap()
+        let firstPhoto = app.images.matching(identifier: "PXGGridLayout-Info").firstMatch
+        XCTAssertTrue(firstPhoto.waitForExistence(timeout: 30))
+        firstPhoto.tap()
+        app.buttons["完成"].tap()
+        XCTAssertTrue(app.staticTexts["已扫描 1 页"].waitForExistence(timeout: 15))
+        app.buttons["上传更多"].tap()
+        app.buttons["再次扫描"].tap()
+        XCTAssertTrue(app.buttons["Cancel"].waitForExistence(timeout: 5))
+        app.buttons["Cancel"].tap()
+        XCTAssertTrue(app.staticTexts["已扫描 1 页"].exists)
+    }
+
+    @MainActor
+    func testPhotoPickerCanAddMorePhotosAndDelete() {
+        let app = XCUIApplication()
+        app.launch()
+        app.tabBars.buttons["扫描"].tap()
+        app.buttons["从照片选择"].tap()
+        let firstPhoto = app.images.matching(identifier: "PXGGridLayout-Info").firstMatch
+        XCTAssertTrue(firstPhoto.waitForExistence(timeout: 30))
+        firstPhoto.tap()
+        app.buttons["完成"].tap()
+        XCTAssertTrue(app.staticTexts["已扫描 1 页"].waitForExistence(timeout: 15))
+        app.buttons["上传更多"].tap()
+        app.buttons["从照片选择"].tap()
+        XCTAssertTrue(firstPhoto.waitForExistence(timeout: 30))
+        firstPhoto.tap()
+        app.buttons["完成"].tap()
+        XCTAssertTrue(app.staticTexts["已扫描 2 页"].waitForExistence(timeout: 15))
+        app.buttons["删除当前页"].tap()
+        XCTAssertTrue(app.staticTexts["已扫描 1 页"].exists)
+    }
+    @MainActor
     func testMockLearningUpdatesHomeAndStudy() {
         continueAfterFailure = false
         let app = XCUIApplication()

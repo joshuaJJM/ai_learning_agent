@@ -35,17 +35,31 @@ struct LiveAnalysisService: AnalysisServing {
 
     func create(images: [Data], key: UUID) async throws -> CreateAnalysisResponse {
         let (data, response) = try await client.sendData(makeCreateRequest(images: images, key: key))
+        ScanDiagnostics.log("CREATE http=\(response.statusCode) body=\(String(decoding: data.prefix(2048), as: UTF8.self))")
         try validate(response, data: data)
         guard response.statusCode == 202 else { throw AnalysisServiceError.unexpectedStatus(response.statusCode) }
-        return try JSONDecoder().decode(CreateAnalysisResponse.self, from: data)
+        do {
+            let created = try JSONDecoder().decode(CreateAnalysisResponse.self, from: data)
+            ScanDiagnostics.log("CREATE analysis_id=\(created.analysisID) status=\(created.status.rawValue)")
+            return created
+        } catch {
+            ScanDiagnostics.log("CREATE decode_error=\(error)")
+            throw error
+        }
     }
 
     func get(id: String) async throws -> AnalysisResponse {
         var request = URLRequest(url: baseURL.appendingPathComponent("api/v1/homework/analyses/\(id)"))
         request.httpMethod = "GET"
         let (data, response) = try await client.sendData(request)
+        ScanDiagnostics.log("POLL http=\(response.statusCode) analysis_id=\(id)")
         try validate(response, data: data)
-        return try JSONDecoder().decode(AnalysisResponse.self, from: data)
+        do {
+            return try JSONDecoder().decode(AnalysisResponse.self, from: data)
+        } catch {
+            ScanDiagnostics.log("POLL decode_error=\(error) analysis_id=\(id)")
+            throw error
+        }
     }
 
     private func validate(_ response: HTTPURLResponse, data: Data) throws {

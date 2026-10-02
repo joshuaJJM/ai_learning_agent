@@ -16,6 +16,7 @@ final class ScanViewModel {
     private var preparedImages: [Data]?
     private var task: Task<Void, Never>?
     private var taskGeneration = 0
+    private var pollCount = 0
     private let live: LiveAnalysisService
     private let mock = MockAnalysisService()
     private let preparation = ImagePreparationService()
@@ -51,6 +52,7 @@ final class ScanViewModel {
         analysisID = nil
         analysis = nil
         errorCode = nil
+        pollCount = 0
         launch()
     }
 
@@ -63,6 +65,7 @@ final class ScanViewModel {
             analysis = nil
         }
         errorCode = nil
+        pollCount = 0
         launch()
     }
 
@@ -105,6 +108,10 @@ final class ScanViewModel {
                 guard let id = self.analysisID else { return }
                 while !Task.isCancelled {
                     let response = try await self.service.get(id: id)
+                    self.pollCount += 1
+                    let progress = response.progress
+                    let stages = progress?.stages.map { "\($0.key):\($0.state.rawValue)" }.joined(separator: ",") ?? "none"
+                    ScanDiagnostics.log("POLL #\(self.pollCount) analysis_id=\(id) status=\(response.status.rawValue) percent=\(progress?.percent.description ?? "nil") stage=\(progress?.currentStageKey ?? "nil") label=\(progress?.currentStageLabelZH ?? "nil") stages=[\(stages)] error_code=\(response.error?.errorCode ?? "nil")")
                     self.analysis = response
                     switch response.status {
                     case .queued: self.state = .queued
@@ -118,10 +125,13 @@ final class ScanViewModel {
                     try await Task.sleep(for: .seconds(1))
                 }
             } catch is CancellationError {
+                ScanDiagnostics.log("POLL cancelled analysis_id=\(self.analysisID ?? "nil")")
                 return
             } catch NetworkError.cancelled {
+                ScanDiagnostics.log("POLL network_cancelled analysis_id=\(self.analysisID ?? "nil")")
                 return
             } catch {
+                ScanDiagnostics.log("FLOW error=\(error) analysis_id=\(self.analysisID ?? "nil") state=\(self.state)")
                 self.errorCode = (error as? AnalysisServiceError).flatMap {
                     if case let .backend(code) = $0 { return code }; return nil
                 } ?? "NETWORK_ERROR"

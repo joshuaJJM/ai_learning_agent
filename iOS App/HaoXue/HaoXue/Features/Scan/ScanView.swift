@@ -8,6 +8,7 @@ struct ScanView: View {
     @State private var model = ScanViewModel()
     @State private var selectedID: UUID?
     @State private var selectedPhotos: [PhotosPickerItem] = []
+    @State private var showingPhotoPicker = false
     @State private var showingScanner = false
     @State private var showingCameraAlert = false
     @State private var importError = false
@@ -30,11 +31,23 @@ struct ScanView: View {
             .padding(.bottom, 36)
         }
         .background(DemoStyle.background)
-        .sheet(isPresented: $showingScanner) {
+        .photosPicker(isPresented: $showingPhotoPicker, selection: $selectedPhotos,
+                      maxSelectionCount: 20, matching: .images)
+        .onChange(of: showingPhotoPicker) { _, presented in
+            ScanDiagnostics.log(presented ? "photoPickerPresented" : "photoPickerDismissed")
+        }
+        .sheet(isPresented: $showingScanner, onDismiss: {
+            ScanDiagnostics.log("scannerDismissed")
+        }) {
             DocumentScanner(onScan: { images in
+                ScanDiagnostics.log("scannerFinished pages=\(images.count)")
                 showingScanner = false
                 append(images, source: .camera)
-            }, onCancel: { showingScanner = false })
+            }, onCancel: {
+                ScanDiagnostics.log("scannerCancelled")
+                showingScanner = false
+            })
+            .onAppear { ScanDiagnostics.log("scannerPresented") }
         }
         .alert("无法打开扫描器", isPresented: $showingCameraAlert) {
             Button("好的", role: .cancel) {}
@@ -48,14 +61,19 @@ struct ScanView: View {
         }
         .onChange(of: selectedPhotos) { _, newItems in
             guard !newItems.isEmpty else { return }
+            ScanDiagnostics.log("photoPicked items=\(newItems.count)")
             Task {
                 var images: [UIImage] = []
                 for item in newItems {
                     if let data = try? await item.loadTransferable(type: Data.self), let image = UIImage(data: data) {
-                        images.append(image)
+                        let processed = await Task.detached(priority: .userInitiated) {
+                            DocumentImageProcessor().process(image)
+                        }.value
+                        images.append(processed)
                     }
                 }
                 selectedPhotos = []
+                ScanDiagnostics.log("photoLoaded count=\(images.count)")
                 if images.isEmpty { importError = true } else { append(images, source: .photos) }
             }
         }
@@ -162,10 +180,11 @@ struct ScanView: View {
                 } label: { Label("删除当前页", systemImage: "trash") }
                 .frame(maxWidth: .infinity)
                 Menu {
-                    Button("再次扫描", systemImage: "doc.viewfinder", action: openScanner)
-                    PhotosPicker(selection: $selectedPhotos, maxSelectionCount: 20, matching: .images) {
-                        Label("从照片选择", systemImage: "photo.on.rectangle")
+                    Button("再次扫描", systemImage: "doc.viewfinder") {
+                        ScanDiagnostics.log("tapScanAgain")
+                        openScanner()
                     }
+                    Button("从照片选择", systemImage: "photo.on.rectangle", action: openPhotoPicker)
                     if model.isMock {
                         Button("添加演示页面") { append([demoPage()], source: .photos) }
                     }
@@ -187,7 +206,7 @@ struct ScanView: View {
     }
 
     private var photoButton: some View {
-        PhotosPicker(selection: $selectedPhotos, maxSelectionCount: 20, matching: .images) {
+        Button(action: openPhotoPicker) {
             Label("从照片选择", systemImage: "photo.on.rectangle")
                 .font(.headline)
                 .frame(maxWidth: .infinity)
@@ -197,8 +216,14 @@ struct ScanView: View {
     }
 
     private func openScanner() {
+        ScanDiagnostics.log("requestScannerPresentation supported=\(VNDocumentCameraViewController.isSupported) showingScanner=\(showingScanner) selectedPhotos=\(selectedPhotos.count)")
         if VNDocumentCameraViewController.isSupported { showingScanner = true }
         else { showingCameraAlert = true }
+    }
+
+    private func openPhotoPicker() {
+        ScanDiagnostics.log("openPhotoPicker")
+        showingPhotoPicker = true
     }
 
     private func append(_ images: [UIImage], source: ScanSource) {
@@ -258,7 +283,8 @@ private struct AnalysisProgressView: View {
                         .font(.subheadline.monospacedDigit())
                     ForEach(progress.stages) { stage in
                         Label(stage.labelZH, systemImage: symbol(for: stage.state))
-                            .foregroundStyle(stage.state == .active ? .blue : DemoStyle.secondary)
+                            .foregroundStyle(stage.state == .failed || (stage.state == .active && model.state == .failed) ? .red :
+                                             stage.state == .active ? .blue : DemoStyle.secondary)
                             .accessibilityLabel("\(stage.labelZH)，\(stateLabel(for: stage.state))")
                     }
                 } else if model.isBusy {
@@ -266,8 +292,8 @@ private struct AnalysisProgressView: View {
                 }
                 if model.state == .failed {
                     Text(errorMessage).font(.subheadline).foregroundStyle(DemoStyle.secondary)
-                    Button(model.errorCode == "INVALID_IMAGE" ? "重新扫描" : "重新尝试") {
-                        if model.errorCode == "INVALID_IMAGE" { model.newScan() }
+                    Button(ScanFailurePresentation(code: model.errorCode).requiresNewScan ? "重新扫描" : "重新尝试") {
+                        if ScanFailurePresentation(code: model.errorCode).requiresNewScan { model.newScan() }
                         else { model.retry() }
                     }
                     .buttonStyle(PrimaryScanButtonStyle())
@@ -300,18 +326,24 @@ private struct AnalysisProgressView: View {
     }
 
     private var errorMessage: String {
-        switch model.errorCode {
-        case "INVALID_IMAGE": "图片似乎无法使用，请重新扫描清晰完整的页面。"
-        case "VLM_TIMEOUT": "服务器响应时间有点长，请再试一次。"
-        default: "连接暂时中断，重新尝试会继续当前任务。"
-        }
+        ScanFailurePresentation(code: model.errorCode).message
     }
 
     private func symbol(for state: AnalysisStageState) -> String {
-        switch state { case .done: "checkmark.circle.fill"; case .active: "circle.dotted.circle"; case .pending: "circle" }
+        switch state {
+        case .done: "checkmark.circle.fill"
+        case .active: model.state == .failed ? "xmark.circle.fill" : "circle.dotted.circle"
+        case .pending: "circle"
+        case .failed: "xmark.circle.fill"
+        }
     }
 
     private func stateLabel(for state: AnalysisStageState) -> String {
-        switch state { case .done: "已完成"; case .active: "进行中"; case .pending: "等待中" }
+        switch state {
+        case .done: "已完成"
+        case .active: model.state == .failed ? "未完成" : "进行中"
+        case .pending: "等待中"
+        case .failed: "未完成"
+        }
     }
 }
