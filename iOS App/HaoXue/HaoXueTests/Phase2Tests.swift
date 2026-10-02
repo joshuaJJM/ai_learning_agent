@@ -3,6 +3,36 @@ import UIKit
 @testable import HaoXue
 
 final class Phase2Tests: XCTestCase {
+    func testClippedPageAgainstDarkBackgroundIsCorrected() {
+        let size = CGSize(width: 600, height: 800)
+        let image = UIGraphicsImageRenderer(size: size).image { context in
+            UIColor.black.setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+            let otherPage = UIBezierPath(rect: CGRect(x: 0, y: 5, width: 120, height: 790))
+            UIColor.lightGray.setFill()
+            otherPage.fill()
+            let page = UIBezierPath()
+            page.move(to: CGPoint(x: 95, y: 55))
+            page.addLine(to: CGPoint(x: 540, y: 20))
+            page.addLine(to: CGPoint(x: 650, y: 760))
+            page.addLine(to: CGPoint(x: 50, y: 770))
+            page.close()
+            UIColor.white.setFill()
+            page.fill()
+            UIColor.darkGray.setStroke()
+            for row in 0..<9 {
+                let y = CGFloat(140 + row * 60)
+                let line = UIBezierPath()
+                line.move(to: CGPoint(x: 170, y: y))
+                line.addLine(to: CGPoint(x: 480, y: y))
+                line.stroke()
+            }
+        }
+        let output = DocumentImageProcessor().process(image)
+        XCTAssertLessThan(output.size.width, image.size.width * 0.95)
+        XCTAssertNotEqual(output.cgImage?.width, image.cgImage?.width)
+    }
+
     func testPhotoDocumentCorrectionCropsDetectedPage() {
         let size = CGSize(width: 900, height: 1200)
         let image = UIGraphicsImageRenderer(size: size).image { context in
@@ -52,6 +82,57 @@ final class Phase2Tests: XCTestCase {
         XCTAssertEqual(output.scale, rotated.scale)
         XCTAssertEqual(output.cgImage?.width, cgImage.height)
         XCTAssertEqual(output.cgImage?.height, cgImage.width)
+    }
+
+    func testAllSupportedPhotoOrientationsBecomeUpright() throws {
+        let upright = UIGraphicsImageRenderer(size: CGSize(width: 300, height: 400)).image { context in
+            UIColor.systemBlue.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 300, height: 400))
+        }
+        let pixels = try XCTUnwrap(upright.cgImage)
+        for orientation: UIImage.Orientation in [.up, .right, .left, .down,
+                                                 .upMirrored, .rightMirrored, .leftMirrored, .downMirrored] {
+            let photo = UIImage(cgImage: pixels, scale: upright.scale, orientation: orientation)
+            let result = DocumentImageProcessor().processWithMetadata(photo)
+            XCTAssertEqual(result.image.imageOrientation, .up, "orientation=\(orientation.rawValue)")
+            XCTAssertEqual(result.image.cgImage?.width, Int(photo.size.width * photo.scale),
+                           "orientation=\(orientation.rawValue)")
+            XCTAssertEqual(result.image.cgImage?.height, Int(photo.size.height * photo.scale),
+                           "orientation=\(orientation.rawValue)")
+            XCTAssertFalse(result.wasDocumentCorrected)
+        }
+    }
+
+    func testVisionCoordinatesIncludeCIImageExtentOrigin() {
+        let extent = CGRect(x: 10, y: 20, width: 200, height: 400)
+        let point = DocumentCoordinateMapper.vector(for: CGPoint(x: 0.25, y: 0.75), in: extent)
+        XCTAssertEqual(point.x, 60)
+        XCTAssertEqual(point.y, 320)
+        let clamped = DocumentCoordinateMapper.vector(for: CGPoint(x: -1, y: 2), in: extent)
+        XCTAssertEqual(clamped.x, extent.minX)
+        XCTAssertEqual(clamped.y, extent.maxY)
+    }
+
+    @MainActor func testScanPagePreviewAndUploadUseProcessedImage() throws {
+        let photo = UIGraphicsImageRenderer(size: CGSize(width: 600, height: 800)).image { context in
+            UIColor.darkGray.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 600, height: 800))
+            UIColor.white.setFill()
+            context.fill(CGRect(x: 100, y: 80, width: 390, height: 630))
+        }
+        let processed = DocumentImageProcessor().processWithMetadata(photo)
+        XCTAssertTrue(processed.wasDocumentCorrected)
+        let page = ScanPage(image: processed.image, source: .photos,
+                            wasDocumentCorrected: processed.wasDocumentCorrected,
+                            originalSize: photo.size)
+        let model = ScanViewModel()
+        model.append([page])
+        let previewImage = try XCTUnwrap(model.pages.first?.image)
+        XCTAssertTrue(previewImage === processed.image)
+        XCTAssertTrue(model.pages[0].wasDocumentCorrected)
+        XCTAssertEqual(model.pages[0].originalSize, photo.size)
+        let uploadData = try ImagePreparationService().prepare(model.pages[0].image)
+        XCTAssertEqual(uploadData, try ImagePreparationService().prepare(previewImage))
     }
 
     func testBackendRecognitionFailureHasSpecificMessage() {

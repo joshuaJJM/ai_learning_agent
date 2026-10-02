@@ -40,6 +40,14 @@ final class ScanViewModel {
         pages.append(contentsOf: images.map { ScanPage(image: $0, source: source) })
     }
 
+    func append(_ importedPages: [ScanPage]) {
+        guard canEdit else { return }
+        pages.append(contentsOf: importedPages)
+        for page in importedPages {
+            ScanDiagnostics.log("[ScanPage] image source=\(page.source == .photos ? "photoLibrary" : "documentCamera") wasDocumentCorrected=\(page.wasDocumentCorrected) original size=\(page.originalSize) final size=\(page.image.size)")
+        }
+    }
+
     func delete(at index: Int) {
         guard canEdit, pages.indices.contains(index) else { return }
         pages.remove(at: index)

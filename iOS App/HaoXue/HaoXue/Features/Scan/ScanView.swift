@@ -63,18 +63,24 @@ struct ScanView: View {
             guard !newItems.isEmpty else { return }
             ScanDiagnostics.log("photoPicked items=\(newItems.count)")
             Task {
-                var images: [UIImage] = []
+                var importedPages: [ScanPage] = []
                 for item in newItems {
                     if let data = try? await item.loadTransferable(type: Data.self), let image = UIImage(data: data) {
+                        ScanDiagnostics.log("[PhotoImport] original size=\(image.size) orientation=\(image.imageOrientation.rawValue) bytes=\(data.count)")
                         let processed = await Task.detached(priority: .userInitiated) {
-                            DocumentImageProcessor().process(image)
+                            DocumentImageProcessor().processWithMetadata(image)
                         }.value
-                        images.append(processed)
+                        importedPages.append(ScanPage(image: processed.image, source: .photos,
+                                                      wasDocumentCorrected: processed.wasDocumentCorrected,
+                                                      originalSize: image.size))
                     }
                 }
                 selectedPhotos = []
-                ScanDiagnostics.log("photoLoaded count=\(images.count)")
-                if images.isEmpty { importError = true } else { append(images, source: .photos) }
+                ScanDiagnostics.log("photoLoaded count=\(importedPages.count)")
+                if importedPages.isEmpty { importError = true } else {
+                    model.append(importedPages)
+                    selectedID = model.pages.last?.id
+                }
             }
         }
         .onAppear { model.resume() }
