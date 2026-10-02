@@ -37,6 +37,24 @@ final class APIClient {
         self.timeout = timeout
     }
 
+    func sendData(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        var request = request
+        request.timeoutInterval = timeout
+        do {
+            try Task.checkCancellation()
+            let (data, response) = try await session.data(for: request)
+            try Task.checkCancellation()
+            guard let response = response as? HTTPURLResponse else { throw NetworkError.invalidResponse }
+            return (data, response)
+        } catch is CancellationError {
+            throw NetworkError.cancelled
+        } catch let error as URLError {
+            if error.code == .cancelled { throw NetworkError.cancelled }
+            if error.code == .timedOut { throw NetworkError.timeout }
+            throw NetworkError.transport(error.code)
+        }
+    }
+
     // Caller supplies URLRequest; no endpoint schema or request framework yet.
     func send<DTO: Decodable>(_ request: URLRequest, as: DTO.Type) async throws -> DTO {
         var request = request

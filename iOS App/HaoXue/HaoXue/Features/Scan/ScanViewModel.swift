@@ -1,0 +1,132 @@
+import Foundation
+import Observation
+import UIKit
+
+enum ScanFlowState { case review, preparing, uploading, queued, processing, completed, failed }
+
+@MainActor @Observable
+final class ScanViewModel {
+    private(set) var pages: [ScanPage] = []
+    private(set) var state: ScanFlowState = .review
+    private(set) var analysis: AnalysisResponse?
+    private(set) var analysisID: String?
+    private(set) var errorCode: String?
+    private(set) var isMock = false
+    private var idempotencyKey: UUID?
+    private var preparedImages: [Data]?
+    private var task: Task<Void, Never>?
+    private var taskGeneration = 0
+    private let live: LiveAnalysisService
+    private let mock = MockAnalysisService()
+    private let preparation = ImagePreparationService()
+
+    init(baseURL: URL = URL(string: "http://121.43.137.176:17283")!) {
+        live = LiveAnalysisService(baseURL: baseURL, client: APIClient(timeout: 60))
+        isMock = ProcessInfo.processInfo.environment["HAOXUE_MOCK_MODE"] == "1"
+    }
+
+    var canEdit: Bool { state == .review }
+    var isBusy: Bool { [.preparing, .uploading, .queued, .processing].contains(state) }
+    var service: any AnalysisServing { isMock ? mock : live }
+
+    func setMock(_ value: Bool) {
+        guard state == .review else { return }
+        isMock = value
+    }
+
+    func append(_ images: [UIImage], source: ScanSource) {
+        guard canEdit else { return }
+        pages.append(contentsOf: images.map { ScanPage(image: $0, source: source) })
+    }
+
+    func delete(at index: Int) {
+        guard canEdit, pages.indices.contains(index) else { return }
+        pages.remove(at: index)
+    }
+
+    func start() {
+        guard state == .review, !pages.isEmpty else { return }
+        idempotencyKey = UUID()
+        preparedImages = nil
+        analysisID = nil
+        analysis = nil
+        errorCode = nil
+        launch()
+    }
+
+    func retry() {
+        guard state == .failed else { return }
+        if analysis?.status == .failed {
+            // The server has confirmed failure; a retry is a new analysis.
+            idempotencyKey = UUID()
+            analysisID = nil
+            analysis = nil
+        }
+        errorCode = nil
+        launch()
+    }
+
+    func newScan() {
+        stop()
+        pages = []
+        state = .review
+        analysis = nil
+        analysisID = nil
+        idempotencyKey = nil
+        preparedImages = nil
+        errorCode = nil
+    }
+
+    func stop() { taskGeneration += 1; task?.cancel(); task = nil }
+
+    func resume() {
+        guard task == nil, idempotencyKey != nil, isBusy else { return }
+        launch()
+    }
+
+    private func launch() {
+        guard task == nil else { return }
+        taskGeneration += 1
+        let generation = taskGeneration
+        task = Task { [weak self] in
+            guard let self else { return }
+            defer { if self.taskGeneration == generation { self.task = nil } }
+            do {
+                if self.analysisID == nil {
+                    if self.preparedImages == nil {
+                        self.state = .preparing
+                        self.preparedImages = try self.pages.map { try self.preparation.prepare($0.image) }
+                    }
+                    self.state = .uploading
+                    let created = try await self.service.create(images: self.preparedImages!, key: self.idempotencyKey!)
+                    self.analysisID = created.analysisID
+                    self.state = .queued
+                }
+                guard let id = self.analysisID else { return }
+                while !Task.isCancelled {
+                    let response = try await self.service.get(id: id)
+                    self.analysis = response
+                    switch response.status {
+                    case .queued: self.state = .queued
+                    case .processing: self.state = .processing
+                    case .completed: self.state = .completed; return
+                    case .failed:
+                        self.errorCode = response.error?.errorCode ?? "ANALYSIS_FAILED"
+                        self.state = .failed
+                        return
+                    }
+                    try await Task.sleep(for: .seconds(1))
+                }
+            } catch is CancellationError {
+                return
+            } catch NetworkError.cancelled {
+                return
+            } catch {
+                self.errorCode = (error as? AnalysisServiceError).flatMap {
+                    if case let .backend(code) = $0 { return code }; return nil
+                } ?? "NETWORK_ERROR"
+                self.state = .failed
+            }
+        }
+    }
+}

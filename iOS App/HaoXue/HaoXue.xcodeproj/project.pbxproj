@@ -29,9 +29,22 @@
 		1E17B561306F265500D19BCC /* HaoXueUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HaoXueUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		1EF90A54306F53A500D09FC1 /* Exceptions for "HaoXue" folder in "HaoXue" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 1E17B547306F265300D19BCC /* HaoXue */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		1E17B54A306F265300D19BCC /* HaoXue */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				1EF90A54306F53A500D09FC1 /* Exceptions for "HaoXue" folder in "HaoXue" target */,
+			);
 			path = HaoXue;
 			sourceTree = "<group>";
 		};
@@ -374,6 +387,8 @@
 				DEVELOPMENT_TEAM = 79W6NG56BQ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = HaoXue/Info.plist;
+				INFOPLIST_KEY_NSCameraUsageDescription = "用于扫描作业和试卷页面，以便上传分析。";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -406,6 +421,8 @@
 				DEVELOPMENT_TEAM = 79W6NG56BQ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = HaoXue/Info.plist;
+				INFOPLIST_KEY_NSCameraUsageDescription = "用于扫描作业和试卷页面，以便上传分析。";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

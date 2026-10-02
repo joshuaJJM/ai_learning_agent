@@ -50,7 +50,7 @@ final class DemoScenarioStore {
     let productSettings = [
         ("订阅与学习额度", "1,000,000 演示额度"),
         ("数据与隐私", "学习数据与图片处理说明"),
-        ("服务器状态", "演示模式 · 本地数据")
+        ("服务器状态", "扫描可切换真实后端与演示模式")
     ]
     let aboutSettings = [
         ("关于好学", "Personal Learning Agent"),
@@ -114,6 +114,7 @@ final class DemoScenarioStore {
     }
 
     func showScanResult() { scanAnalysisCompleted = true }
+    func resetScanResult() { scanAnalysisCompleted = false }
 
     func uploadMoreDemoPage() {
         scanPageCount += 1

@@ -1,119 +1,317 @@
 import SwiftUI
+import PhotosUI
+import VisionKit
 
 struct ScanView: View {
     let store: DemoScenarioStore
     let onStart: () -> Void
-    @State private var selectedPage: Int? = 1
+    @State private var model = ScanViewModel()
+    @State private var selectedID: UUID?
+    @State private var selectedPhotos: [PhotosPickerItem] = []
+    @State private var showingScanner = false
+    @State private var showingCameraAlert = false
+    @State private var importError = false
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 17) {
-                DemoPageHeader(title: "扫描", subtitle: "作业、试卷，或者一道你不会的题，都可以直接交给好学。")
-                Text("已扫描 \(store.scanPageCount) 页")
-                    .font(.headline).foregroundStyle(DemoStyle.secondary)
-
-                GeometryReader { geometry in
-                    ScrollView(.horizontal) {
-                        LazyHStack(spacing: 14) {
-                            ForEach(1...store.scanPageCount, id: \.self) { page in
-                                DemoCard {
-                                    VStack(alignment: .leading, spacing: 22) {
-                                        Text(store.scanPageHeading)
-                                            .font(.subheadline.bold())
-                                            .foregroundStyle(DemoStyle.secondary)
-                                        Text(page == 1 ? store.scanQuestion : "导数基础 · 第 \(page) 页")
-                                            .font(.title3.bold())
-                                        ZStack {
-                                            RoundedRectangle(cornerRadius: 20)
-                                                .fill(Color(uiColor: .secondarySystemBackground))
-                                            VStack(spacing: 10) {
-                                                Text("f′(x)").font(.title2).foregroundStyle(DemoStyle.secondary)
-                                                Text("↘︎  ───  ↗︎    → x")
-                                                    .font(.title2.monospaced())
-                                            }
-                                        }
-                                        .frame(height: 145)
-                                        Text(store.scanChoices)
-                                            .font(.body)
-                                            .lineSpacing(9)
-                                    }
-                                }
-                                .frame(width: max(geometry.size.width - 64, 220))
-                                .shadow(color: .black.opacity(0.035), radius: 4, y: 2)
-                                .id(page)
-                            }
-                        }
-                        .scrollTargetLayout()
-                    }
-                    .scrollIndicators(.hidden)
-                    .scrollTargetBehavior(.viewAligned)
-                    .scrollPosition(id: $selectedPage)
-                }
-                .frame(height: 445)
-                Text("\(selectedPage ?? 1) / \(store.scanPageCount)")
-                    .font(.subheadline)
-                    .foregroundStyle(DemoStyle.secondary)
-                    .frame(maxWidth: .infinity)
-
-                DemoCard {
-                    VStack(alignment: .leading, spacing: 15) {
-                        Text(store.scanAnalysisCompleted ? "分析完成" : "正在理解你的作业")
-                            .font(.title3.bold())
-                        MasteryBar(value: store.scanAnalysisCompleted ? 1 : 0.68)
-                        Text("✓ 图片已上传  ✓ 检测到题目")
-                            .font(.subheadline).foregroundStyle(DemoStyle.secondary)
-                        if !store.scanAnalysisCompleted {
-                            Text("● 正在分析作答与知识点")
-                                .font(.subheadline).foregroundStyle(.blue)
-                            Button("查看模拟分析结果") { store.showScanResult() }
-                                .font(.subheadline.bold())
-                        }
+            VStack(alignment: .leading, spacing: 18) {
+                header
+                if model.pages.isEmpty { emptyState } else {
+                    pageCarousel
+                    if model.canEdit { reviewControls } else {
+                        AnalysisProgressView(model: model, onResult: store.showScanResult,
+                                             onNewScan: store.resetScanResult)
                     }
                 }
-                if store.scanAnalysisCompleted {
-                    scanResult
-                }
-                Button("上传更多") {
-                    store.uploadMoreDemoPage()
-                    selectedPage = store.scanPageCount
-                }
-                .font(.headline)
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .background(.blue, in: Capsule())
-                .accessibilityLabel("上传更多模拟页面")
+                if model.state == .completed && store.scanAnalysisCompleted { scanResult }
             }
             .padding(.horizontal, 20)
             .padding(.top, 26)
-            .padding(.bottom, 30)
+            .padding(.bottom, 36)
         }
         .background(DemoStyle.background)
+        .sheet(isPresented: $showingScanner) {
+            DocumentScanner(onScan: { images in
+                showingScanner = false
+                append(images, source: .camera)
+            }, onCancel: { showingScanner = false })
+        }
+        .alert("无法打开扫描器", isPresented: $showingCameraAlert) {
+            Button("好的", role: .cancel) {}
+        } message: {
+            Text("请在支持相机的 iPhone 上扫描，或从照片选择页面。")
+        }
+        .alert("照片导入失败", isPresented: $importError) {
+            Button("好的", role: .cancel) {}
+        } message: {
+            Text("请重新选择清晰的作业照片。")
+        }
+        .onChange(of: selectedPhotos) { _, newItems in
+            guard !newItems.isEmpty else { return }
+            Task {
+                var images: [UIImage] = []
+                for item in newItems {
+                    if let data = try? await item.loadTransferable(type: Data.self), let image = UIImage(data: data) {
+                        images.append(image)
+                    }
+                }
+                selectedPhotos = []
+                if images.isEmpty { importError = true } else { append(images, source: .photos) }
+            }
+        }
+        .onAppear { model.resume() }
+        .onDisappear { model.stop() }
+    }
+
+    private var header: some View {
+        HStack(alignment: .top) {
+            DemoPageHeader(title: "扫描", subtitle: "作业、试卷，或者一道你不会的题，都可以直接交给好学。")
+            Spacer(minLength: 8)
+            Menu {
+                Button(model.isMock ? "使用真实后端" : "切换演示模式") { model.setMock(!model.isMock) }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .font(.title3)
+                    .frame(width: 44, height: 44)
+            }
+            .disabled(!model.canEdit)
+            .accessibilityLabel("扫描设置")
+        }
+    }
+
+    private var emptyState: some View {
+        DemoCard {
+            VStack(spacing: 20) {
+                Image(systemName: "doc.viewfinder")
+                    .font(.system(size: 58, weight: .ultraLight))
+                    .foregroundStyle(.blue)
+                Text("从一页作业开始").font(.title2.bold())
+                Text("可以连续扫描多页，也可以从相册选择。开始分析前，还能继续添加和删除页面。")
+                    .font(.subheadline)
+                    .foregroundStyle(DemoStyle.secondary)
+                    .multilineTextAlignment(.center)
+                scanButton
+                photoButton
+                if model.isMock {
+                    Button("添加演示页面") { append([demoPage()], source: .photos) }
+                        .font(.subheadline)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 24)
+        }
+    }
+
+    private var pageCarousel: some View {
+        VStack(spacing: 10) {
+            Text("已扫描 \(model.pages.count) 页")
+                .font(.headline)
+                .foregroundStyle(DemoStyle.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            GeometryReader { geometry in
+                ScrollView(.horizontal) {
+                    LazyHStack(spacing: 14) {
+                        ForEach(Array(model.pages.enumerated()), id: \.element.id) { index, page in
+                            DemoCard {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    Text("第 \(index + 1) 页")
+                                        .font(.subheadline.bold())
+                                        .foregroundStyle(DemoStyle.secondary)
+                                    Image(uiImage: page.image)
+                                        .resizable()
+                                        .scaledToFit()
+                                        .frame(maxWidth: .infinity)
+                                        .frame(height: 350)
+                                        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
+                                }
+                            }
+                            .frame(width: max(geometry.size.width - 64, 220))
+                            .scaleEffect(selectedID == page.id ? 1 : 0.94)
+                            .opacity(selectedID == page.id ? 1 : 0.72)
+                            .id(page.id)
+                            .accessibilityLabel("扫描页面 \(index + 1)，共 \(model.pages.count) 页")
+                        }
+                    }
+                    .scrollTargetLayout()
+                }
+                .scrollIndicators(.hidden)
+                .scrollTargetBehavior(.viewAligned)
+                .scrollPosition(id: $selectedID)
+            }
+            .frame(height: 430)
+            Text("\(currentIndex + 1) / \(model.pages.count)")
+                .font(.subheadline)
+                .foregroundStyle(DemoStyle.secondary)
+                .frame(maxWidth: .infinity)
+                .accessibilityLabel("第 \(currentIndex + 1) 页，共 \(model.pages.count) 页")
+        }
+        .animation(.interactiveSpring(), value: selectedID)
+    }
+
+    private var currentIndex: Int {
+        model.pages.firstIndex(where: { $0.id == selectedID }) ?? 0
+    }
+
+    private var reviewControls: some View {
+        VStack(spacing: 14) {
+            HStack(spacing: 12) {
+                Button(role: .destructive) {
+                    let index = currentIndex
+                    model.delete(at: index)
+                    selectedID = model.pages.isEmpty ? nil : model.pages[min(index, model.pages.count - 1)].id
+                } label: { Label("删除当前页", systemImage: "trash") }
+                .frame(maxWidth: .infinity)
+                Menu {
+                    Button("再次扫描", systemImage: "doc.viewfinder", action: openScanner)
+                    PhotosPicker(selection: $selectedPhotos, maxSelectionCount: 20, matching: .images) {
+                        Label("从照片选择", systemImage: "photo.on.rectangle")
+                    }
+                    if model.isMock {
+                        Button("添加演示页面") { append([demoPage()], source: .photos) }
+                    }
+                } label: { Label("上传更多", systemImage: "plus") }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            Button("开始分析") {
+                store.resetScanResult()
+                model.start()
+            }
+                .buttonStyle(PrimaryScanButtonStyle())
+        }
+    }
+
+    private var scanButton: some View {
+        Button(action: openScanner) { Label("扫描文档", systemImage: "doc.viewfinder") }
+            .buttonStyle(PrimaryScanButtonStyle())
+    }
+
+    private var photoButton: some View {
+        PhotosPicker(selection: $selectedPhotos, maxSelectionCount: 20, matching: .images) {
+            Label("从照片选择", systemImage: "photo.on.rectangle")
+                .font(.headline)
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: 44)
+        }
+        .buttonStyle(.bordered)
+    }
+
+    private func openScanner() {
+        if VNDocumentCameraViewController.isSupported { showingScanner = true }
+        else { showingCameraAlert = true }
+    }
+
+    private func append(_ images: [UIImage], source: ScanSource) {
+        model.append(images, source: source)
+        selectedID = model.pages.last?.id
+    }
+
+    private func demoPage() -> UIImage {
+        let size = CGSize(width: 900, height: 1200)
+        return UIGraphicsImageRenderer(size: size).image { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+            let text = "高中数学 · 导数练习\n\n1. 求函数 f(x) = x² 的导数。\n\nA. x    B. 2x    C. x²    D. 2"
+            text.draw(in: CGRect(x: 80, y: 100, width: 740, height: 800),
+                      withAttributes: [.font: UIFont.systemFont(ofSize: 40), .foregroundColor: UIColor.black])
+        }
     }
 
     private var scanResult: some View {
         DemoCard {
             VStack(alignment: .leading, spacing: 13) {
-                Text("识别到 \(GoldenDemoFixtures.analysisCompleted.questions.count) 道题")
-                    .font(.headline)
-                Text("值得关注").foregroundStyle(DemoStyle.secondary)
-                ForEach(Array(store.scanFocusPoints.enumerated()), id: \.offset) { _, point in
-                    HStack {
-                        Text(point.title)
-                        Spacer()
-                        Text("\(point.mastery.demoPercent) · 错误 \(point.wrongCount) 次")
-                    }
-                }
-                Text("好学建议你先处理：\(store.lessonTitle)")
-                    .font(.subheadline)
-                    .padding(.top, 6)
-                Button("开始学习", action: onStart)
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .foregroundStyle(.white)
-                    .background(.blue, in: Capsule())
+                Text("分析结果预览").font(.headline)
+                Text("完整题目结果将在后续集成阶段接入。你可以继续体验现有学习演示。")
+                    .font(.subheadline).foregroundStyle(DemoStyle.secondary)
+                Button("开始学习", action: onStart).buttonStyle(PrimaryScanButtonStyle())
             }
         }
+    }
+}
+
+private struct PrimaryScanButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.headline)
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .frame(minHeight: 50)
+            .background(.blue, in: Capsule())
+            .opacity(configuration.isPressed ? 0.75 : 1)
+    }
+}
+
+private struct AnalysisProgressView: View {
+    let model: ScanViewModel
+    let onResult: () -> Void
+    let onNewScan: () -> Void
+
+    var body: some View {
+        DemoCard {
+            VStack(alignment: .leading, spacing: 15) {
+                Text(title).font(.title3.bold())
+                if let progress = model.analysis?.progress {
+                    ProgressView(value: progress.percent)
+                        .tint(.blue)
+                        .animation(.easeInOut, value: progress.percent)
+                    Text("\(Int((progress.percent * 100).rounded()))%")
+                        .font(.subheadline.monospacedDigit())
+                    ForEach(progress.stages) { stage in
+                        Label(stage.labelZH, systemImage: symbol(for: stage.state))
+                            .foregroundStyle(stage.state == .active ? .blue : DemoStyle.secondary)
+                            .accessibilityLabel("\(stage.labelZH)，\(stateLabel(for: stage.state))")
+                    }
+                } else if model.isBusy {
+                    ProgressView().controlSize(.large)
+                }
+                if model.state == .failed {
+                    Text(errorMessage).font(.subheadline).foregroundStyle(DemoStyle.secondary)
+                    Button(model.errorCode == "INVALID_IMAGE" ? "重新扫描" : "重新尝试") {
+                        if model.errorCode == "INVALID_IMAGE" { model.newScan() }
+                        else { model.retry() }
+                    }
+                    .buttonStyle(PrimaryScanButtonStyle())
+                }
+                if model.state == .completed {
+                    Text("你的学习状态已经更新")
+                        .font(.subheadline).foregroundStyle(DemoStyle.secondary)
+                    Button("查看分析结果", action: onResult)
+                        .buttonStyle(PrimaryScanButtonStyle())
+                    Button("新建一次扫描") {
+                        model.newScan()
+                        onNewScan()
+                    }
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+            }
+        }
+    }
+
+    private var title: String {
+        switch model.state {
+        case .preparing: "正在准备图片"
+        case .uploading: "正在上传页面"
+        case .queued: "正在等待分析"
+        case .processing: model.analysis?.progress?.currentStageLabelZH ?? "正在理解你的作业"
+        case .completed: "分析完成"
+        case .failed: "分析暂时没有完成"
+        case .review: "准备分析"
+        }
+    }
+
+    private var errorMessage: String {
+        switch model.errorCode {
+        case "INVALID_IMAGE": "图片似乎无法使用，请重新扫描清晰完整的页面。"
+        case "VLM_TIMEOUT": "服务器响应时间有点长，请再试一次。"
+        default: "连接暂时中断，重新尝试会继续当前任务。"
+        }
+    }
+
+    private func symbol(for state: AnalysisStageState) -> String {
+        switch state { case .done: "checkmark.circle.fill"; case .active: "circle.dotted.circle"; case .pending: "circle" }
+    }
+
+    private func stateLabel(for state: AnalysisStageState) -> String {
+        switch state { case .done: "已完成"; case .active: "进行中"; case .pending: "等待中" }
     }
 }
