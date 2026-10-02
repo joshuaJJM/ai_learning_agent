@@ -7,9 +7,11 @@ struct RemoteTutorView: View {
     @State private var actionTask: Task<Void, Never>?
     @Environment(\.scenePhase) private var scenePhase
 
-    init(service: any TutorRemoteServing, onClose: @escaping () -> Void) {
+    init(service: any TutorRemoteServing,
+         masteryService: (any MasteryOverviewServing)? = nil,
+         onClose: @escaping () -> Void) {
         self.onClose = onClose
-        _model = State(initialValue: RemoteTutorViewModel(service: service))
+        _model = State(initialValue: RemoteTutorViewModel(service: service, masteryService: masteryService))
     }
 
     var body: some View {
@@ -75,12 +77,12 @@ struct RemoteTutorView: View {
         VStack(alignment: .leading, spacing: 22) {
             Text(turn.remedialDepth > 0 ? "换个角度 · 第 \(turn.remedialDepth) / 4 层" : "理解检查")
                 .font(.subheadline.bold()).foregroundStyle(DemoStyle.secondary)
-            Text(turn.text)
+            SafeMathText(turn.text)
                 .font(.title3.weight(.semibold))
                 .frame(maxWidth: .infinity, alignment: .leading)
             if model.pendingNextTurn == nil, !model.isSubmitting,
                let feedback = model.feedback, !turn.text.hasPrefix(feedback) {
-                Text(feedback).font(.subheadline)
+                SafeMathText(feedback).font(.subheadline)
                     .padding(12)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
@@ -89,6 +91,7 @@ struct RemoteTutorView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     ProgressView("正在分析你的思路…")
                     if !model.streamedText.isEmpty {
+                        // Streaming deltas stay plain text: never run the normalizer per chunk.
                         Text(model.streamedText).font(.body)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -125,7 +128,7 @@ struct RemoteTutorView: View {
                     .font(.headline)
                     .frame(width: 34, height: 34)
                     .background(DemoStyle.background, in: Circle())
-                Text(choice.text).font(.body.weight(.medium))
+                SafeMathText(choice.text).font(.body.weight(.medium))
                 Spacer()
                 if selected { Image(systemName: "checkmark") }
             }
@@ -146,18 +149,21 @@ struct RemoteTutorView: View {
                       systemImage: correct ? "checkmark.circle.fill" : "xmark.circle.fill")
                     .font(.headline)
             }
-            if let feedback = model.feedback { Text(feedback) }
+            if let feedback = model.feedback { SafeMathText(feedback) }
             if let reveal = model.answerReveal {
                 if let origin = reveal.origin {
                     if let current = reveal.current {
                         Text("补救题正确答案：\(current.correctKey)").font(.subheadline.bold())
-                        if let explanation = current.explanation, !explanation.isEmpty { Text(explanation) }
+                        if let question = current.questionText, !question.isEmpty { SafeMathText(question) }
+                        if let explanation = current.explanation, !explanation.isEmpty { SafeMathText(explanation) }
                     }
                     Text("原题正确答案：\(origin.correctKey)").font(.subheadline.bold())
-                    if let explanation = origin.explanation, !explanation.isEmpty { Text(explanation) }
+                    if let question = origin.questionText, !question.isEmpty { SafeMathText(question) }
+                    if let explanation = origin.explanation, !explanation.isEmpty { SafeMathText(explanation) }
                 } else if let current = reveal.current {
                     Text("正确答案：\(current.correctKey)").font(.subheadline.bold())
-                    if let explanation = current.explanation, !explanation.isEmpty { Text(explanation) }
+                    if let question = current.questionText, !question.isEmpty { SafeMathText(question) }
+                    if let explanation = current.explanation, !explanation.isEmpty { SafeMathText(explanation) }
                 }
             }
         }
@@ -182,6 +188,16 @@ struct RemoteTutorView: View {
             .opacity(primaryEnabled ? 1 : 0.5)
             .accessibilityLabel(primaryTitle)
             if !model.completed {
+                if let mastery = model.currentMastery {
+                    HStack {
+                        Text(model.knowledgePointName).lineLimit(1)
+                        Spacer()
+                        Text(mastery.demoPercent).font(.headline)
+                    }
+                    .font(.subheadline)
+                    .foregroundStyle(DemoStyle.secondary)
+                    MasteryBar(value: mastery)
+                }
                 Text("课程进度 · \(model.progressText)")
                     .font(.caption).foregroundStyle(DemoStyle.secondary)
             }
@@ -223,7 +239,20 @@ struct RemoteTutorView: View {
                 .font(.system(size: 45)).foregroundStyle(.green)
             Text("学习完成").font(.largeTitle.bold())
             Text(model.knowledgePointName).font(.title2)
-            Text("本轮学习已完成").font(.body)
+            if let start = model.sessionStartMastery, let current = model.currentMastery {
+                // Server values only: the client never recomputes mastery.
+                Text("\(start.demoPercent) → \(current.demoPercent)")
+                    .font(.system(size: 34, weight: .bold))
+                    .foregroundStyle(.green)
+                Text("这个知识点的掌握度变化").foregroundStyle(DemoStyle.secondary)
+            } else {
+                Text("本轮学习已完成").font(.body)
+            }
+            if let score = model.overallMasteryScore {
+                Text("全部知识点综合掌握度 \(score)%")
+                    .font(.subheadline)
+                    .foregroundStyle(DemoStyle.secondary)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 24)

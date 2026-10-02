@@ -5,10 +5,12 @@ import PencilKit
 @MainActor @Observable
 final class RemoteTutorViewModel {
     private let service: any TutorRemoteServing
+    private let masteryService: (any MasteryOverviewServing)?
     private let createKey = UUID().uuidString
     private var requestGeneration = 0
     private var pendingAnswer: (selectedKey: String?, text: String?, key: String)?
     private var finishAfterReveal = false
+    private var knowledgePointId: String?
     private(set) var sessionId: String?
     private(set) var knowledgePointName = "学习"
     private(set) var turn: TutorTurnDTO?
@@ -21,18 +23,29 @@ final class RemoteTutorViewModel {
     private(set) var isSubmitting = false
     private(set) var completed = false
     private(set) var errorMessage: String?
+    // Server-owned mastery for the knowledge point of this session. `nil` means
+    // "the backend has not reported a change yet" — never zero, never recomputed.
+    private(set) var sessionStartMastery: Double?
+    private(set) var currentMastery: Double?
+    // Global cross-knowledge-point score from /knowledge/mastery-overview.
+    private(set) var overallMasteryScore: Int?
     var selectedKey: String?
     var freeText = ""
     var drawing = PKDrawing()
 
-    init(service: any TutorRemoteServing) {
+    init(service: any TutorRemoteServing, masteryService: (any MasteryOverviewServing)? = nil) {
         self.service = service
+        self.masteryService = masteryService
     }
 
     var progressText: String {
         guard let progress = turn?.progress else { return "" }
         return "\(progress.step) / \(progress.totalSteps)"
     }
+
+    var canShowMastery: Bool { currentMastery != nil }
+
+    var hasMasteryChange: Bool { sessionStartMastery != nil && currentMastery != nil }
 
     var canSubmit: Bool {
         guard let turn, !isSubmitting, !isLoading, pendingAnswer == nil,
@@ -52,9 +65,13 @@ final class RemoteTutorViewModel {
             guard generation == requestGeneration, !Task.isCancelled else { return }
             sessionId = session.tutorSessionId
             knowledgePointName = session.knowledgePointName ?? "学习"
+            knowledgePointId = session.knowledgePointId
             turn = session.turn
             completed = session.completed
             isLoading = false
+            apply(knowledgeChanges: session.knowledgeChanges)
+            // Session state is already published; the overview request never gates the Tutor.
+            await refreshOverallMastery(generation: generation)
         } catch {
             guard generation == requestGeneration, !Task.isCancelled else { return }
             isLoading = false
@@ -96,6 +113,7 @@ final class RemoteTutorViewModel {
             answerReveal = result.turn.answerReveal
             finishAfterReveal = result.completed && result.turn.strategy == "reveal_answer"
             completed = result.completed && !finishAfterReveal
+            apply(knowledgeChanges: result.knowledgeChanges)
             selectedKey = nil
             freeText = ""
             if finishAfterReveal {
@@ -107,11 +125,30 @@ final class RemoteTutorViewModel {
             } else {
                 pendingNextTurn = result.turn
             }
+            if result.completed { await refreshOverallMastery(generation: generation) }
         } catch {
             guard generation == requestGeneration, !Task.isCancelled else { return }
             isSubmitting = false
             errorMessage = "提交失败，请重试；本次答案不会重复计分"
         }
+    }
+
+    /// Server sends `knowledge_changes` for the knowledge point of this session.
+    /// An empty list must keep the previously shown value: the backend omits the
+    /// change on turns that did not move mastery, which is not a reset to zero.
+    private func apply(knowledgeChanges changes: [TutorKnowledgeChangeDTO]) {
+        let change = changes.first { $0.knowledgePointId == knowledgePointId } ?? changes.first
+        guard let change else { return }
+        if sessionStartMastery == nil { sessionStartMastery = change.before }
+        currentMastery = change.after
+    }
+
+    /// Mastery overview is auxiliary: failure only hides the number.
+    private func refreshOverallMastery(generation: Int) async {
+        guard let masteryService else { return }
+        guard let overview = try? await masteryService.fetchOverview() else { return }
+        guard generation == requestGeneration, !Task.isCancelled else { return }
+        overallMasteryScore = overview.score
     }
 
     func continueToNext() {

@@ -26,7 +26,10 @@ struct AppShellView: View {
             if usesMockTutor {
                 TutorView(store: store, provider: MockQuestionProvider()) { showingTutor = false }
             } else {
-                RemoteTutorView(service: TutorRemoteService(baseURL: AppConfiguration.demoBackendURL)) {
+                RemoteTutorView(
+                    service: TutorRemoteService(baseURL: AppConfiguration.demoBackendURL),
+                    masteryService: MasteryOverviewService(baseURL: AppConfiguration.demoBackendURL)
+                ) {
                     showingTutor = false
                 }
             }
