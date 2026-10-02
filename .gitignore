@@ -41,6 +41,13 @@ data/
 pip-unpack-*/
 haoxue-test-*/
 .pytest_tmp/
+# 排查线上问题时临时写的一次性脚本 / 输出（用完即删，不该进仓库）
+backend/.status.sh
+backend/.status_out.txt
+backend/.backup.sh
+backend/.recon.sh
+backend/tools/_rex.py
+backend/tools/_remote_exec.py
 
 # ---- 系统 / 编辑器 ----
 .DS_Store
