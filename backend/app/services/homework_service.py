@@ -183,6 +183,9 @@ def create_analysis(
 
     analysis_id = db.new_id("ana")
     now = db.to_iso(db.utcnow())
+    # 每上传一批就分配一个该用户内递增的批次号（前端「近 50 批」列表用）。
+    # 它是展示与排序用的编号；稳定机器标识仍然是 analysis_id。
+    batch_number = repositories.next_batch_number(user_id)
 
     saved: list[dict[str, Any]] = []
     upload_dir = db.uploads_dir() / analysis_id
@@ -205,6 +208,7 @@ def create_analysis(
     doc: dict[str, Any] = {
         "analysis_id": analysis_id,
         "user_id": user_id,
+        "batch_number": batch_number,
         "status": "queued",
         "progress": _progress(0, 0.02),
         "subject": subject,
@@ -225,6 +229,7 @@ def create_analysis(
         "generated_by": None,
         "created_at": now,
         "updated_at": now,
+        "finished_at": None,
     }
     repositories.save_analysis(doc)
     if client_request_id:
@@ -232,14 +237,23 @@ def create_analysis(
             f"homework:{user_id}:{client_request_id}",
             user_id,
             "POST /api/v1/homework/analyses",
-            {"analysis_id": analysis_id, "status": "queued", "created_at": now},
+            {
+                "analysis_id": analysis_id,
+                "batch_number": batch_number,
+                "status": "queued",
+                "created_at": now,
+            },
         )
     return doc
 
 
 def _update(doc: dict[str, Any], **changes: Any) -> dict[str, Any]:
     doc.update(changes)
-    doc["updated_at"] = db.to_iso(db.utcnow())
+    now = db.to_iso(db.utcnow())
+    doc["updated_at"] = now
+    # 终态时记一次完成时间（只记第一次），前端要显示成功/失败的用时
+    if doc.get("status") in ("completed", "failed") and not doc.get("finished_at"):
+        doc["finished_at"] = now
     repositories.save_analysis(doc)
     return doc
 
@@ -517,6 +531,7 @@ def _build_wrong_question(
 def build_detail(doc: dict[str, Any]) -> dict[str, Any]:
     return {
         "analysis_id": doc["analysis_id"],
+        "batch_number": doc.get("batch_number"),
         "status": doc["status"],
         "progress": doc["progress"],
         "homework_id": doc.get("homework_id"),
@@ -542,6 +557,98 @@ def build_detail(doc: dict[str, Any]) -> dict[str, Any]:
         "generated_by": doc.get("generated_by"),
         "created_at": doc["created_at"],
         "updated_at": doc["updated_at"],
+        "finished_at": doc.get("finished_at"),
+    }
+
+
+# ---------------------------------------------------------------------------
+# 上传批次列表（前端的「近 50 批」）
+# ---------------------------------------------------------------------------
+
+# 内部状态 -> 对外的三态。前端只关心「正在 / 成功 / 失败」。
+BATCH_STATE = {
+    "queued": "processing",
+    "processing": "processing",
+    "completed": "success",
+    "failed": "failed",
+}
+
+BATCH_STATE_LABEL_ZH = {
+    "processing": "正在处理",
+    "success": "成功",
+    "failed": "失败",
+}
+
+
+def _duration_seconds(doc: dict[str, Any]) -> float | None:
+    start = db.from_iso(doc.get("created_at"))
+    end = db.from_iso(doc.get("finished_at"))
+    if start is None or end is None:
+        return None
+    return round((end - start).total_seconds(), 2)
+
+
+def build_batch_summary(doc: dict[str, Any]) -> dict[str, Any]:
+    """批次列表里的一项。
+
+    按需求：成功 / 失败要带时间，进行中要带上与详情接口**完全一样**的进度结构。
+    """
+    state = BATCH_STATE.get(str(doc.get("status")), "processing")
+    counts = doc.get("counts") or {}
+
+    item: dict[str, Any] = {
+        "batch_number": doc.get("batch_number"),
+        "analysis_id": doc["analysis_id"],
+        "state": state,
+        "state_label": BATCH_STATE_LABEL_ZH[state],
+        # 原始状态也保留，方便客户端排查（queued/processing/completed/failed）
+        "status": doc.get("status"),
+        "image_count": doc.get("image_count", 0),
+        "source_name": doc.get("source_name"),
+        "created_at": doc.get("created_at"),
+        "finished_at": doc.get("finished_at"),
+        "progress": None,
+        "duration_seconds": None,
+        "question_count": None,
+        "correct_count": None,
+        "wrong_count": None,
+        "error": None,
+    }
+
+    if state == "processing":
+        # 进行中：给和详情接口一模一样的进度对象
+        item["progress"] = doc.get("progress")
+    else:
+        item["duration_seconds"] = _duration_seconds(doc)
+
+    if state == "success":
+        item["question_count"] = len(doc.get("question_results") or [])
+        item["correct_count"] = counts.get("correct", 0)
+        item["wrong_count"] = counts.get("wrong", 0)
+
+    if state == "failed":
+        item["error"] = doc.get("error")
+
+    return item
+
+
+def list_batches(user_id: str, limit: int = 50) -> dict[str, Any]:
+    """最近若干批上传。最新的在前（按批次号倒序）。"""
+    limit = max(1, min(int(limit), 50))
+    docs = repositories.list_analysis_batches(user_id, limit=limit)
+    items = [build_batch_summary(doc) for doc in docs]
+
+    # 汇总是对**全部**批次统计的，不受 limit 影响，方便前端显示角标
+    all_docs = repositories.list_analysis_batches(user_id, limit=500)
+    states = [BATCH_STATE.get(str(d.get("status")), "processing") for d in all_docs]
+
+    return {
+        "total": len(all_docs),
+        "processing_count": states.count("processing"),
+        "success_count": states.count("success"),
+        "failed_count": states.count("failed"),
+        "limit": limit,
+        "items": items,
     }
 
 

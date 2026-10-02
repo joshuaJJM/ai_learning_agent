@@ -294,6 +294,7 @@ def save_analysis(doc: dict[str, Any]) -> None:
         doc,
         user_id=doc["user_id"],
         status=doc["status"],
+        batch_number=int(doc.get("batch_number") or 0),
         created_at=doc["created_at"],
         updated_at=doc["updated_at"],
     )
@@ -301,6 +302,19 @@ def save_analysis(doc: dict[str, Any]) -> None:
 
 def get_analysis(analysis_id: str) -> dict[str, Any] | None:
     return db.get_doc("analyses", "analysis_id", analysis_id)
+
+
+def next_batch_number(user_id: str) -> int:
+    """该用户下一个上传批次号（从 1 开始）。
+
+    单用户 Demo 用 max+1 足够；批次号只用于展示与排序，
+    真正的稳定标识仍然是 analysis_id。
+    """
+    row = db.query_one(
+        "SELECT COALESCE(MAX(batch_number), 0) AS n FROM analyses WHERE user_id = ?",
+        [user_id],
+    )
+    return int(row["n"] if row else 0) + 1
 
 
 def list_analyses(user_id: str, limit: int = 20) -> list[dict[str, Any]]:
@@ -311,6 +325,21 @@ def list_analyses(user_id: str, limit: int = 20) -> list[dict[str, Any]]:
         order_by="created_at DESC",
         limit=limit,
     )
+
+
+def list_analysis_batches(user_id: str, limit: int = 50) -> list[dict[str, Any]]:
+    """按批次号倒序取最近的若干批（最新的在前）。"""
+    return db.list_docs(
+        "analyses",
+        "user_id = ?",
+        [user_id],
+        order_by="batch_number DESC",
+        limit=limit,
+    )
+
+
+def count_analysis_batches(user_id: str) -> int:
+    return db.count_docs("analyses", "user_id = ?", [user_id])
 
 
 # ---------------------------------------------------------------------------

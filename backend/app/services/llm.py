@@ -18,7 +18,7 @@ import json
 import re
 import time
 from dataclasses import dataclass, field
-from typing import Any, Sequence
+from typing import Any, AsyncIterator, Sequence
 
 import httpx
 
@@ -42,6 +42,17 @@ class LlmReply:
     usage: dict[str, Any] | None = None
     degraded: bool = False
     raw: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class LlmStreamDelta:
+    """流式增量：`content` 是本次新增的文本片段。
+
+    `usage` 只在最后一片（provider 支持 `stream_options.include_usage` 时）出现。
+    """
+
+    content: str = ""
+    usage: dict[str, Any] | None = None
 
 
 def image_part(image_bytes: bytes, mime_type: str = "image/jpeg") -> dict[str, Any]:
@@ -240,6 +251,13 @@ class LlmClient:
     def default_model(self, *, vision: bool = False) -> str:
         return self.settings.vlm_model if vision else self.settings.llm_model
 
+    @property
+    def _headers(self) -> dict[str, str]:
+        return {
+            "Authorization": f"Bearer {self.settings.llm_api_key}",
+            "Content-Type": "application/json",
+        }
+
     async def complete(
         self,
         messages: list[dict[str, Any]],
@@ -273,10 +291,7 @@ class LlmClient:
             try:
                 response = await client.post(
                     url,
-                    headers={
-                        "Authorization": f"Bearer {self.settings.llm_api_key}",
-                        "Content-Type": "application/json",
-                    },
+                    headers=self._headers,
                     json=payload,
                 )
             except httpx.TimeoutException as exc:
@@ -321,6 +336,98 @@ class LlmClient:
                 await asyncio.sleep(0.8 * (attempt + 1))
 
         raise last_error or LlmUnavailable("模型调用失败")
+
+    async def astream(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        model: str | None = None,
+        temperature: float = 0.6,
+        max_tokens: int = 1024,
+        json_mode: bool = False,
+        vision: bool = False,
+        retries: int = 1,
+    ) -> AsyncIterator[LlmStreamDelta]:
+        """流式调用，逐片吐出增量文本，最后一片带 `usage`。
+
+        设计取舍与 `complete` 一致，但有两点不同：
+
+        1. **不做 HTTP 重试。** 首片之前的失败确实可以重试，可一旦已经有
+           内容推给客户端，重试就会让用户看到重复的半句话。为了行为可预期，
+           这里统一不重试，失败直接抛 `LlmUnavailable`。
+        2. **超时按"单次读取间隔"算。** httpx 的 read timeout 作用于两次
+           数据到达之间，不是整个流的总时长，所以长回答不会被总时长卡断。
+        """
+        if not self.configured:
+            raise LlmUnavailable("LLM 未配置或已强制 Mock 模式")
+
+        target_model = model or self.default_model(vision=vision)
+        url = self.settings.llm_base_url.rstrip("/") + "/chat/completions"
+        payload: dict[str, Any] = {
+            "model": target_model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": True,
+            # 让 provider 在最后一片补上 usage；不支持的端点会忽略它。
+            "stream_options": {"include_usage": True},
+        }
+        if json_mode and self.settings.llm_json_mode:
+            payload["response_format"] = {"type": "json_object"}
+
+        client = await self._get_client()
+        # 连接阶段用短超时；两次数据之间的间隔用配置的模型超时。
+        timeout = httpx.Timeout(self.settings.llm_timeout_seconds, connect=15.0)
+
+        try:
+            async with client.stream(
+                "POST", url, headers=self._headers, json=payload, timeout=timeout
+            ) as response:
+                if response.status_code in (401, 403):
+                    raise LlmUnavailable(
+                        f"模型鉴权失败 (HTTP {response.status_code})",
+                        status_code=response.status_code,
+                    )
+                if response.status_code != 200:
+                    body = (await response.aread()).decode("utf-8", "replace")
+                    raise LlmUnavailable(
+                        f"模型调用失败 HTTP {response.status_code}: {body[:200]}",
+                        status_code=response.status_code,
+                    )
+
+                async for line in response.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    data = line[5:].strip()
+                    if not data:
+                        continue
+                    if data == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(data)
+                    except json.JSONDecodeError:
+                        continue  # 个别 provider 会插入非 JSON 的心跳行
+
+                    usage = chunk.get("usage")
+                    choices = chunk.get("choices") or []
+                    if not choices:
+                        # 只有 usage 的收尾片
+                        if usage:
+                            yield LlmStreamDelta(usage=usage)
+                        continue
+
+                    delta = choices[0].get("delta") or {}
+                    content = delta.get("content") or ""
+                    if content:
+                        yield LlmStreamDelta(content=content)
+                    if usage:
+                        yield LlmStreamDelta(usage=usage)
+        except LlmUnavailable:
+            raise
+        except httpx.TimeoutException as exc:
+            raise LlmUnavailable(f"模型流式调用超时: {exc}") from exc
+        except httpx.HTTPError as exc:
+            raise LlmUnavailable(f"模型流式调用网络错误: {exc}") from exc
 
     async def complete_json(
         self,

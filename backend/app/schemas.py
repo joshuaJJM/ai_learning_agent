@@ -288,12 +288,16 @@ class AnalysisProgress(BaseModel):
 
 class AnalysisCreateResponse(BaseModel):
     analysis_id: str
+    # 该用户内递增的上传批次号（第几批），前端可用它显示「第 7 批」
+    batch_number: int | None = None
     status: AnalysisStatus
     created_at: datetime
 
 
 class AnalysisDetailResponse(BaseModel):
     analysis_id: str
+    # 该用户内递增的上传批次号（第几批），展示与排序用；稳定标识仍是 analysis_id
+    batch_number: int | None = None
     status: AnalysisStatus
     progress: AnalysisProgress
     homework_id: str | None = None
@@ -321,6 +325,51 @@ class AnalysisDetailResponse(BaseModel):
     generated_by: str | None = None
     created_at: datetime
     updated_at: datetime
+    finished_at: datetime | None = None
+
+
+# ---------------------------------------------------------------------------
+# 上传批次列表（前端的「近 50 批」）
+# ---------------------------------------------------------------------------
+
+# 内部状态对外归一到三态：正在 / 成功 / 失败
+BatchState = Literal["processing", "success", "failed"]
+
+
+class BatchSummary(BaseModel):
+    """一批上传的摘要。
+
+    - `state="processing"`：带 `progress`（与详情接口完全一样的结构）
+    - `state="success"`：带 `finished_at` / `duration_seconds` 与题目统计
+    - `state="failed"`：带 `finished_at` / `duration_seconds` 与 `error`
+    """
+
+    batch_number: int | None = None
+    analysis_id: str
+    state: BatchState
+    state_label: str
+    status: AnalysisStatus | None = None
+    image_count: int = 0
+    source_name: str | None = None
+    created_at: datetime | None = None
+    finished_at: datetime | None = None
+    progress: AnalysisProgress | None = None
+    duration_seconds: float | None = None
+    question_count: int | None = None
+    correct_count: int | None = None
+    wrong_count: int | None = None
+    error: ErrorInfo | None = None
+
+
+class BatchListResponse(BaseModel):
+    """最近的上传批次，最新的在前。"""
+
+    total: int
+    processing_count: int
+    success_count: int
+    failed_count: int
+    limit: int
+    items: list[BatchSummary] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -752,6 +801,10 @@ class AiChatRequest(BaseModel):
     max_tokens: int | None = Field(default=1024, ge=1, le=8192)
     model: str | None = Field(default=None, description="不填则用服务端默认模型")
     json_mode: bool = Field(default=False, description="要求模型输出 JSON 对象")
+    stream: bool = Field(
+        default=False,
+        description="true 时改返回 SSE 流（text/event-stream）；不填则维持一次性 JSON 响应",
+    )
 
 
 class AiChatResponse(BaseModel):

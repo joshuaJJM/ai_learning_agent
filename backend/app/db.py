@@ -123,14 +123,16 @@ _MYSQL_SCHEMA: tuple[str, ...] = (
     """,
     """
     CREATE TABLE IF NOT EXISTS analyses (
-        analysis_id VARCHAR(64) NOT NULL,
-        user_id     VARCHAR(64) NOT NULL,
-        status      VARCHAR(32) NOT NULL,
-        created_at  VARCHAR(40) NOT NULL,
-        updated_at  VARCHAR(40) NOT NULL,
-        doc         LONGTEXT    NOT NULL,
+        analysis_id  VARCHAR(64) NOT NULL,
+        user_id      VARCHAR(64) NOT NULL,
+        status       VARCHAR(32) NOT NULL,
+        batch_number INT         NOT NULL DEFAULT 0,
+        created_at   VARCHAR(40) NOT NULL,
+        updated_at   VARCHAR(40) NOT NULL,
+        doc          LONGTEXT    NOT NULL,
         PRIMARY KEY (analysis_id),
-        KEY idx_analyses_user (user_id)
+        KEY idx_analyses_user (user_id),
+        KEY idx_analyses_batch (user_id, batch_number)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
     """
@@ -278,14 +280,16 @@ SQLITE_SCHEMA: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_wq_user_kp ON wrong_questions(user_id, knowledge_point_id)",
     """
     CREATE TABLE IF NOT EXISTS analyses (
-        analysis_id TEXT PRIMARY KEY,
-        user_id     TEXT NOT NULL,
-        status      TEXT NOT NULL,
-        created_at  TEXT NOT NULL,
-        updated_at  TEXT NOT NULL,
-        doc         TEXT NOT NULL
+        analysis_id  TEXT PRIMARY KEY,
+        user_id      TEXT NOT NULL,
+        status       TEXT NOT NULL,
+        batch_number INTEGER NOT NULL DEFAULT 0,
+        created_at   TEXT NOT NULL,
+        updated_at   TEXT NOT NULL,
+        doc          TEXT NOT NULL
     )
     """,
+    "CREATE INDEX IF NOT EXISTS idx_analyses_batch ON analyses(user_id, batch_number)",
     """
     CREATE TABLE IF NOT EXISTS tutor_sessions (
         tutor_session_id TEXT PRIMARY KEY,
@@ -470,7 +474,78 @@ def init_db() -> None:
         for statement in statements:
             conn.execute(statement)
         conn.commit()
+        _run_migrations(conn)
         _initialized = True
+
+
+# ---------------------------------------------------------------------------
+# 轻量迁移
+# ---------------------------------------------------------------------------
+#
+# `CREATE TABLE IF NOT EXISTS` 对**已存在**的表不会加列，所以在生产库里
+# 新增字段必须显式 ALTER。MySQL 5.7 不支持 `ADD COLUMN IF NOT EXISTS`
+# （那是 MariaDB 的扩展），SQLite 也不支持，所以先查再改。
+
+# (表名, 列名, 列定义) —— 只追加，不要修改已有条目
+_COLUMN_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
+    # 上传批次号：按用户递增，给前端的「近 50 批」列表用
+    ("analyses", "batch_number", "INT NOT NULL DEFAULT 0"),
+)
+
+
+def _table_columns(conn: Any, table: str) -> set[str]:
+    if _use_mysql():
+        rows = conn.execute(
+            "SELECT COLUMN_NAME AS name FROM information_schema.COLUMNS "
+            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?",
+            [table],
+        ).fetchall()
+    else:
+        rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    names: set[str] = set()
+    for row in rows:
+        try:
+            names.add(str(row["name"]))
+        except (KeyError, TypeError):
+            names.add(str(row[1]))
+    return names
+
+
+def _index_names(conn: Any, table: str) -> set[str]:
+    if _use_mysql():
+        rows = conn.execute(
+            "SELECT DISTINCT INDEX_NAME AS name FROM information_schema.STATISTICS "
+            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?",
+            [table],
+        ).fetchall()
+        return {str(row["name"]) for row in rows}
+    rows = conn.execute(f"PRAGMA index_list({table})").fetchall()
+    return {str(row["name"]) for row in rows}
+
+
+def _run_migrations(conn: Any) -> None:
+    applied: list[str] = []
+    for table, column, definition in _COLUMN_MIGRATIONS:
+        if column in _table_columns(conn, table):
+            continue
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+        conn.commit()
+        applied.append(f"{table}.{column}")
+
+    # 新加的列通常也要配索引
+    for table, index_name, columns in (
+        ("analyses", "idx_analyses_batch", "user_id, batch_number"),
+    ):
+        if index_name in _index_names(conn, table):
+            continue
+        conn.execute(f"CREATE INDEX {index_name} ON {table} ({columns})")
+        conn.commit()
+        applied.append(index_name)
+
+    if applied:
+        import logging
+
+        logging.getLogger("haoxue").info("数据库迁移已应用: %s", ", ".join(applied))
 
 
 def reset_connection_cache() -> None:

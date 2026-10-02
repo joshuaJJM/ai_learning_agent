@@ -24,7 +24,11 @@ from fastapi import (
 from .. import repositories
 from ..dependencies import current_user
 from ..errors import ANALYSIS_NOT_FOUND, INVALID_IMAGE, ApiError
-from ..schemas import AnalysisCreateResponse, AnalysisDetailResponse
+from ..schemas import (
+    AnalysisCreateResponse,
+    AnalysisDetailResponse,
+    BatchListResponse,
+)
 from ..services import homework_service
 
 router = APIRouter(prefix="/api/v1/homework", tags=["homework"])
@@ -100,6 +104,7 @@ async def create_analysis(
 
     return AnalysisCreateResponse(
         analysis_id=doc["analysis_id"],
+        batch_number=doc.get("batch_number"),
         status=doc["status"],
         created_at=doc["created_at"],
     )
@@ -120,6 +125,25 @@ async def get_analysis(
     return AnalysisDetailResponse(**homework_service.build_detail(doc))
 
 
+@router.get(
+    "/batches",
+    response_model=BatchListResponse,
+    summary="最近的上传批次（默认 50，最新的在前）",
+)
+async def list_batches(
+    limit: int = 50,
+    user: dict[str, Any] = Depends(current_user),
+) -> BatchListResponse:
+    """前端「上传记录」列表用。
+
+    每批带一个该用户内递增的 `batch_number`：
+      - `state="processing"`：带 `progress`（与详情接口完全一样，可直接渲染进度卡片）
+      - `state="success"`   ：带 `finished_at` / `duration_seconds` 与对错统计
+      - `state="failed"`    ：带 `finished_at` / `duration_seconds` 与 `error`
+    """
+    return BatchListResponse(**homework_service.list_batches(user["user_id"], limit=limit))
+
+
 @router.get("/analyses", summary="最近的分析记录")
 async def list_analyses(
     limit: int = 20,
@@ -132,6 +156,7 @@ async def list_analyses(
         "items": [
             {
                 "analysis_id": d["analysis_id"],
+                "batch_number": d.get("batch_number"),
                 "status": d["status"],
                 "source_name": d.get("source_name"),
                 "correct_count": d.get("counts", {}).get("correct", 0),

@@ -123,6 +123,7 @@ func uploadPages(_ images: [UIImage]) async throws -> AnalysisCreated {
 ```json
 {
   "analysis_id": "ana_9b16554eaa3e40f7b959",
+  "batch_number": 7,
   "status": "queued",
   "created_at": "2026-10-02T11:30:00+00:00"
 }
@@ -134,6 +135,10 @@ func uploadPages(_ images: [UIImage]) async throws -> AnalysisCreated {
 | `processing` | 正在跑 |
 | `completed` | 完成 |
 | `failed` | 失败，看 `error` |
+
+**`batch_number`（上传批次号）**：每上传一批就分配一个，在该用户内**从 1 递增、
+唯一、不复用**。它就是「第几批」，可以显示成「第 7 批」。
+`analysis_id` 仍然是稳定机器标识 —— 存 `analysis_id`，展示用 `batch_number`。
 
 ### 4.2 轮询进度 → `GET /api/v1/homework/analyses/{analysis_id}`
 
@@ -241,6 +246,77 @@ func uploadPages(_ images: [UIImage]) async throws -> AnalysisCreated {
 
 ---
 
+## 4.5 上传记录列表：`GET /api/v1/homework/batches?limit=50`
+
+「我上传过哪些、现在什么状态」一次拿齐，不用自己维护列表。
+
+```json
+{
+  "total": 23,
+  "processing_count": 1,
+  "success_count": 20,
+  "failed_count": 2,
+  "limit": 50,
+  "items": [
+    {
+      "batch_number": 23,
+      "analysis_id": "ana_9f3c…",
+      "state": "processing",
+      "state_label": "正在处理",
+      "created_at": "2026-10-02T14:50:00+00:00",
+      "image_count": 2,
+      "source_name": "数学下册第17题",
+      "progress": { "…": "和 4.2 的 progress 一模一样" },
+      "finished_at": null,
+      "duration_seconds": null
+    },
+    {
+      "batch_number": 22,
+      "analysis_id": "ana_7a11…",
+      "state": "success",
+      "state_label": "成功",
+      "created_at": "2026-10-02T14:40:00+00:00",
+      "finished_at": "2026-10-02T14:40:28+00:00",
+      "duration_seconds": 28.3,
+      "question_count": 1,
+      "correct_count": 0,
+      "wrong_count": 1,
+      "progress": null
+    },
+    {
+      "batch_number": 21,
+      "analysis_id": "ana_5b02…",
+      "state": "failed",
+      "state_label": "失败",
+      "created_at": "2026-10-02T14:30:00+00:00",
+      "finished_at": "2026-10-02T14:30:03+00:00",
+      "duration_seconds": 3.0,
+      "error": { "error_code": "QUESTION_NOT_RECOGNIZED",
+                 "message": "没有从图片中识别出题目" }
+    }
+  ]
+}
+```
+
+**状态只有三态**（`state`）：`processing` / `success` / `failed`，
+配一个现成的中文 `state_label`。内部的 `status` 字段也返回，排查用，别拿去判断分支。
+
+**每种状态带什么：**
+
+| state | 有的字段 |
+|---|---|
+| `processing` | **`progress`**（结构和 4.2 完全一样，直接渲染进度卡片） |
+| `success` | **`finished_at` + `duration_seconds`** + `question_count` / `correct_count` / `wrong_count` |
+| `failed` | **`finished_at` + `duration_seconds`** + `error` |
+
+其它：
+- **最新的在前**（按 `batch_number` 倒序）。
+- `limit` 上限就是 **50**。
+- `total` 和三个计数统计的是**全部**批次，不受 `limit` 影响，可以拿来做角标。
+- 列表页 2–3 秒轮询一次就够，而且只有存在 `processing` 时才需要轮询。
+
+---
+
 ## 5. 关于 `unknown`：这是刻意的，不是 bug
 
 视觉模型**会在数学上出错**。实测中它把 `f'(x) = 3x(x−2) > 0` 的解判成了 `(0, 2)`，
@@ -307,6 +383,8 @@ func uploadPages(_ images: [UIImage]) async throws -> AnalysisCreated {
 5. 上传前可以本地做页面检测/透视矫正/裁剪 —— 这些端侧做更快，服务端也能得到更干净的输入。
    但**不需要在端侧做 OCR 或题目理解**，那是服务端的事。
 6. 支持「上传更多」而不是「重新扫描」：多张图属于同一次分析，一起提交。
+7. **列表页用 `GET /api/v1/homework/batches`**，不要自己存上传历史。
+   有 `processing` 的批次时才需要轮询，2–3 秒一次就够。
 
 ---
 
@@ -314,8 +392,9 @@ func uploadPages(_ images: [UIImage]) async throws -> AnalysisCreated {
 
 | 用途 | 接口 |
 |---|---|
-| 拿 `analysis_id` | `POST /api/v1/homework/analyses` |
-| 轮询进度与结果 | `GET /api/v1/homework/analyses/{analysis_id}` |
+| 拿 `analysis_id` 与批次号 | `POST /api/v1/homework/analyses` |
+| 轮询单批进度与结果 | `GET /api/v1/homework/analyses/{analysis_id}` |
+| **上传记录列表（近 50 批）** | **`GET /api/v1/homework/batches?limit=50`** |
 | 历史分析列表 | `GET /api/v1/homework/analyses` |
 | 错题详情 | `GET /api/v1/wrong-questions/{wrong_question_id}` |
 | 错题列表 | `GET /api/v1/wrong-questions` |

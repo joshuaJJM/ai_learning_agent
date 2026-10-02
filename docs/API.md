@@ -339,6 +339,116 @@ GET /api/v1/homework/analyses?limit=20
 
 ---
 
+### 2.5 上传批次列表（近 50 批）
+
+```http
+GET /api/v1/homework/batches?limit=50
+```
+
+每次上传都算**一批**，服务端给它分配一个该用户内**递增的批次号**
+`batch_number`（从 1 开始，唯一、不复用）。稳定机器标识仍然是 `analysis_id`，
+`batch_number` 是给人看的编号。
+
+这个接口就是给「上传记录」列表用的，一次拿齐状态、编号、时间与进度。
+
+```json
+{
+  "total": 23,
+  "processing_count": 1,
+  "success_count": 20,
+  "failed_count": 2,
+  "limit": 50,
+  "items": [
+    {
+      "batch_number": 23,
+      "analysis_id": "ana_9f3c…",
+      "state": "processing",
+      "state_label": "正在处理",
+      "status": "processing",
+      "image_count": 2,
+      "source_name": "数学下册第17题",
+      "created_at": "2026-10-02T14:50:00+00:00",
+      "finished_at": null,
+      "progress": { "…": "与 2.2 完全一样的结构" },
+      "duration_seconds": null,
+      "question_count": null,
+      "correct_count": null,
+      "wrong_count": null,
+      "error": null
+    },
+    {
+      "batch_number": 22,
+      "analysis_id": "ana_7a11…",
+      "state": "success",
+      "state_label": "成功",
+      "status": "completed",
+      "image_count": 1,
+      "source_name": "数学下册第17题",
+      "created_at": "2026-10-02T14:40:00+00:00",
+      "finished_at": "2026-10-02T14:40:28+00:00",
+      "progress": null,
+      "duration_seconds": 28.3,
+      "question_count": 1,
+      "correct_count": 0,
+      "wrong_count": 1,
+      "error": null
+    },
+    {
+      "batch_number": 21,
+      "analysis_id": "ana_5b02…",
+      "state": "failed",
+      "state_label": "失败",
+      "status": "failed",
+      "image_count": 1,
+      "source_name": null,
+      "created_at": "2026-10-02T14:30:00+00:00",
+      "finished_at": "2026-10-02T14:30:03+00:00",
+      "progress": null,
+      "duration_seconds": 3.0,
+      "question_count": null,
+      "correct_count": null,
+      "wrong_count": null,
+      "error": { "error_code": "QUESTION_NOT_RECOGNIZED",
+                 "message": "没有从图片中识别出题目" }
+    }
+  ]
+}
+```
+
+**字段说明**
+
+| 字段 | 说明 |
+|---|---|
+| `batch_number` | 批次编号，该用户内从 1 递增 |
+| `state` | **对外只有三态**：`processing` / `success` / `failed` |
+| `state_label` | 中文标签：`正在处理` / `成功` / `失败`，可直接显示 |
+| `status` | 内部原始状态（`queued` / `processing` / `completed` / `failed`），排查用 |
+| `created_at` | 上传时间（都有） |
+| `finished_at` | **成功 / 失败才有**，完成或失败的时刻 |
+| `duration_seconds` | **成功 / 失败才有**，从上传到结束的秒数 |
+| `progress` | **进行中才有**，结构与 2.2 完全一样，可直接渲染进度卡片 |
+| `question_count` / `correct_count` / `wrong_count` | **成功才有** |
+| `error` | **失败才有**，`{error_code, message}` |
+
+**三个状态各自有什么**（客户端可以照着做条件渲染）：
+
+```
+processing → progress（5 阶段）
+success    → finished_at + duration_seconds + 题目统计
+failed     → finished_at + duration_seconds + error
+```
+
+**其它**
+
+- 列表**最新的在前**（按 `batch_number` 倒序）。
+- `limit` 上限 **50**，传更大也只返回 50。
+- `total` 与三个计数是对**全部**批次统计的，不随 `limit` 变化，可以用来显示角标
+  （例如「处理中 1」）。
+- 轮询建议：列表页 2–3 秒一次即可；只在有 `processing` 时才需要轮询。
+- 单批的详细进度仍然用 `GET /api/v1/homework/analyses/{analysis_id}`（2.2）。
+
+---
+
 ## 3. Knowledge State
 
 ### 3.1 整棵树
@@ -850,12 +960,70 @@ POST /api/v1/ai/chat
   "temperature": 0.6,
   "max_tokens": 1024,
   "model": null,
-  "json_mode": false
+  "json_mode": false,
+  "stream": false
 }
 ```
 
 > `prompt` 与 `messages` 二选一；同时存在时 `messages` 优先。
 > 这个接口**不做教学状态管理**，需要状态请用 `/tutor/sessions`。
+
+### 7.1 流式输出（打字机效果）
+
+同一个接口，请求体加 `"stream": true`，响应就从一次性 JSON 变成 **SSE**
+（`Content-Type: text/event-stream`）。**不传 `stream` 时行为与旧版完全一致**，
+老客户端不用改。
+
+```http
+POST /api/v1/ai/chat
+{ "prompt": "为什么 f'(x) > 0 说明函数单调递增？", "stream": true }
+```
+
+事件序列固定为 **`meta` → `delta`(0..n) → `done`**，中途失败则以 **`error`** 收尾：
+
+```text
+event: meta
+data: {"request_id": "927af55804b54db5", "model": "deepseek-ai/DeepSeek-V3.2", "provider": "siliconflow"}
+
+event: delta
+data: {"content": "因为导数"}
+
+event: delta
+data: {"content": " f'(x) 表示"}
+
+event: done
+data: {"reply": "因为导数 f'(x) 表示……", "model": "deepseek-ai/DeepSeek-V3.2", "provider": "siliconflow",
+       "latency_ms": 3509, "first_token_ms": 320, "request_id": "927af55804b54db5",
+       "usage": {"prompt_tokens": 22, "completion_tokens": 44, "total_tokens": 66}}
+```
+
+| 事件 | 载荷 | 说明 |
+|---|---|---|
+| `meta` | `request_id` / `model` / `provider` | 开流第一帧，可先渲染模型标识 |
+| `delta` | `content` | **增量**片段，直接追加到已显示文本后面 |
+| `done` | `reply` / `latency_ms` / `first_token_ms` / `usage` | 收尾。`reply` 是完整文本，可用它校正拼接结果 |
+| `error` | `error_code` / `message` / `request_id` | 开流之后模型才失败时发出，**这是流的最后一帧** |
+
+客户端要点：
+
+1. **增量是"增量"不是"全量"。** `delta.content` 只包含本次新增的片段，
+   追加拼接即可；不要用它覆盖已渲染内容。
+2. **`done.reply` 是权威全文。** 若担心丢帧（弱网、切后台），收尾时用
+   `reply` 覆盖一次，保证与一次性接口结果一致。
+3. **`error` 事件是正常的流式收尾，不是网络错误。** 收到后停止渲染、
+   按 `error_code` 分支（与 §0 的统一错误码一致）。因为响应头已经以 200 发出，
+   这种情况下**不会有** 4xx/5xx 状态码。
+4. **参数校验失败仍返回 422 JSON**（不是 SSE）——校验发生在开流之前，
+   所以 `prompt` 为空这类问题拿到的还是标准错误体。
+5. `usage` 需要 provider 支持 `stream_options.include_usage`；不支持时为 `null`，
+   不要据此判定失败。
+6. 若前面挂了 nginx，必须关掉响应缓冲（服务端已下发 `X-Accel-Buffering: no`），
+   否则流会被攒成一次性输出。
+
+> 模型不可用时，非流式接口会按 `LLM_FALLBACK_TO_MOCK` 降级成兜底文案；
+> **流式开流之后无法再降级**（响应头已发出），此时以 `error` 事件收尾。
+> 若后端未配置模型，流式也会回兜底文案，但同样走 SSE，
+> 前端只需维护一套渲染逻辑。
 
 `GET /api/v1/ai/models` 返回服务端当前配置的模型 id。
 
