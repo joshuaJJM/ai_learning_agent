@@ -841,11 +841,20 @@ def submit_answer(
         kind=kind,
         hint_count=session.get("hint_count", 0),
     )
-    if in_remedial and not is_correct and strategy == "simplify":
-        feedback = (
-            f"还是不对。我们把这一步再拆细一点"
-            f"（第 {_remedial_depth(session)}/{MAX_REMEDIAL_DEPTH} 层）。"
-        )
+    if strategy == "simplify":
+        # 进入补救（第 1 层）与继续下探要用不同措辞：
+        # 第 1 层是「刚答错」，说「还是不对」会觉得莫名其妙。
+        depth = _remedial_depth(session)
+        if depth <= 1:
+            feedback = (
+                f"这道题我们换个更简单的角度再看一次"
+                f"（第 1/{MAX_REMEDIAL_DEPTH} 层）。"
+            )
+        else:
+            feedback = (
+                f"还是不对。我们把这一步再拆细一点"
+                f"（第 {depth}/{MAX_REMEDIAL_DEPTH} 层）。"
+            )
     if strategy == "reveal_answer":
         feedback = (
             "这道题我们换个方式讲。"
