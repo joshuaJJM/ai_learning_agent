@@ -27,7 +27,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable
+from typing import Sequence
 
 from . import knowledge
 
@@ -74,22 +74,17 @@ class LoadReport:
     errors: list[str] = field(default_factory=list)
 
 
-def _normalize_difficulty(raw: object, kp_ids: Iterable[str]) -> float:
-    """接受 1..5 的整数或 0..1 的小数；缺省回退知识点难度档位。"""
-    if isinstance(raw, bool):
-        raw = None
-    if isinstance(raw, (int, float)):
-        value = float(raw)
-        if 0.0 <= value <= 1.0 and not float(value).is_integer():
-            return value
-        if 1.0 <= value <= 5.0:
-            return (value - 1.0) / 4.0
-        return min(1.0, max(0.0, value))
-    # 回退：用第一个已知知识点的难度档位
+def _resolve_difficulty(kp_ids: Sequence[str]) -> float:
+    """题目难度。
+
+    题库规范**明确禁止**在题里写 `difficulty`，所以难度由服务端按知识点兜底
+    （`knowledge.py` 里每个知识点的 `default_difficulty`）。
+    如果某个题库文件仍然带了 `difficulty`，加载器会忽略它并告警。
+    """
     for kp_id in kp_ids:
         point = knowledge.get_point(kp_id)
         if point is not None:
-            return (point.difficulty_band - 1) / 4.0
+            return point.default_difficulty
     return 0.5
 
 
@@ -210,12 +205,24 @@ class QuestionBank:
             return None
 
         raw_options = item.get("options")
-        if not isinstance(raw_options, dict) or len(raw_options) < 2:
-            self.report.warnings.append(f"{label} ({qid}): options 必须是非空对象，已跳过")
+        if not isinstance(raw_options, dict) or not (2 <= len(raw_options) <= 8):
+            self.report.warnings.append(
+                f"{label} ({qid}): options 必须是 2–8 个选项的对象，已跳过"
+            )
             return None
-        options = {str(k).strip(): str(v).strip() for k, v in raw_options.items()}
+        options = {str(k).strip().upper(): str(v).strip() for k, v in raw_options.items()}
 
-        answer = str(item.get("answer") or "").strip()
+        expected_keys = [chr(ord("A") + offset) for offset in range(len(options))]
+        if sorted(options) != expected_keys:
+            self.report.warnings.append(
+                f"{label} ({qid}): 选项键必须从 A 开始连续排列（实际 {sorted(options)}），已跳过"
+            )
+            return None
+        if any(not text for text in options.values()):
+            self.report.warnings.append(f"{label} ({qid}): 存在空选项，已跳过")
+            return None
+
+        answer = str(item.get("answer") or "").strip().upper()
         if answer not in options:
             self.report.warnings.append(
                 f"{label} ({qid}): answer={answer!r} 不在 options 中，已跳过"
@@ -232,16 +239,39 @@ class QuestionBank:
                 continue
             if not knowledge.is_known(kp_id):
                 self.report.warnings.append(
-                    f"{label} ({qid}): 未知知识点 {kp_id!r}，已忽略该映射"
+                    f"{label} ({qid}): 未知知识点 {kp_id!r}（不在 knowledge_points 清单里），"
+                    f"已忽略该映射"
                 )
+                continue
+            if kp_id in kp_ids:
+                self.report.warnings.append(f"{label} ({qid}): 知识点 {kp_id} 重复，已去重")
                 continue
             kp_ids.append(kp_id)
         if not kp_ids:
             self.report.warnings.append(f"{label} ({qid}): 没有有效知识点映射")
 
-        tags = item.get("tags") or []
-        if not isinstance(tags, list):
-            tags = []
+        # 规范要求 tags 与 knowledge_point_ids 一一对应、顺序相同、逐字等于知识点 name。
+        # 这里以知识点名称为准，文件里的 tags 只用来校验。
+        expected_tags = [
+            knowledge.get_point(kp_id).name  # type: ignore[union-attr]
+            for kp_id in kp_ids
+        ]
+        raw_tags = item.get("tags")
+        if isinstance(raw_tags, list):
+            actual_tags = [str(t) for t in raw_tags]
+            if actual_tags != expected_tags:
+                self.report.warnings.append(
+                    f"{label} ({qid}): tags 与知识点名称不一致，已按知识点重写"
+                )
+        else:
+            self.report.warnings.append(f"{label} ({qid}): 缺少 tags，已按知识点补全")
+
+        # 规范禁止在题目里写 difficulty / source / source_ref
+        for forbidden in ("difficulty", "source", "source_ref"):
+            if forbidden in item:
+                self.report.warnings.append(
+                    f"{label} ({qid}): 题目出现了规范禁止的字段 {forbidden!r}，已忽略"
+                )
 
         return BankQuestion(
             id=qid,
@@ -252,9 +282,9 @@ class QuestionBank:
             answer=answer,
             explanation=str(item.get("explanation") or "").strip(),
             knowledge_point_ids=tuple(kp_ids),
-            tags=tuple(str(t) for t in tags),
-            source_ref=str(item.get("source_ref") or ""),
-            difficulty=_normalize_difficulty(item.get("difficulty"), kp_ids),
+            tags=tuple(expected_tags),
+            source_ref="",
+            difficulty=_resolve_difficulty(kp_ids),
         )
 
 

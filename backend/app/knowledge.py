@@ -1,10 +1,12 @@
-"""知识点树与错误类型分类法。
+"""知识点清单与错误类型分类法。
 
-范围按规划 §21 刻意收窄：首版只做「高中数学 - 函数 / 导数」，
-一个领域做深，而不是所有领域做浅。
+**知识点 ID 与名称严格取自团队给定的 `knowledge_points.json`（version 1），
+不要自行增删或改写。** 前端、题库录入标准、后端三边都依赖这同一份清单，
+改这里等于改契约。
 
-知识点 id 是对外 API 契约的一部分，客户端会长期持有，**不要随意改名**。
-新增知识点请只追加，不要重排。
+清单是**扁平**的（官方没有层级），所以这里全部是顶层节点、没有父子关系。
+`default_difficulty` 与 `prerequisites` 是**服务端自己的元数据**，不写进题库 ——
+题库规范明确禁止 `difficulty` 之类的自定义字段，所以题目难度在这里兜底。
 """
 
 from __future__ import annotations
@@ -18,96 +20,68 @@ SUBJECT_MATH = "math"
 class KnowledgePoint:
     id: str
     name: str
-    parent_id: str | None
     description: str
-    # 该知识点的典型难度档位 1..5，用于日志与推荐难度起点。
-    difficulty_band: int
-    # 前置知识点：没掌握它们，学这个是空中楼阁。
+    # 服务端兜底用的难度 0..1（题库里不写 difficulty）
+    default_difficulty: float
+    parent_id: str | None = None
     prerequisites: tuple[str, ...] = ()
 
 
-# 仅追加，不要重排 / 改名。
+# 与 knowledge_points.json (version 1) 逐字一致 —— 只允许追加，不要改名。
 _RAW: tuple[KnowledgePoint, ...] = (
     KnowledgePoint(
-        id="math.function",
-        name="函数",
-        parent_id=None,
-        description="函数的基本概念、性质与图像",
-        difficulty_band=2,
-    ),
-    KnowledgePoint(
-        id="math.function.monotonicity",
-        name="函数单调性",
-        parent_id="math.function",
-        description="用定义或图像判断函数的单调性",
-        difficulty_band=3,
-    ),
-    KnowledgePoint(
-        id="math.derivative",
-        name="导数",
-        parent_id=None,
-        description="导数的概念、运算与应用",
-        difficulty_band=3,
-    ),
-    KnowledgePoint(
-        id="math.derivative.basic",
-        name="基础求导",
-        parent_id="math.derivative",
-        description="基本初等函数求导、四则运算与复合函数求导",
-        difficulty_band=2,
-    ),
-    KnowledgePoint(
-        id="math.derivative.inequality",
-        name="解导数不等式",
-        parent_id="math.derivative",
-        description="解 f'(x) > 0 / f'(x) < 0 这类不等式",
-        difficulty_band=3,
-        prerequisites=("math.derivative.basic",),
-    ),
-    KnowledgePoint(
         id="math.derivative.monotonicity",
-        name="单调性",
-        parent_id="math.derivative",
-        description="由导数符号判断函数的单调区间",
-        difficulty_band=3,
-        prerequisites=("math.derivative.inequality", "math.function.monotonicity"),
+        name="利用导数判断函数单调性与单调区间",
+        description="由 f'(x) 的符号判断函数的单调性，并求出单调区间",
+        default_difficulty=0.45,
     ),
     KnowledgePoint(
-        id="math.derivative.extremum",
-        name="极值",
-        parent_id="math.derivative",
-        description="由导数变号判断极值与最值",
-        difficulty_band=4,
+        id="math.derivative.monotonicity_parameter",
+        name="利用单调性或导数恒成立求参数",
+        description="已知函数在某区间上的单调性，反过来求参数的取值范围",
+        default_difficulty=0.65,
         prerequisites=("math.derivative.monotonicity",),
     ),
     KnowledgePoint(
-        id="math.derivative.comprehensive",
-        name="综合应用",
-        parent_id="math.derivative",
-        description="导数与参数、方程根的分布等综合问题",
-        difficulty_band=5,
-        prerequisites=("math.derivative.extremum",),
+        id="math.derivative.monotonicity_applications",
+        name="导数与函数性质综合应用",
+        description="把单调性、极值、最值串起来解决综合问题，含参数讨论与方程根的分布",
+        default_difficulty=0.80,
+        prerequisites=("math.derivative.monotonicity", "math.derivative.extrema"),
     ),
     KnowledgePoint(
-        id="math.sequence",
-        name="数列",
-        parent_id=None,
-        description="等差、等比数列与递推",
-        difficulty_band=3,
+        id="math.derivative.extrema",
+        name="利用导数判断与求解极值",
+        description="由 f'(x) 的变号判断极值点并求出极值",
+        default_difficulty=0.50,
+        prerequisites=("math.derivative.monotonicity",),
     ),
     KnowledgePoint(
-        id="math.probability",
-        name="概率统计",
-        parent_id=None,
-        description="古典概型、分布与统计量",
-        difficulty_band=3,
+        id="math.derivative.extrema_parameter",
+        name="根据极值或最值条件求参数",
+        description="已知在某点取得极值（或取到最值）反求参数",
+        default_difficulty=0.70,
+        prerequisites=("math.derivative.extrema",),
+    ),
+    KnowledgePoint(
+        id="math.derivative.absolute_extrema",
+        name="利用导数求函数最值",
+        description="求闭区间上的最大值与最小值，注意端点与驻点都要比较",
+        default_difficulty=0.55,
+        prerequisites=("math.derivative.extrema",),
+    ),
+    KnowledgePoint(
+        id="math.function.parity_and_monotonicity",
+        name="函数奇偶性与单调性综合判断",
+        description="同时判断函数的奇偶性与单调性",
+        default_difficulty=0.60,
     ),
 )
 
 _BY_ID: dict[str, KnowledgePoint] = {kp.id: kp for kp in _RAW}
 
 
-# 错误类型分类法：Evidence 里 error_type 必须取自这里。
+# 错误类型分类法：Evidence 里的 error_type 必须取自这里。
 ERROR_TYPES: dict[str, str] = {
     "conceptual": "概念理解错误",
     "transformation": "函数性质转换错误",
@@ -139,7 +113,8 @@ def children_of(kp_id: str) -> tuple[KnowledgePoint, ...]:
 
 
 def top_level_points() -> tuple[KnowledgePoint, ...]:
-    return tuple(kp for kp in _RAW if kp.parent_id is None)
+    """清单是扁平的，所以全部知识点都是顶层节点。"""
+    return _RAW
 
 
 def ancestors(kp_id: str) -> tuple[KnowledgePoint, ...]:
@@ -163,6 +138,11 @@ def prerequisites(kp_id: str) -> tuple[KnowledgePoint, ...]:
     if kp is None:
         return ()
     return tuple(_BY_ID[p] for p in kp.prerequisites if p in _BY_ID)
+
+
+def default_difficulty(kp_id: str) -> float:
+    kp = _BY_ID.get(kp_id)
+    return kp.default_difficulty if kp else 0.5
 
 
 def is_known(kp_id: str) -> bool:

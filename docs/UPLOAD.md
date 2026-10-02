@@ -194,7 +194,7 @@ func uploadPages(_ images: [UIImage]) async throws -> AnalysisCreated {
       "correct_answer": "C",
       "correctness": "wrong",
       "knowledge_points": [
-        { "knowledge_point_id": "math.derivative.monotonicity", "name": "单调性", "weight": 1.0 }
+        { "knowledge_point_id": "math.derivative.monotonicity", "name": "利用导数判断函数单调性与单调区间", "weight": 1.0 }
       ],
       "error_type": "transformation",
       "error_label": "函数性质转换错误",
@@ -207,7 +207,7 @@ func uploadPages(_ images: [UIImage]) async throws -> AnalysisCreated {
   ],
 
   "knowledge_changes": [
-    { "knowledge_point_id": "math.derivative.monotonicity", "name": "单调性",
+    { "knowledge_point_id": "math.derivative.monotonicity", "name": "利用导数判断函数单调性与单调区间",
       "before": 0.618, "after": 0.5744, "delta": -0.0436, "evidence_count": 8 }
   ],
   "new_wrong_questions": [
@@ -216,7 +216,7 @@ func uploadPages(_ images: [UIImage]) async throws -> AnalysisCreated {
       "error_type": "transformation", "error_label": "函数性质转换错误",
       "status": "open", "created_at": "…" }
   ],
-  "next_action": { "action": "start_tutor", "title": "下一步：综合应用", "cta_label": "开始学习", "…": "…" },
+  "next_action": { "action": "start_tutor", "title": "下一步：导数与函数性质综合应用", "cta_label": "开始学习", "…": "…" },
   "warnings": [],
   "generated_by": "vlm",
   "error": null

@@ -593,12 +593,18 @@ class PracticeAnswerRequest(BaseModel):
 
 
 class PracticeAnswerResponse(BaseModel):
+    """练习作答的判定结果。
+
+    注意 `explanation` 可能为 null —— 官方题库规范里没有解析字段，
+    只有 OCR 上传的题目才会带解析。
+    """
+
     practice_session_id: str
     question_id: str
     correctness: Correctness
     is_correct: bool
     correct_answer: str
-    explanation: str
+    explanation: str | None = None
     knowledge_changes: list[KnowledgeChange] = Field(default_factory=list)
     next_question: PracticeQuestion | None = None
     session_completed: bool = False

@@ -125,26 +125,29 @@ GET /api/v1/home
   "greeting": "晚上好，同学",
   "next_action": {
     "action": "start_tutor",
-    "title": "下一步：综合应用",
+    "title": "下一步：导数与函数性质综合应用",
     "reason": "最近 12 次相关作答中出现 分类讨论错误 ×3、函数性质转换错误 ×3",
     "cta_label": "开始学习",
-    "knowledge_point_id": "math.derivative.comprehensive",
-    "knowledge_point_name": "综合应用",
+    "knowledge_point_id": "math.derivative.monotonicity_applications",
+    "knowledge_point_name": "导数与函数性质综合应用",
     "wrong_question_id": null
   },
   "knowledge_summary": [
-    { "knowledge_point_id": "math.function", "name": "函数", "mastery": 0.68,
-      "confidence": 0.61, "evidence_count": 5, "trend": "unknown", "is_weak": false },
-    { "knowledge_point_id": "math.derivative", "name": "导数", "mastery": 0.62, "...": "..." }
+    { "knowledge_point_id": "math.derivative.monotonicity", "name": "利用导数判断函数单调性与单调区间",
+      "mastery": 0.8342, "confidence": 0.52, "evidence_count": 6, "trend": "stable", "is_weak": false },
+    { "knowledge_point_id": "math.derivative.monotonicity_applications", "name": "导数与函数性质综合应用",
+      "mastery": 0.4322, "confidence": 0.79, "evidence_count": 12, "trend": "declining", "is_weak": true },
+    { "knowledge_point_id": "math.derivative.absolute_extrema", "name": "利用导数求函数最值",
+      "mastery": 0.7194, "confidence": 0.55, "evidence_count": 6, "trend": "declining", "is_weak": false }
   ],
-  "weakest": { "knowledge_point_id": "math.derivative.comprehensive", "name": "综合应用",
+  "weakest": { "knowledge_point_id": "math.derivative.monotonicity_applications", "name": "导数与函数性质综合应用",
                "mastery": 0.4322, "confidence": 0.79, "evidence_count": 12,
                "trend": "declining", "is_weak": true },
   "wrong_question_count": 3,
   "recent_wrong_questions": [
     { "wrong_question_id": "wq_1a2b", "question_id": "q_9f3c", "question_number": "17",
       "question_content": "已知函数 f(x) = x^3 - 3x^2 + 2，求 f(x) 的单调递增区间。",
-      "knowledge_point_id": "math.derivative.monotonicity", "knowledge_point_name": "单调性",
+      "knowledge_point_id": "math.derivative.monotonicity", "knowledge_point_name": "利用导数判断函数单调性与单调区间",
       "error_type": "transformation", "error_label": "函数性质转换错误",
       "status": "open", "created_at": "2026-10-01T21:30:00+00:00" }
   ],
@@ -278,8 +281,8 @@ GET /api/v1/homework/analyses/{analysis_id}
       "correct_answer": "C",
       "correctness": "wrong",
       "knowledge_points": [
-        { "knowledge_point_id": "math.derivative.monotonicity", "name": "单调性", "weight": 1.0 },
-        { "knowledge_point_id": "math.derivative.inequality",  "name": "解导数不等式", "weight": 0.75 }
+        { "knowledge_point_id": "math.derivative.monotonicity", "name": "利用导数判断函数单调性与单调区间", "weight": 1.0 },
+        { "knowledge_point_id": "math.derivative.monotonicity_parameter",  "name": "利用单调性或导数恒成立求参数", "weight": 0.75 }
       ],
       "error_type": "transformation",
       "error_label": "函数性质转换错误",
@@ -292,11 +295,11 @@ GET /api/v1/homework/analyses/{analysis_id}
   ],
 
   "knowledge_changes": [
-    { "knowledge_point_id": "math.derivative.monotonicity", "name": "单调性",
+    { "knowledge_point_id": "math.derivative.monotonicity", "name": "利用导数判断函数单调性与单调区间",
       "before": 0.618, "after": 0.5744, "delta": -0.0436, "evidence_count": 8 }
   ],
   "new_wrong_questions": [ { "wrong_question_id": "wq_1a2b", "…": "…" } ],
-  "next_action": { "action": "start_tutor", "title": "下一步：综合应用", "…": "…" },
+  "next_action": { "action": "start_tutor", "title": "下一步：导数与函数性质综合应用", "…": "…" },
   "warnings": [],
   "generated_by": "vlm",
   "error": null
@@ -345,33 +348,34 @@ GET /api/v1/knowledge
   "subject": "mathematics",
   "updated_at": "...",
   "tree": [
-    { "knowledge_point_id": "math.function", "name": "函数", "description": "函数的基本概念、性质与图像",
-      "mastery": 0.68, "confidence": 0.55, "evidence_count": 5, "trend": "unknown",
-      "children": [
-        { "knowledge_point_id": "math.function.monotonicity", "name": "函数单调性", "mastery": 0.6839,
-          "confidence": 0.52, "evidence_count": 5, "trend": "unknown", "children": [] }
-      ] },
-    { "knowledge_point_id": "math.derivative", "name": "导数", "mastery": 0.6177,
-      "confidence": 0.95, "evidence_count": 38, "trend": "declining",
-      "children": [
-        { "knowledge_point_id": "math.derivative.basic", "name": "基础求导", "mastery": 0.8342, "…": "…" },
-        { "knowledge_point_id": "math.derivative.inequality", "name": "解导数不等式", "mastery": 0.6896, "…": "…" },
-        { "knowledge_point_id": "math.derivative.monotonicity", "name": "单调性", "mastery": 0.618, "…": "…" },
-        { "knowledge_point_id": "math.derivative.extremum", "name": "极值", "mastery": 0.5084, "…": "…" },
-        { "knowledge_point_id": "math.derivative.comprehensive", "name": "综合应用", "mastery": 0.4322, "…": "…" }
-      ] },
-    { "knowledge_point_id": "math.sequence", "name": "数列", "mastery": 0.5, "children": [] },
-    { "knowledge_point_id": "math.probability", "name": "概率统计", "mastery": 0.5, "children": [] }
+    { "knowledge_point_id": "math.derivative.monotonicity", "name": "利用导数判断函数单调性与单调区间",
+      "description": "由 f'(x) 的符号判断函数的单调性，并求出单调区间",
+      "mastery": 0.8342, "confidence": 0.52, "evidence_count": 6, "trend": "stable", "children": [] },
+    { "knowledge_point_id": "math.derivative.absolute_extrema", "name": "利用导数求函数最值",
+      "mastery": 0.7194, "confidence": 0.55, "evidence_count": 6, "trend": "declining", "children": [] },
+    { "knowledge_point_id": "math.derivative.monotonicity_parameter", "name": "利用单调性或导数恒成立求参数",
+      "mastery": 0.6896, "confidence": 0.58, "evidence_count": 7, "trend": "declining", "children": [] },
+    { "knowledge_point_id": "math.function.parity_and_monotonicity", "name": "函数奇偶性与单调性综合判断",
+      "mastery": 0.6839, "confidence": 0.52, "evidence_count": 5, "trend": "unknown", "children": [] },
+    { "knowledge_point_id": "math.derivative.extrema", "name": "利用导数判断与求解极值",
+      "mastery": 0.6180, "confidence": 0.58, "evidence_count": 7, "trend": "declining", "children": [] },
+    { "knowledge_point_id": "math.derivative.extrema_parameter", "name": "根据极值或最值条件求参数",
+      "mastery": 0.5084, "confidence": 0.55, "evidence_count": 6, "trend": "declining", "children": [] },
+    { "knowledge_point_id": "math.derivative.monotonicity_applications", "name": "导数与函数性质综合应用",
+      "mastery": 0.4322, "confidence": 0.79, "evidence_count": 12, "trend": "declining", "children": [] }
   ],
   "weakest": [
-    { "knowledge_point_id": "math.derivative.comprehensive", "name": "综合应用",
+    { "knowledge_point_id": "math.derivative.monotonicity_applications", "name": "导数与函数性质综合应用",
       "mastery": 0.4322, "confidence": 0.79, "priority": 0.2295,
       "reason": "当前掌握度 43%，共 12 条作答证据；近期呈下降趋势" }
   ],
   "next_action": { "…": "…" },
-  "total_evidence": 43
+  "total_evidence": 49
 }
 ```
+
+> 官方知识点清单是**扁平**的 7 个（`knowledge_points.json` version 1），没有父子层级，
+> 所以 `tree` 里每个节点的 `children` 都是空数组。
 
 > **服务端直接返回树形结构，iOS 不要自己拼。**
 > 父节点掌握度由子节点按证据量加权聚合而来，不是独立存储的数字。
@@ -384,8 +388,8 @@ GET /api/v1/knowledge/{knowledge_point_id}
 
 ```json
 {
-  "knowledge_point_id": "math.derivative.comprehensive",
-  "name": "综合应用",
+  "knowledge_point_id": "math.derivative.monotonicity_applications",
+  "name": "导数与函数性质综合应用",
   "description": "导数与参数、方程根的分布等综合问题",
   "subject": "mathematics",
   "mastery": 0.4322,
@@ -410,7 +414,7 @@ GET /api/v1/knowledge/{knowledge_point_id}
       "created_at": "2026-09-06T21:30:00+00:00" }
   ],
   "prerequisites": [
-    { "knowledge_point_id": "math.derivative.extremum", "name": "极值", "weight": 0.5084 }
+    { "knowledge_point_id": "math.derivative.extrema", "name": "利用导数判断与求解极值", "weight": 0.5084 }
   ],
   "mastery_explanation": "最近 12 次相关作答：正确 4 次、部分正确 3 次、错误 5 次。主要错误模式：分类讨论错误 ×3、函数性质转换错误 ×3、定义域遗漏 ×2。按题目难度与时间衰减加权后，掌握度为 43%（置信度 79%）。近期表现不如之前，需要留意。",
   "recommended_action": { "…": "…" },
@@ -441,7 +445,7 @@ GET /api/v1/wrong-questions?knowledge_point_id=math.derivative.monotonicity&stat
   "items": [
     { "wrong_question_id": "wq_1a2b", "question_id": "q_9f3c", "question_number": "17",
       "question_content": "已知函数 f(x) = x^3 - 3x^2 + 2，求 f(x) 的单调递增区间。",
-      "knowledge_point_id": "math.derivative.monotonicity", "knowledge_point_name": "单调性",
+      "knowledge_point_id": "math.derivative.monotonicity", "knowledge_point_name": "利用导数判断函数单调性与单调区间",
       "error_type": "transformation", "error_label": "函数性质转换错误",
       "status": "open", "created_at": "2026-10-01T21:30:00+00:00" }
   ]
@@ -478,7 +482,7 @@ POST /api/v1/tutor/sessions
 
 ```json
 { "source_type": "knowledge_point",
-  "knowledge_point_id": "math.derivative.comprehensive" }
+  "knowledge_point_id": "math.derivative.monotonicity_applications" }
 ```
 
 **B. 从错题进入**
@@ -505,8 +509,8 @@ POST /api/v1/tutor/sessions
   "user_id": "user_ab12",
   "source_type": "knowledge_point",
   "source_id": null,
-  "knowledge_point_id": "math.derivative.comprehensive",
-  "knowledge_point_name": "综合应用",
+  "knowledge_point_id": "math.derivative.monotonicity_applications",
+  "knowledge_point_name": "导数与函数性质综合应用",
   "phase": "diagnose",
   "difficulty": 0.4322,
   "attempt_count": 0, "hint_count": 0,
@@ -576,7 +580,7 @@ POST /api/v1/tutor/sessions/{session_id}/turns
   "completed": false,
   "student_understanding": 0.281,
   "knowledge_changes": [
-    { "knowledge_point_id": "math.derivative.comprehensive", "name": "综合应用",
+    { "knowledge_point_id": "math.derivative.monotonicity_applications", "name": "导数与函数性质综合应用",
       "before": 0.4322, "after": 0.3968, "delta": -0.0354, "evidence_count": 13 }
   ],
   "next_action": null
@@ -627,7 +631,7 @@ GET /api/v1/tutor/sessions/{session_id}
 
 ```http
 POST /api/v1/practice/sessions
-{ "knowledge_point_id": "math.derivative.comprehensive", "difficulty": 0.6, "count": 5 }
+{ "knowledge_point_id": "math.derivative.monotonicity_applications", "difficulty": 0.6, "count": 5 }
 ```
 
 `knowledge_point_id` 不传时，服务器自动挑最该练的薄弱点。
@@ -636,12 +640,12 @@ POST /api/v1/practice/sessions
 {
   "practice_session_id": "prac_2b7c",
   "user_id": "user_ab12",
-  "knowledge_point_id": "math.derivative.comprehensive",
-  "knowledge_point_name": "综合应用",
+  "knowledge_point_id": "math.derivative.monotonicity_applications",
+  "knowledge_point_name": "导数与函数性质综合应用",
   "status": "active",
   "total": 5, "answered": 0, "correct": 0,
   "next_question": {
-    "question_id": "math.derivative.comprehensive.0004",
+    "question_id": "math.derivative.monotonicity_applications.0004",
     "question_number": "0004",
     "stem": "已知函数 f(x) = x^2 - a·e^x 在 [0, +∞) 上单调递增，则实数 a 的取值范围是（  ）",
     "choices": [
@@ -663,7 +667,7 @@ POST /api/v1/practice/sessions
 GET  /api/v1/practice/sessions/{session_id}          # 读整组练习的状态与当前题
 GET  /api/v1/practice/sessions/{session_id}/next     # 只取下一题
 POST /api/v1/practice/sessions/{session_id}/answers
-     { "question_id": "math.derivative.comprehensive.0004", "selected_key": "C" }
+     { "question_id": "math.derivative.monotonicity_applications.0004", "selected_key": "C" }
 ```
 
 `GET .../{session_id}` 返回与创建时同构的会话状态（含 `answered` / `correct` / `next_question`），
@@ -675,7 +679,7 @@ POST /api/v1/practice/sessions/{session_id}/answers
 ```json
 {
   "practice_session_id": "prac_2b7c",
-  "question_id": "math.derivative.comprehensive.0004",
+  "question_id": "math.derivative.monotonicity_applications.0004",
   "correctness": "wrong",
   "is_correct": false,
   "correct_answer": "A",
@@ -780,21 +784,22 @@ Demo 可用的兑换码（`POST /books/book.derivative.advanced/redeem`）：
 ## 9. Demo 辅助接口（演示前调一次）
 
 ```http
-POST /api/v1/demo/seed        # 铺开学习历史，把「综合应用」压到 43% 附近
+POST /api/v1/demo/seed        # 铺开学习历史，把「导数与函数性质综合应用」压到 43% 附近
 POST /api/v1/demo/reset       # 清空该用户学习数据
 GET  /api/v1/demo/status      # 当前数据概览
 ```
 
-`POST /demo/seed` 会写入 43 条历史 Evidence：
+`POST /demo/seed` 会写入 49 条历史 Evidence：
 
 | 知识点 | 掌握度 |
 |---|---|
-| 基础求导 | **83%** |
-| 解导数不等式 | **69%** |
-| 单调性 | **62%** |
-| 极值 | **51%** |
-| **综合应用** | **43%** ← Demo 主线 |
-| 函数单调性 | **68%** |
+| 利用导数判断函数单调性与单调区间 | **83%** |
+| 利用导数求函数最值 | **72%** |
+| 利用单调性或导数恒成立求参数 | **69%** |
+| 函数奇偶性与单调性综合判断 | **68%** |
+| 利用导数判断与求解极值 | **62%** |
+| 根据极值或最值条件求参数 | **51%** |
+| **导数与函数性质综合应用** | **43%** ← Demo 主线 |
 
 > 证据时间戳是相对播种时刻计算的，所以**每次演示前重新 seed 一次**，
 > 时间轴就会刷新到"最近"，趋势判断也更符合现场叙事。
@@ -805,7 +810,7 @@ GET  /api/v1/demo/status      # 当前数据概览
 
 ```
 ① GET  /api/v1/demo/seed                     （演示前准备）
-② GET  /api/v1/home                          → 「下一步：综合应用」
+② GET  /api/v1/home                          → 「下一步：导数与函数性质综合应用」
 ③ POST /api/v1/homework/analyses             （上传试卷图片）→ analysis_id
 ④ GET  /api/v1/homework/analyses/{id}        （轮询，卡片显示 5 步进度）
    └─ completed：错 1 题、错题入库、knowledge_changes 已产生

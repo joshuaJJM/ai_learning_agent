@@ -151,43 +151,56 @@ diagnose ──答错→ remedial（更简单的问题）→ 讲解
 
 ## 知识点与题库
 
-知识点树（`math.derivative.*`，id 是稳定契约）：
+知识点清单取自团队给定的 `knowledge_points.json`（version 1），是**扁平的 7 个**，
+没有父子层级。**ID 与名称不要自行增删或改写** —— 前端、题库录入标准、后端三边都依赖它：
 
 ```
-函数                导数
-└ 函数单调性        ├ 基础求导
-                    ├ 解导数不等式
-                    ├ 单调性
-                    ├ 极值
-                    └ 综合应用
+math.derivative.monotonicity              利用导数判断函数单调性与单调区间
+math.derivative.monotonicity_parameter    利用单调性或导数恒成立求参数
+math.derivative.monotonicity_applications 导数与函数性质综合应用
+math.derivative.extrema                   利用导数判断与求解极值
+math.derivative.extrema_parameter         根据极值或最值条件求参数
+math.derivative.absolute_extrema          利用导数求函数最值
+math.function.parity_and_monotonicity     函数奇偶性与单调性综合判断
 ```
 
-题库是预处理好的静态 JSON，放在 `app/seed/banks/`，当前 6 个 bank / 44 道单选题：
+题库是预处理好的静态 JSON，放在 `app/seed/banks/`，当前 1 个 bank / 32 道单选题：
 
 ```json
 {
   "schema_version": "1.0",
-  "bank_id": "math.derivative.monotonicity",
-  "bank_name": "由导数符号判断单调性单选题",
+  "bank_id": "math.derivative.application.monotonicity_extrema",
+  "bank_name": "导数的应用 单调性极值与最值选择题",
+  "language": "zh-CN",
+  "version": "1.0.0",
+  "updated_at": "2026-10-02",
   "questions": [
     {
-      "id": "math.derivative.monotonicity.0009",
+      "id": "math.derivative.application.a06",
       "type": "single_choice",
-      "stem": "已知函数 f(x) = x^3 - 3x^2 + 2，求 f(x) 的单调递增区间。",
-      "options": { "A": "(-inf, 0)", "B": "(0, 2)", "C": "(-inf, 0) 和 (2, +inf)", "D": "(2, +inf)" },
-      "answer": "C",
-      "explanation": "f'(x) = 3x^2 - 6x = 3x(x - 2)，令 f'(x) > 0 得 x < 0 或 x > 2……",
+      "stem": "已知 f(x)=x-ln(x)，求 f(x) 的单调递减区间。",
+      "options": { "A": "(-∞,1)", "B": "(0,1)", "C": "(1,+∞)", "D": "(0,+∞)" },
+      "answer": "B",
       "knowledge_point_ids": ["math.derivative.monotonicity"],
-      "tags": ["单调区间"],
-      "difficulty": 3
+      "tags": ["利用导数判断函数单调性与单调区间"]
     }
   ]
 }
 ```
 
-`difficulty`（1–5）是可选扩展字段，缺省时回退到该知识点的难度档位。
-加载器很宽容：单条题目不合法只会被丢弃并记入 warnings，不会让服务起不来
-（warning 会出现在启动日志与 `/health` 里）。
+题库格式由 `题库JSON录入标准_AI说明.md` 规定，几条硬性要求：
+
+- **只允许**上述字段。`difficulty`、`source`、`source_ref` 等自定义字段会被加载器忽略并告警。
+- `tags` 必须与 `knowledge_point_ids` **一一对应、顺序相同、逐字等于知识点 name**。
+  加载器会校验：不一致时以知识点名称为准重写并告警。
+- 选项键从 `A` 开始**连续排列**，2–8 个，不得留空。
+- 题干与选项用纯文本数学写法（`x^2`、`e^x`、`(-∞,1)`），不用 LaTeX。
+
+> 因为规范里没有 `difficulty`，题目难度由服务端按知识点兜底
+> （`knowledge.py` 里每个知识点的 `default_difficulty`）。
+>
+> 另外规范里也**没有解析字段**，所以题库题的 `explanation` 会是 `null`；
+> 只有 OCR 上传的题目才会带解析。
 
 ---
 
@@ -310,16 +323,17 @@ cd backend
 curl -X POST http://121.43.137.176:17283/api/v1/demo/seed
 ```
 
-会把「导数综合应用」重置到 **43%** 附近并铺开其余知识点：
+会把「导数与函数性质综合应用」重置到 **43%** 附近并铺开其余知识点：
 
 | 知识点 | 掌握度 |
 |---|---|
-| 基础求导 | 83% |
-| 解导数不等式 | 69% |
-| 单调性 | 62% |
-| 极值 | 51% |
-| **综合应用** | **43%** ← Demo 主线 |
-| 函数单调性 | 68% |
+| 利用导数判断函数单调性与单调区间 | 83% |
+| 利用导数求函数最值 | 72% |
+| 利用单调性或导数恒成立求参数 | 69% |
+| 函数奇偶性与单调性综合判断 | 68% |
+| 利用导数判断与求解极值 | 62% |
+| 根据极值或最值条件求参数 | 51% |
+| **导数与函数性质综合应用** | **43%** ← Demo 主线 |
 
 证据时间戳相对播种时刻计算，所以每次演示前重新 seed，时间轴就是「最近」，
 趋势判断也更符合现场叙事。

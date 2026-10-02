@@ -31,10 +31,11 @@ class SeedRecord:
     detail: str | None = None
 
 
-# 时间从远到近排列，这样 trend 的升降是有意义的
+# 时间从远到近排列，这样 trend 的升降是有意义的。
+# 知识点 ID 取自官方 knowledge_points.json（version 1）。
 DEMO_PLAN: dict[str, tuple[SeedRecord, ...]] = {
-    # 基础求导：很稳
-    "math.derivative.basic": (
+    # 判断单调性与单调区间：最基础，很稳
+    "math.derivative.monotonicity": (
         SeedRecord("correct", 0.40, 22),
         SeedRecord("correct", 0.40, 17),
         SeedRecord("correct", 0.45, 12),
@@ -42,38 +43,47 @@ DEMO_PLAN: dict[str, tuple[SeedRecord, ...]] = {
         SeedRecord("correct", 0.50, 4),
         SeedRecord("correct", 0.45, 2),
     ),
-    # 解导数不等式：基本掌握，偶有失手
-    "math.derivative.inequality": (
+    # 恒成立求参数：基本掌握，偶有失手
+    "math.derivative.monotonicity_parameter": (
         SeedRecord("correct", 0.55, 19),
         SeedRecord("correct", 0.55, 14),
         SeedRecord("correct", 0.60, 10),
         SeedRecord("correct", 0.55, 7),
-        SeedRecord("wrong", 0.60, 5, "procedural", "区间端点写成了闭区间"),
-        SeedRecord("partial", 0.60, 3, "procedural", "解集方向正确但漏了一侧"),
+        SeedRecord("wrong", 0.60, 5, "procedural", "求参数范围时漏掉了端点 a=0"),
+        SeedRecord("partial", 0.60, 3, "procedural", "不等号方向对，但漏了一侧情况"),
         SeedRecord("correct", 0.60, 1),
     ),
-    # 单调性：会算但转换不稳
-    "math.derivative.monotonicity": (
+    # 判断与求解极值：概念清楚但会漏情况
+    "math.derivative.extrema": (
         SeedRecord("correct", 0.60, 20),
         SeedRecord("correct", 0.60, 16),
         SeedRecord("correct", 0.65, 12),
-        SeedRecord("partial", 0.65, 9, "transformation", "区间写对但把增减说反"),
-        SeedRecord("partial", 0.65, 6, "transformation", "只写出一侧的单调区间"),
+        SeedRecord("partial", 0.65, 9, "transformation", "求出了驻点但没判断变号"),
+        SeedRecord("partial", 0.65, 6, "transformation", "把极值点与极值混为一谈"),
         SeedRecord("correct", 0.65, 4),
         SeedRecord("wrong", 0.70, 2, "domain_omission", "忽略了定义域限制"),
     ),
-    # 极值：概念清楚但会漏情况
-    "math.derivative.extremum": (
+    # 求函数最值：还可以，偶尔漏端点
+    "math.derivative.absolute_extrema": (
+        SeedRecord("correct", 0.55, 16),
+        SeedRecord("correct", 0.55, 12),
+        SeedRecord("correct", 0.60, 8),
+        SeedRecord("correct", 0.55, 5),
+        SeedRecord("wrong", 0.60, 3, "procedural", "只比较了驻点，漏掉了区间端点"),
+        SeedRecord("correct", 0.60, 1),
+    ),
+    # 根据极值条件求参数：会做但漏情况
+    "math.derivative.extrema_parameter": (
         SeedRecord("correct", 0.75, 15),
         SeedRecord("correct", 0.75, 11),
         SeedRecord("correct", 0.80, 8),
         SeedRecord("partial", 0.80, 5, "case_analysis", "只讨论了极大值，漏掉极小值"),
         SeedRecord("wrong", 0.80, 3, "case_analysis", "含参讨论时漏了一种情况"),
-        SeedRecord("wrong", 0.85, 1, "transformation", "把极值点与极值混为一谈"),
+        SeedRecord("wrong", 0.85, 1, "transformation", "把 f'(x)=0 直接当成极值点"),
     ),
-    # 综合应用：核心薄弱点，目标 ≈ 43%，且近期在退步
+    # ★ 核心薄弱点，目标 ≈ 43%，且近期在退步
     # 4 正确 / 3 部分正确 / 5 错误 —— 与规划文档 §5 的示例一致
-    "math.derivative.comprehensive": (
+    "math.derivative.monotonicity_applications": (
         SeedRecord("correct", 0.90, 25),
         SeedRecord("wrong", 0.90, 23, "case_analysis", "分类讨论时漏了 a<0 的情况"),
         SeedRecord("correct", 0.90, 21),
@@ -87,12 +97,12 @@ DEMO_PLAN: dict[str, tuple[SeedRecord, ...]] = {
         SeedRecord("wrong", 0.95, 3, "case_analysis", "分类讨论标准不统一"),
         SeedRecord("wrong", 0.95, 1, "transformation", "图象交点个数判断错误"),
     ),
-    # 函数单调性（不用导数）：还可以
-    "math.function.monotonicity": (
+    # 奇偶性与单调性综合判断：还可以
+    "math.function.parity_and_monotonicity": (
         SeedRecord("correct", 0.50, 14),
         SeedRecord("correct", 0.50, 10),
         SeedRecord("correct", 0.55, 6),
-        SeedRecord("wrong", 0.55, 3, "conceptual", "用特殊值代替了任意性证明"),
+        SeedRecord("wrong", 0.55, 3, "conceptual", "用特殊值代替了任意性判断"),
         SeedRecord("correct", 0.55, 1),
     ),
 }

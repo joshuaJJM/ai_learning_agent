@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "knowledge_points": [
+    {
+      "id": "math.derivative.monotonicity",
+      "name": "利用导数判断函数单调性与单调区间"
+    },
+    {
+      "id": "math.derivative.monotonicity_parameter",
+      "name": "利用单调性或导数恒成立求参数"
+    },
+    {
+      "id": "math.derivative.monotonicity_applications",
+      "name": "导数与函数性质综合应用"
+    },
+    {
+      "id": "math.derivative.extrema",
+      "name": "利用导数判断与求解极值"
+    },
+    {
+      "id": "math.derivative.extrema_parameter",
+      "name": "根据极值或最值条件求参数"
+    },
+    {
+      "id": "math.derivative.absolute_extrema",
+      "name": "利用导数求函数最值"
+    },
+    {
+      "id": "math.function.parity_and_monotonicity",
+      "name": "函数奇偶性与单调性综合判断"
+    }
+  ]
+}

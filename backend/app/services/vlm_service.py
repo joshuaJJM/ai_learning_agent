@@ -29,14 +29,32 @@ from .llm import LlmClient, LlmUnavailable, build_user_message, get_llm
 # 题干相似度达到这个阈值，就认为是题库里的同一道题
 BANK_MATCH_THRESHOLD = 0.72
 
-# 没有题库命中时，用关键词兜底推断知识点
+# 没有题库命中时，用关键词兜底推断知识点（ID 必须是 knowledge_points 清单里的）
 _KEYWORD_RULES: tuple[tuple[tuple[str, ...], str], ...] = (
-    (("极值", "极大", "极小", "最值", "最大值", "最小值"), "math.derivative.extremum"),
-    (("单调", "递增区间", "递减区间", "增函数", "减函数"), "math.derivative.monotonicity"),
-    (("零点", "根的个数", "两个根", "三个根", "恒成立", "取值范围", "参数"), "math.derivative.comprehensive"),
-    (("不等式", "f'(x)>0", "f'(x)<0", "f'(x) > 0", "f'(x) < 0"), "math.derivative.inequality"),
-    (("切线", "求导", "导数", "f'("), "math.derivative.basic"),
-    (("定义域", "奇偶", "值域", "函数图像"), "math.function"),
+    (
+        ("极值", "极大", "极小"),
+        "math.derivative.extrema",
+    ),
+    (
+        ("最大值", "最小值", "最值", "闭区间"),
+        "math.derivative.absolute_extrema",
+    ),
+    (
+        ("单调", "递增区间", "递减区间", "增函数", "减函数"),
+        "math.derivative.monotonicity",
+    ),
+    (
+        ("取值范围", "恒成立", "求参数", "求 a", "求实数"),
+        "math.derivative.monotonicity_parameter",
+    ),
+    (
+        ("零点", "根的个数", "两个根", "三个根", "方程"),
+        "math.derivative.monotonicity_applications",
+    ),
+    (
+        ("奇函数", "偶函数", "奇偶"),
+        "math.function.parity_and_monotonicity",
+    ),
 )
 
 
@@ -153,18 +171,23 @@ def _clean_confidence(value: Any, default: float = 0.8) -> float:
 
 
 def _clean_difficulty(value: Any, kp_ids: Sequence[str]) -> float:
+    """题目难度。
+
+    题库规范禁止在题里写 difficulty，所以缺省时用知识点的服务端兜底难度。
+    模型如果给了 1–5 的整数也接受（它只是辅助信息）。
+    """
     try:
         number = float(value)
     except (TypeError, ValueError):
         number = 0.0
     if 1.0 <= number <= 5.0:
         return (number - 1.0) / 4.0
-    if 0.0 <= number <= 1.0:
+    if 0.0 < number <= 1.0:
         return number
     for kp_id in kp_ids:
         point = knowledge.get_point(kp_id)
         if point:
-            return (point.difficulty_band - 1) / 4.0
+            return point.default_difficulty
     return 0.5
 
 

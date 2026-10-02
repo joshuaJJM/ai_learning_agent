@@ -23,7 +23,7 @@ from app.services.vlm_service import RawQuestion, VlmOutcome
 
 from .conftest import FIXTURE_IMAGE
 
-DEMO_KP = "math.derivative.comprehensive"
+DEMO_KP = "math.derivative.monotonicity_applications"
 DEMO_QUESTION = {
     "question_number": "17",
     "stem": "已知函数 f(x) = x^3 - 3x^2 + 2，求 f(x) 的单调递增区间。",
@@ -69,8 +69,8 @@ def test_health_and_root(client: TestClient) -> None:
     health = client.get("/health")
     assert health.status_code == 200
     body = health.json()
-    assert body["question_count"] == 44
-    assert body["bank_count"] == 6
+    assert body["question_count"] == 32
+    assert body["bank_count"] == 1
     assert body["llm_mode"] == "mock"  # 测试环境强制 Mock
 
     root = client.get("/")
@@ -112,8 +112,8 @@ def test_demo_seed_puts_comprehensive_near_43_percent(
     mastery = result["mastery"][DEMO_KP]["mastery"]
     assert 0.40 <= mastery <= 0.47, f"综合应用掌握度应落在 43% 附近，实际 {mastery}"
 
-    # 基础求导要明显更强，否则知识树没有层次
-    assert result["mastery"]["math.derivative.basic"]["mastery"] > mastery + 0.2
+    # 最基础的知识点要明显更强，否则知识树没有层次
+    assert result["mastery"]["math.derivative.monotonicity"]["mastery"] > mastery + 0.2
     assert result["weakest"][0]["knowledge_point_id"] == DEMO_KP
 
 
@@ -127,7 +127,7 @@ def test_home_suggests_the_weakest_point(
     assert home["next_action"]["action"] == "start_tutor"
     assert home["weakest"]["knowledge_point_id"] == DEMO_KP
     assert home["wrong_question_count"] == 0
-    assert home["stats"]["total_evidence"] == 43
+    assert home["stats"]["total_evidence"] == 49
     assert len(home["knowledge_summary"]) >= 3
 
 
@@ -291,26 +291,21 @@ def test_knowledge_tree_is_returned_whole(
     _seed(client, auth_headers)
     body = client.get("/api/v1/knowledge", headers=auth_headers).json()
 
-    assert body["total_evidence"] == 43
+    assert body["total_evidence"] == 49
     assert body["weakest"][0]["knowledge_point_id"] == DEMO_KP
 
-    derivative = next(
-        node for node in body["tree"] if node["knowledge_point_id"] == "math.derivative"
-    )
-    child_ids = {c["knowledge_point_id"] for c in derivative["children"]}
-    assert "math.derivative.comprehensive" in child_ids
-    assert len(child_ids) == 5
+    # 官方知识点清单是扁平的 7 个，全部作为顶层叶子节点返回
+    node_ids = {node["knowledge_point_id"] for node in body["tree"]}
+    assert len(node_ids) == 7
+    assert "math.derivative.monotonicity_applications" in node_ids
+    assert all(not node["children"] for node in body["tree"])
 
-    # 父节点掌握度应低于"基础求导"、高于"综合应用"
-    basic = next(
-        c for c in derivative["children"] if c["knowledge_point_id"] == "math.derivative.basic"
+    # 有层次：最基础的那个最稳，综合应用最弱
+    by_id = {node["knowledge_point_id"]: node for node in body["tree"]}
+    assert (
+        by_id["math.derivative.monotonicity_applications"]["mastery"]
+        < by_id["math.derivative.monotonicity"]["mastery"]
     )
-    comp = next(
-        c
-        for c in derivative["children"]
-        if c["knowledge_point_id"] == "math.derivative.comprehensive"
-    )
-    assert comp["mastery"] < derivative["mastery"] < basic["mastery"]
 
 
 def test_knowledge_detail_explains_why(
@@ -320,7 +315,7 @@ def test_knowledge_detail_explains_why(
     _seed(client, auth_headers)
     body = client.get(f"/api/v1/knowledge/{DEMO_KP}", headers=auth_headers).json()
 
-    assert body["name"] == "综合应用"
+    assert body["name"] == "导数与函数性质综合应用"
     assert body["evidence_count"] == 12
     assert body["correct_count"] == 4
     assert body["partial_count"] == 3
@@ -335,7 +330,7 @@ def test_knowledge_detail_explains_why(
     assert len(body["evidence"]) == 12
     assert "掌握度为 43%" in body["mastery_explanation"]
     assert "分类讨论错误" in body["mastery_explanation"]
-    assert body["prerequisites"][0]["knowledge_point_id"] == "math.derivative.extremum"
+    assert body["prerequisites"][0]["knowledge_point_id"] == "math.derivative.monotonicity"
     assert body["recommended_action"]["knowledge_point_id"] == DEMO_KP
 
 
@@ -507,7 +502,8 @@ def test_practice_never_leaks_the_answer_but_still_updates_mastery(
 
     assert result["is_correct"] is False
     assert result["correct_answer"] == correct
-    assert result["explanation"]
+    # 官方题库规范不含解析字段，所以 explanation 允许为 null
+    assert result["explanation"] is None or result["explanation"]
     assert result["knowledge_changes"], "练习必须产生 Evidence 并更新掌握度"
 
     after = client.get(f"/api/v1/knowledge/{DEMO_KP}", headers=auth_headers).json()

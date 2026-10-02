@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-10-01",
-  "note": "黑客松 Demo 使用假数据展示图书与题库权限，不接真实支付。",
+  "updated_at": "2026-10-02",
+  "note": "黑客松 Demo 使用假数据展示图书与题库权限，不接真实支付。knowledge_point_ids 必须是 knowledge_points.json 里的官方 ID。",
   "books": [
     {
       "book_id": "book.derivative.basic",
@@ -9,18 +9,16 @@
       "publisher": "好学教研组",
       "cover_url": null,
       "price_cents": 0,
-      "question_count": 22,
-      "description": "覆盖基础求导、解导数不等式与由导数符号判断单调性。适合刚学完导数的学生打基础。",
+      "question_count": 18,
+      "description": "覆盖由导数符号判断单调性、单调区间，以及用最值思维处理恒成立求参数。适合刚学完导数的学生打基础。",
       "subject": "mathematics",
       "bank_ids": [
-        "math.derivative.basic",
-        "math.derivative.inequality",
-        "math.derivative.monotonicity"
+        "math.derivative.application.monotonicity_extrema"
       ],
       "knowledge_point_ids": [
-        "math.derivative.basic",
-        "math.derivative.inequality",
-        "math.derivative.monotonicity"
+        "math.derivative.monotonicity",
+        "math.derivative.monotonicity_parameter",
+        "math.derivative.absolute_extrema"
       ],
       "demo_serial": "HAOXUE-DERI-0001",
       "owned_by_default": true
@@ -31,18 +29,17 @@
       "publisher": "好学教研组",
       "cover_url": null,
       "price_cents": 2000,
-      "question_count": 21,
-      "description": "极值、最值、含参讨论与方程根的分布。面向冲刺高分的学生。",
+      "question_count": 14,
+      "description": "极值、根据极值条件求参数、奇偶性与单调性综合判断，以及含参讨论与方程根的分布。面向冲刺高分的学生。",
       "subject": "mathematics",
       "bank_ids": [
-        "math.derivative.extremum",
-        "math.derivative.comprehensive",
-        "math.function.monotonicity"
+        "math.derivative.application.monotonicity_extrema"
       ],
       "knowledge_point_ids": [
-        "math.derivative.extremum",
-        "math.derivative.comprehensive",
-        "math.function.monotonicity"
+        "math.derivative.extrema",
+        "math.derivative.extrema_parameter",
+        "math.derivative.monotonicity_applications",
+        "math.function.parity_and_monotonicity"
       ],
       "demo_serial": "HAOXUE-ADVD-0002",
       "owned_by_default": false

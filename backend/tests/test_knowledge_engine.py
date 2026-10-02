@@ -41,7 +41,7 @@ def _record(
 
 
 def test_empty_evidence_returns_prior() -> None:
-    estimate = compute_mastery("math.derivative.basic", [])
+    estimate = compute_mastery("kp", [])
     assert estimate.mastery == 0.5
     assert estimate.evidence_count == 0
     assert estimate.confidence == 0.0

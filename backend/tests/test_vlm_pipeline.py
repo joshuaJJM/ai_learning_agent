@@ -18,8 +18,9 @@ from app.services import vlm_service
 from app.services.llm import LlmClient, LlmReply, LlmUnavailable
 from app.services.vlm_service import JSON_ATTEMPTS_PER_MODEL, analyze_images
 
-# 用真实题库里的题目，避免走"未命中题库"的分支
-BANK_QUESTION = get_bank().get("math.derivative.monotonicity.0009")
+# 用真实题库里的题目，避免走"未命中题库"的分支。
+# 动态取一道，这样题库换代（id 变化）时测试不会碎。
+BANK_QUESTION = get_bank().by_knowledge_point("math.derivative.monotonicity")[0]
 assert BANK_QUESTION is not None
 
 VLM_PAYLOAD = {
@@ -196,7 +197,7 @@ def test_unmatched_question_triggers_second_opinion() -> None:
     payload = copy.deepcopy(VLM_PAYLOAD)
     payload["questions"][0]["stem"] = "一道题库里没有的题：求 f(x) = x^2 的导数。"
     payload["questions"][0]["student_answer"] = "A"
-    payload["questions"][0]["knowledge_point_ids"] = ["math.derivative.basic"]
+    payload["questions"][0]["knowledge_point_ids"] = ["math.derivative.monotonicity"]
 
     client = FakeVlm(payload=payload)
 
@@ -220,7 +221,7 @@ def test_second_opinion_runs_in_parallel() -> None:
                 "student_answer": "A",
                 "answer": "C",
                 "correctness": "wrong",
-                "knowledge_point_ids": ["math.derivative.basic"],
+                "knowledge_point_ids": ["math.derivative.monotonicity"],
                 "error_type": "procedural",
                 "diagnosis": "测试",
                 "confidence": 0.9,

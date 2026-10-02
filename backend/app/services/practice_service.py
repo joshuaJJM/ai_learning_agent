@@ -333,7 +333,8 @@ def submit_answer(
         "correctness": "correct" if is_correct else "wrong",
         "is_correct": is_correct,
         "correct_answer": question.answer,
-        "explanation": question.explanation,
+        # 官方题库规范不含解析字段，这里可能是 None，客户端要能处理
+        "explanation": question.explanation or None,
         "knowledge_changes": [c.model_dump(mode="json") for c in changes],
         "next_question": None if finished else current_question(session),
         "session_completed": finished,
