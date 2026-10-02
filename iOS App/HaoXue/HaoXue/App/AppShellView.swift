@@ -22,7 +22,7 @@ struct AppShellView: View {
         }
         .tint(.blue)
         .fullScreenCover(isPresented: $showingTutor) {
-            TutorView(store: store) { showingTutor = false }
+            TutorView(store: store, provider: MockQuestionProvider()) { showingTutor = false }
         }
     }
 }

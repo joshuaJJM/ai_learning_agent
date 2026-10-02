@@ -6,12 +6,6 @@ enum DemoStage {
     case lessonCompleted
 }
 
-enum DemoTutorStep {
-    case question
-    case feedback
-    case completion
-}
-
 struct DemoSubject {
     let name: String
     let mastery: Double
@@ -22,19 +16,11 @@ struct DemoSubject {
 @MainActor @Observable
 final class DemoScenarioStore {
     private(set) var stage: DemoStage = .initial
-    private(set) var tutorStep: DemoTutorStep = .question
-    private(set) var selectedChoice: ChoiceID?
-    private(set) var feedbackIsCorrect = false
     private(set) var scanPageCount = 3
     private(set) var scanAnalysisCompleted = false
 
     let lessonTitle = "导数与单调性"
     let knowledgeLink = "导数符号 → 函数性质"
-    let tutorQuestionLead = "如果在某个区间内："
-    let tutorExpression = "f′(x) > 0"
-    let tutorQuestionEnd = "这说明函数 f(x) 在这个区间内……"
-    let correctFeedback = "很好。当 f′(x) > 0 时，函数在该区间内单调递增。"
-    let incorrectFeedback = "还差一点。想一想：导数为正意味着函数值随着 x 增加时发生怎样的变化？"
     let practiceSummary = "5 道选择题 · 约 8 分钟\n难度会根据你的作答实时调整"
     let scanPageHeading = "高中数学 · 导数"
     let scanQuestion = "4. 已知函数 f(x) 的导函数图像，判断函数的单调递增区间。"
@@ -65,13 +51,6 @@ final class DemoScenarioStore {
         (title: "导数与单调性", detail: "昨天 · 周练 · 第 7 题"),
         (title: "函数极值", detail: "9 月 29 日 · 月考 · 第 16 题")
     ]
-    let tutorChoices = [
-        TutorChoice(id: .A, text: "单调递增"),
-        TutorChoice(id: .B, text: "单调递减"),
-        TutorChoice(id: .C, text: "一定存在最大值"),
-        TutorChoice(id: .D, text: "无法判断")
-    ]
-
     var home: HomeState {
         stage == .lessonCompleted ? GoldenDemoFixtures.homeAfter : GoldenDemoFixtures.homeBefore
     }
@@ -86,31 +65,10 @@ final class DemoScenarioStore {
 
     func startLesson() {
         if stage == .initial { stage = .learning }
-        tutorStep = .question
-        selectedChoice = nil
-        feedbackIsCorrect = false
     }
 
-    func selectChoice(_ choice: ChoiceID) {
-        guard tutorStep == .question else { return }
-        selectedChoice = choice
-    }
-
-    func submitChoice() {
-        guard tutorStep == .question, let selectedChoice else { return }
-        feedbackIsCorrect = selectedChoice == .A
-        tutorStep = .feedback
-    }
-
-    func continueLesson() {
-        guard tutorStep == .feedback else { return }
-        if feedbackIsCorrect {
-            stage = .lessonCompleted
-            tutorStep = .completion
-        } else {
-            selectedChoice = nil
-            tutorStep = .question
-        }
+    func finishLesson() {
+        stage = .lessonCompleted
     }
 
     func showScanResult() { scanAnalysisCompleted = true }

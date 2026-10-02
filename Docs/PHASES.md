@@ -32,12 +32,21 @@
 
 ## Phase 3 — Tutor / Practice / Scratchpad
 
-- [ ] Tutor A-D
-- [ ] Free Text UI only
+### Phase 3A — Tutor Foundation（已完成）
+
+- [x] 3 道离线 Mock 题与题目来源接口
+- [x] Tutor 状态机、选项反馈、解析与课程进度
+- [x] 会话展示掌握度 43% → 51%
+- [x] PencilKit 草稿本、笔/橡皮、清空确认及换题重置
+
+Phase 3B 的真实后端 Tutor、诊断与补救流程尚未开始。
+
+- [x] Tutor A-D
+- [x] Free Text UI only
 - [ ] Practice
-- [ ] Mastery UI
-- [ ] PencilKit
-- [ ] Clear Confirmation
+- [x] Mastery UI
+- [x] PencilKit
+- [x] Clear Confirmation
 - [ ] Commit
 
 ## Phase 4 — Backend Core & AI
