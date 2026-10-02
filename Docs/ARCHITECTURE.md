@@ -16,7 +16,7 @@
 │ Knowledge State              │
 │ Wrong Questions              │
 │ Tutor / Practice             │
-│ Library / Entitlement        │
+│ Question Bank                │
 └──────────────┬───────────────┘
                │
       ┌────────┴─────────┐
@@ -169,9 +169,9 @@ Mastery Update
 
 ---
 
-## 7. Mock / Fallback 架构
+## 7. Live / Mock Data Architecture
 
-iOS 应保留：
+iOS 可以保留：
 
 ```text
 DataProvider Protocol
@@ -179,19 +179,18 @@ DataProvider Protocol
 └── MockDataProvider
 ```
 
-如果后端：
+用途应明确区分：
 
-- 网络断开；
-- LLM 超时；
-- VLM 失败；
+- `LiveDataProvider`：比赛正式演示与真实产品路径；
+- `MockDataProvider`：SwiftUI Preview、UI Test、开发调试与固定视觉样例。
 
-现场仍然可以切换到预先验证的 Demo Flow。
+比赛不要求离线运行，因此不要求在网络断开、LLM 超时或 VLM 失败时自动切换到 Mock / Cached Flow。正式路径应优先展示明确错误状态和 retry。
 
 ---
 
 ## 8. 商业功能架构
 
-Hackathon 中商业模块只做 View + Demo State。
+Hackathon 中商业模块只做 iOS View + 本地 Demo State，不要求后端商业接口。
 
 不实现：
 

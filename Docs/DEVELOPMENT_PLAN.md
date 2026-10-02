@@ -116,15 +116,6 @@ phase-2: implement scan and image preparation flow
 
 ## Phase 3 — Tutor, Practice & Scratchpad
 
-### Phase 3B — Adaptive Tutor Backend Integration
-
-iOS 真实 Tutor 使用后端有状态 Session，而非在客户端构造第二套教学状态机。
-提交答案时使用 Tutor SSE 渲染文字，结构化 `turn` 决定下一题与补救层级；
-同键 JSON 回放补齐评价与知识变化字段，确保 Evidence 不会因重试重复写入。
-掌握度展示依当前开发安排暂缓，不能用题目难度代替。
-Mock Tutor 与 PencilKit 草稿本继续供测试和离线开发使用。
-正常运行不在后端失败时静默切换 Mock，Mock 仅由显式启动参数启用。
-
 ### 目标
 
 完成核心学习体验。
@@ -135,7 +126,7 @@ Mock Tutor 与 PencilKit 草稿本继续供测试和离线开发使用。
 - A-D 选项选择；
 - 选择后点击继续；
 - 自由输入 UI 保留但不上传；
-- Practice 选择题；
+- Practice 选择题；(Note: Practice UI was not completed in Phase 3 and has been explicitly moved to Phase 6. Do not treat it as a Phase 3 blocker.)
 - Mastery 展示；
 - PencilKit 草稿本；
 - 清空确认。
@@ -155,6 +146,8 @@ phase-3: implement tutor practice and scratchpad
 ---
 
 ## Phase 4 — Backend Core & AI Pipeline
+
+**Status: ✅ Complete — live verified**
 
 ### 目标
 
@@ -178,7 +171,10 @@ phase-3: implement tutor practice and scratchpad
 
 - 一套真实导数选择题样本可稳定分析；
 - Tutor 可以根据 A-D 回答生成下一步；
-- Knowledge State 可以产生前后变化。
+- Knowledge State 可以产生前后变化；
+- 后端测试通过，真实线上 VLM / LLM E2E 已验证。
+
+> Note: Phase 4 的后端能力已经完成；尚未被 iOS 展示的能力统一放入后续前端集成 Phase，不重复修改后端核心架构。
 
 ### Commit
 
@@ -188,59 +184,58 @@ phase-4: implement backend learning agent pipeline
 
 ---
 
-## Phase 5 — Product Completion & Demo Hardening
+## Phase 5 — Core Frontend Integration
 
 ### 目标
 
-把前后端各自尚未连接的产品面补完整，并准备 fallback。
+把已经完成的后端学习能力接到用户真正看得见的核心页面。
 
 ### 内容
 
-- Wrong Question UI；
-- Knowledge Detail；
-- Home 聚合数据；
-- Settings Demo 数据；
-- 学习额度商业展示；
-- 题库 / 图书展示；
-- 失败状态；
-- Empty State；
-- Cached / Mock Demo Flow；
-- 固定现场演示样本。
+- Home 接入 `GET /api/v1/home`，移除生产路径对固定 Home fixture 的依赖；
+- 扫描结果页完整消费 `question_results`、`knowledge_changes`、`new_wrong_questions`、`next_action`；
+- Wrong Questions 列表 / 详情与 Tutor 入口；
+- Knowledge Detail 与 mastery explanation；
+- Tutor contract cleanup：补齐 `answering_turn_id` 等已知边界；
+- 保留 Mock / fixture 仅用于 Preview、UI Test 与开发调试。
+
+### 不做
+
+- 不重写后端算法；
+- 不提前进行大规模视觉 Polish；
+- 不为了接入数据引入新的状态管理框架。
 
 ### Done
 
-- 无论 AI 是否在线，至少有一条可完成的 Demo Flow；
-- 所有 P0 页面存在合理 loading / error / empty 状态。
+- Home 的学习状态与 Next Step 来自真实后端；
+- 扫描完成后可看到题目、诊断、知识点和掌握度变化；
+- 错题或知识点可进入对应详情，并能从合适入口启动 Tutor。
 
 ### Commit
 
 ```text
-phase-5: complete product states and harden demo fallback
+phase-5: integrate core learning data into ios
 ```
 
 ---
 
-# Phase 6 — Frontend / Backend Integration
-
-> 倒数第二个 Phase。此阶段前不得提前进行大规模视觉 Polish。
+## Phase 6 — Practice & Closed Learning Loop
 
 ### 目标
 
-把真实后端嫁接到完成的 iOS UI。
+补齐 Practice 前端，让完整学习闭环真正成立。
 
 ### 内容
 
-- 对齐最终 JSON；
-- 建立 DTO / Codable；
-- 接真实 Home 数据；
-- 接图片上传；
-- 接 Analysis Status；
-- 接 Knowledge / Wrong Questions；
-- 接 Tutor Session；
-- 接 Practice；
-- 修复数据边界问题；
-- 网络超时 / retry；
-- 最终真实闭环联调。
+- `POST /api/v1/practice/sessions`；
+- Practice DTO / API Client / ViewModel / UI；
+- 个性化题目展示；
+- A-D 作答；
+- 判分与解析；
+- `knowledge_changes` / `tag_changes` 展示；
+- 下一题 / 完成态；
+- Practice 完成后刷新 Home；
+- 修复闭环中的数据边界、retry 与幂等问题。
 
 ### 必须验证的真实 Flow
 
@@ -249,9 +244,7 @@ Home
 ↓
 Scan images
 ↓
-Upload
-↓
-AI analysis
+Upload / AI analysis
 ↓
 Wrong question / Knowledge State
 ↓
@@ -272,19 +265,94 @@ Home changed
 
 - 上述闭环至少连续成功 3 次；
 - 不需要开发者手动改数据库或请求；
-- Demo 设备可独立完成流程。
+- Demo 设备可独立完成完整联网流程。
 
 ### Commit
 
 ```text
-phase-6: integrate ios with live backend
+phase-6: complete live learning loop
 ```
 
 ---
 
-# Phase 7 — Final UI Polish & Motion
+## Phase 7 — Product Surface & Commercial Demo
 
-> 最终 Phase，仅在功能稳定后进行。
+### 目标
+
+补齐比赛展示需要的产品化页面，让 App 看起来像一个完整产品，而不是只有核心学习闭环的技术 Demo。
+
+### 内容
+
+- 图书商店 / 题库商店 UI；
+- 图书详情与解锁状态展示；
+- 订阅展示，例如 ¥20 解锁商店内全部作业本题目；
+- 学习额度展示与购买入口 Demo；
+- Settings 页面补全；
+- About This App / Version；
+- 数据与隐私、Screen Time / 专注模式等展示项；
+- 必要的 Empty State / 占位内容整理。
+
+### 实现原则
+
+- 商业内容仅用于 Hackathon 产品展示；
+- 可以完全使用 iOS 本地 Demo State / fixture；
+- 不要求后端接口；
+- 不实现 StoreKit、真实支付、票据校验、真实订阅或复杂额度结算；
+- 不允许商业展示工作影响核心学习闭环。
+
+### Done
+
+- Settings 中不再出现统一的“后续阶段加入”占位弹窗；
+- 图书商店、订阅、额度和 About 均存在可正常演示的完整页面；
+- 所有商业价格 / 状态明确属于 Demo presentation，不伪装成真实购买系统。
+
+### Commit
+
+```text
+phase-7: complete product and commercial demo surfaces
+```
+
+---
+
+## Phase 8 — Online Demo Reliability & QA
+
+### 目标
+
+针对比赛现场的联网演示路径做稳定性检查，不额外实现离线模式。
+
+### 内容
+
+- 固定并验证比赛使用的测试图片与测试题；
+- 验证线上 Backend / VLM / LLM 地址与配置；
+- 网络错误、AI timeout、Session 失效的明确错误提示与 retry；
+- 重复提交 / 重试不得重复写 Evidence 或重复计分；
+- 连续多次完整 Demo Flow 测试；
+- 清理会阻断演示的 P0 / P1 bug；
+- 更新过期测试数量或明显漂移的开发文档。
+
+### 不做
+
+- 不要求断网演示；
+- 不要求 Cached / Mock 自动接管真实分析；
+- 不新增产品功能。
+
+### Done
+
+- 在比赛预期联网环境中连续完整走 Demo 无 crash；
+- 可恢复的网络 / AI 错误都有清晰提示与重试入口；
+- 重试不造成重复 Evidence / mastery 更新。
+
+### Commit
+
+```text
+phase-8: harden online demo reliability
+```
+
+---
+
+## Phase 9 — Final UI Polish & Motion
+
+> 最终 Phase，仅在功能和联网 Demo 稳定后进行。
 
 ### 目标
 
@@ -298,7 +366,7 @@ phase-6: integrate ios with live backend
 - Spring transitions；
 - Scan page paging motion；
 - Loading / analysis progress transition；
-- Tutor turn transitions；
+- Tutor / Practice turn transitions；
 - Mastery number animation；
 - Scratchpad transition；
 - Haptics（可选）；
@@ -321,5 +389,5 @@ phase-6: integrate ios with live backend
 ### Commit
 
 ```text
-phase-7: polish final ui and motion
+phase-9: polish final ui and motion
 ```

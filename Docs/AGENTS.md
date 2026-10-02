@@ -57,9 +57,11 @@ phase-1: build ios shell and mock learning flow
 phase-2: implement scan and image preparation flow
 phase-3: implement tutor practice and scratchpad
 phase-4: implement backend learning agent pipeline
-phase-5: complete product states and harden demo fallback
-phase-6: integrate ios with live backend
-phase-7: polish final ui and motion
+phase-5: integrate core learning data into ios
+phase-6: complete live learning loop
+phase-7: complete product and commercial demo surfaces
+phase-8: harden online demo reliability
+phase-9: polish final ui and motion
 ```
 
 Do not collapse multiple completed phases into one giant commit.
@@ -88,7 +90,9 @@ Frontend responsibilities:
 - PencilKit scratchpad;
 - presentation state;
 - networking / DTO mapping;
-- local demo fallback.
+- Preview / UI-test mock data.
+
+Offline failover is not a competition requirement. Do not spend implementation time on automatic cached/mock fallback unless the human team explicitly re-prioritizes it.
 
 Backend responsibilities:
 
@@ -220,19 +224,31 @@ If something does not directly improve the demo loop, defer it.
 
 ---
 
-## 11. Final Two Phases Are Reserved
+## 11. Remaining Phase Discipline
 
-The final two phases have fixed purposes:
+The remaining phases have fixed purposes:
+
+### Phase 5
+
+Core Frontend Integration.
 
 ### Phase 6
 
-Frontend / Backend Integration.
+Practice & Closed Learning Loop.
 
 ### Phase 7
 
+Product Surface & Commercial Demo. Commercial content may use frontend-only Demo State; do not add StoreKit or backend billing.
+
+### Phase 8
+
+Online Demo Reliability & QA. Offline fallback is not required.
+
+### Phase 9
+
 Final UI Polish & Motion.
 
-Do not consume Phase 7 time early by polishing unfinished flows.
+Do not consume Phase 9 time early by polishing unfinished flows.
 
 ---
 

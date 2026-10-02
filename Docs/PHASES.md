@@ -1,106 +1,121 @@
 # 好学 — PHASE CHECKLIST
 
-## Phase 0 — Bootstrap & Contract Freeze
+## Phase 0 — Bootstrap & Contract Freeze ✅
 
-- [ ] Git / remote 检查
-- [ ] iOS 工程骨架
-- [ ] Backend 工程骨架
-- [ ] API 边界确定
-- [ ] 文档落库
-- [ ] Commit
+- [x] Git / remote 检查
+- [x] iOS 工程骨架
+- [x] Backend 工程骨架
+- [x] API 边界确定
+- [x] 文档落库
+- [x] Commit
 
-## Phase 1 — iOS Shell & Mock Flow
+## Phase 1 — iOS Shell & Mock Flow ✅
 
-- [ ] 4 Tab
-- [ ] Home
-- [ ] Scan
-- [ ] Learn
-- [ ] Settings
-- [ ] Tutor 基础 UI
-- [ ] Mock Data
-- [ ] Commit
+- [x] 4 Tab
+- [x] Home
+- [x] Scan
+- [x] Learn
+- [x] Settings
+- [x] Tutor 基础 UI
+- [x] Mock Data
+- [x] Commit
 
-## Phase 2 — Scan & Image Preparation
+## Phase 2 — Scan & Image Preparation ✅
 
-- [ ] Camera / Document Scan
-- [ ] Perspective Correction
-- [ ] 多图预览
-- [ ] 上传更多
-- [ ] 图片压缩
-- [ ] Analysis Progress UI
-- [ ] Commit
+- [x] Camera / Document Scan
+- [x] Perspective Correction
+- [x] 多图预览
+- [x] 上传更多
+- [x] 图片压缩
+- [x] Analysis Progress UI
+- [x] Commit
 
-## Phase 3 — Tutor / Practice / Scratchpad
-
-### Phase 3A — Tutor Foundation（已完成）
-
-- [x] 3 道离线 Mock 题与题目来源接口
-- [x] Tutor 状态机、选项反馈、解析与课程进度
-- [x] 会话展示掌握度 43% → 51%
-- [x] PencilKit 草稿本、笔/橡皮、清空确认及换题重置
-
-### Phase 3B — Adaptive Tutor Backend Integration
-
-- [x] 真实 Tutor Session 接入与服务端控制的 4 层补救
-- [x] Tutor turn SSE、结构化选项、同键 JSON 回放
-- [x] 服务端进度、答案揭示、取消与原键重试
-- [x] 草稿本在补救期间保留、进入下一道正式题时清空
-- [ ] 掌握度展示：按当前安排等待后端后续开发
+## Phase 3 — Tutor / Practice / Scratchpad 🟡
 
 - [x] Tutor A-D
 - [x] Free Text UI only
-- [ ] Practice
+- [ ] Practice UI（移至 Phase 6 完成）
 - [x] Mastery UI
 - [x] PencilKit
 - [x] Clear Confirmation
-- [ ] Commit
+- [x] Commit
 
-## Phase 4 — Backend Core & AI
+## Phase 4 — Backend Core & AI ✅
 
-- [ ] Upload
-- [ ] VLM
-- [ ] Question Recognition
-- [ ] Diagnosis
-- [ ] Evidence
-- [ ] Knowledge State
-- [ ] Wrong Question
-- [ ] Tutor Session
-- [ ] Practice
-- [ ] DB
-- [ ] Commit
+- [x] Upload
+- [x] VLM
+- [x] Question Recognition
+- [x] Diagnosis
+- [x] Evidence
+- [x] Knowledge State
+- [x] Wrong Question
+- [x] Tutor Session
+- [x] Practice
+- [x] DB
+- [x] Live VLM / LLM E2E verification
+- [x] Commit
 
-## Phase 5 — Product Completion & Demo Hardening
+> 后端 Phase 4 已完成；尚未被 iOS 展示的能力由 Phase 5 / 6 负责接入，不重复实现后端核心。
 
+## Phase 5 — Core Frontend Integration
+
+- [ ] Live Home / Next Step
+- [ ] Full Analysis Result DTO
+- [ ] Scan Result UI
+- [ ] Knowledge Change display
+- [ ] Wrong Questions list / detail
 - [ ] Knowledge Detail
-- [ ] Wrong Questions UI
-- [ ] Settings Demo
-- [ ] Credits Demo
-- [ ] Error / Empty State
-- [ ] Cached Demo Flow
+- [ ] Tutor `answering_turn_id` cleanup
+- [ ] Remove production Home fixture dependency
 - [ ] Commit
 
-## Phase 6 — Frontend / Backend Integration
+## Phase 6 — Practice & Closed Learning Loop
 
-- [ ] Final JSON aligned
-- [ ] DTO / Codable
-- [ ] Upload integrated
-- [ ] Analysis integrated
-- [ ] Home integrated
-- [ ] Knowledge integrated
-- [ ] Tutor integrated
-- [ ] Practice integrated
-- [ ] Mastery update integrated
+- [ ] Practice DTO / API Client
+- [ ] Practice Session UI
+- [ ] Answer / Explanation
+- [ ] Knowledge / Tag Changes
+- [ ] Next Question / Completion
+- [ ] Refresh Home after learning
 - [ ] 3 consecutive successful end-to-end runs
 - [ ] Commit
 
-## Phase 7 — Final UI Polish & Motion
+## Phase 7 — Product Surface & Commercial Demo
+
+- [ ] Book / Question Bank Store
+- [ ] Book Detail / Unlock Demo
+- [ ] Subscription Demo (e.g. ¥20 all workbook questions)
+- [ ] Learning Credits Demo
+- [ ] Settings completion
+- [ ] About This App / Version
+- [ ] Privacy / Focus / Screen Time display entries
+- [ ] Remove generic placeholder alerts
+- [ ] Commit
+
+> Phase 7 允许完全使用 iOS 本地 Demo State，不要求后端商业接口、StoreKit 或真实支付。
+
+## Phase 8 — Online Demo Reliability & QA
+
+- [ ] Fixed demo samples verified
+- [ ] Production demo backend endpoint verified
+- [ ] Network / AI timeout error UI
+- [ ] Retry path verified
+- [ ] Duplicate submission / Evidence safety
+- [ ] Consecutive live demo crash test
+- [ ] P0 / P1 bug cleanup
+- [ ] Commit
+
+> 比赛不要求离线模式；不把 Cached / Mock 自动 fallback 作为 Phase 8 验收项。
+
+## Phase 9 — Final UI Polish & Motion
 
 - [ ] Figma QA
 - [ ] Typography / Spacing
 - [ ] Scan motion
-- [ ] Tutor motion
+- [ ] Tutor / Practice motion
 - [ ] Mastery animation
 - [ ] Scratchpad transition
 - [ ] Haptics if time
+- [ ] Accessibility / Dynamic Type basic check
 - [ ] Demo device crash test
 - [ ] Final Commit

@@ -100,7 +100,7 @@ Tutor / Practice
 - Wrong Questions
 - Tutor / Practice Session
 - 学习历史
-- 题库与权限数据
+- 核心练习题库数据(Hackathon 商业展示中的图书购买、订阅和 entitlement 使用 iOS 本地 Demo State，不属于服务器权威学习状态。)
 
 App 本地只保留必要的临时 UI 状态与缓存。
 
@@ -111,7 +111,7 @@ App 本地只保留必要的临时 UI 状态与缓存。
 1. **首页** — 当前学习状态、Next Step、知识摘要、错题入口；
 2. **扫描** — 扫描/上传作业、试卷或不会做的题，可继续“上传更多”；
 3. **学习** — Tutor 与 Practice；
-4. **设置** — 题库、商业展示、Screen Time、About 等。
+4. **设置** — 图书商店、订阅 / 学习额度、Screen Time、About 等。
 
 Tutor Session 隐藏 Tab Bar，进入沉浸式学习界面。
 
@@ -138,7 +138,7 @@ https://www.figma.com/design/2XhgXMGH4C7YFSSPs4RlQi
 - 图书/题库可单独解锁或通过订阅获得；
 - 学习额度的最终计费规则仍属于产品实验，不应在 48H 内实现复杂结算逻辑。
 
-> 注意：UI 中的额度、价格、订阅、图书购买均可使用 Demo 数据。
+> 注意：UI 中的额度、价格、订阅、图书购买均可使用 Demo 数据；Hackathon 版本允许这些商业展示完全由 iOS 前端本地 Demo State 驱动，不要求接入后端或真实支付。
 
 ## 8. Repository
 
