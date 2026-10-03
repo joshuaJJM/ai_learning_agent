@@ -27,6 +27,7 @@
 		1E17B548306F265300D19BCC /* HaoXue.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HaoXue.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		1E17B557306F265500D19BCC /* HaoXueTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HaoXueTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		1E17B561306F265500D19BCC /* HaoXueUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HaoXueUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		F7A7B0050000000000000001 /* Products.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; path = Products.storekit; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -82,6 +83,7 @@
 		1E17B53F306F265300D19BCC = {
 			isa = PBXGroup;
 			children = (
+				F7A7B0050000000000000001 /* Products.storekit */,
 				1E17B54A306F265300D19BCC /* HaoXue */,
 				1E17B55A306F265500D19BCC /* HaoXueTests */,
 				1E17B564306F265500D19BCC /* HaoXueUITests */,
