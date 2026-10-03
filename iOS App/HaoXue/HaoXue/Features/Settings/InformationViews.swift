@@ -56,11 +56,10 @@ struct AboutHaoXueView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
                 VStack(spacing: 8) {
-                    Text("好")
-                        .font(.system(size: 40, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.white)
+                    Image("HaoXueAppIcon")
+                        .resizable()
+                        .scaledToFit()
                         .frame(width: 82, height: 82)
-                        .background(.blue, in: RoundedRectangle(cornerRadius: 19, style: .continuous))
                         .accessibilityLabel("好学图标")
                     Text("好学").font(.title2.bold())
                     Text("Personal Learning Agent")

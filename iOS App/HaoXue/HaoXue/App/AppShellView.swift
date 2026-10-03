@@ -193,7 +193,7 @@ struct AppShellView: View {
                 .tabItem { Label("学习", systemImage: "book.closed") }
                 .tag(2)
             SettingsView(store: store)
-                .tabItem { Label("设置", systemImage: "gearshape") }
+                .tabItem { Label("设置", systemImage: "gear") }
                 .tag(3)
         }
         .tint(.blue)
