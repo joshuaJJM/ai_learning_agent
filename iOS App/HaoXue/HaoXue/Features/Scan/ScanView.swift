@@ -7,6 +7,7 @@ struct ScanView: View {
     let onStart: (String?) -> Void
     let onOpenWrongQuestion: (String) -> Void
     let onOpenKnowledge: (String) -> Void
+    let onStartPractice: (String?) -> Void
     let onReturnHome: () -> Void
     @State private var model = ScanViewModel()
     @State private var selectedID: UUID?
@@ -100,6 +101,7 @@ struct ScanView: View {
         .navigationDestination(isPresented: $showingResult) {
             if let result = model.completedResult {
                 AnalysisResultView(result: result, onStartTutor: onStart,
+                                   onStartPractice: onStartPractice,
                                    onOpenWrongQuestion: onOpenWrongQuestion,
                                    onOpenKnowledge: onOpenKnowledge) {
                     showingResult = false

@@ -14,8 +14,9 @@ struct AppShellView: View {
     @State private var tutorReturnRecord: LearningRecordRoute?
     @State private var tutorReturnPath: [LearningRecordRoute] = []
     @State private var practicePresentation: PracticePresentation?
-    @State private var practiceSessionID: String?
-    @State private var practiceCreateKey: IdempotencyKey?
+    @State private var practiceSessionIDs: [PracticeEntryContext: String] = [:]
+    @State private var practiceCreateKeys: [PracticeEntryContext: IdempotencyKey] = [:]
+    @State private var pendingPracticeAfterTutor: PracticeEntryContext?
     @State private var completionCoordinator: PracticeCompletionCoordinator?
     @State private var homeModel = HomeViewModel(provider: LiveDataProvider(
         client: APIClient(), configuration: AppConfiguration(mode: .live)))
@@ -43,23 +44,49 @@ struct AppShellView: View {
         tutorPresentation = .live(context)
     }
 
-    /// One logical create per practice entry: the key survives retries and re-entry,
-    /// so a slow first request is replayed instead of scored twice.
-    private func presentPractice() {
-        if practiceCreateKey == nil { practiceCreateKey = IdempotencyKey.generate() }
-        practicePresentation = usesMockTutor ? .mock : .live
+    /// One logical create per entry context: the key survives retries and re-entry,
+    /// so a slow first request is replayed instead of scored twice. A backend
+    /// knowledge point is forwarded as-is; without one the server recommends.
+    private func presentPractice(knowledgePointID: String? = nil) {
+        presentPractice(context: knowledgePointID.map { .knowledgePoint($0) } ?? .recommended)
+    }
+
+    private func presentPractice(context: PracticeEntryContext) {
+        if practiceCreateKeys[context] == nil {
+            practiceCreateKeys[context] = IdempotencyKey.generate()
+        }
+        practicePresentation = usesMockTutor ? .mock(context) : .live(context)
     }
 
     private func closePractice() {
         practicePresentation = nil
     }
 
+    /// Tutor finished with a structured `continue_practice` action: the practice
+    /// only opens after the lesson cover is gone.
+    private func requestPracticeFromTutor(_ knowledgePointID: String?) {
+        pendingPracticeAfterTutor = knowledgePointID.map { .knowledgePoint($0) } ?? .recommended
+        tutorPresentation = nil
+    }
+
+    private func handleTutorDismiss() {
+        if let context = pendingPracticeAfterTutor {
+            pendingPracticeAfterTutor = nil
+            presentPractice(context: context)
+            return
+        }
+        restoreRecordAfterTutor()
+    }
+
     /// Practice finished: the cover closes immediately, then the authoritative
     /// learning state is re-fetched from the backend (never patched locally).
     private func finishPractice(_ outcome: PracticeAnswerOutcome) {
-        practiceSessionID = nil
-        practiceCreateKey = nil
+        let context = practicePresentation?.context
         practicePresentation = nil
+        if let context {
+            practiceSessionIDs[context] = nil
+            practiceCreateKeys[context] = nil
+        }
         let coordinator = learningCompletionCoordinator()
         Task { await coordinator.practiceCompleted(outcome) }
     }
@@ -137,6 +164,7 @@ struct AppShellView: View {
                     DemoHomeView(store: store) { openTutor() }
                 } else {
                     HomeView(model: homeModel, onStartTutor: { openTutor(knowledgePointID: $0) },
+                             onStartPractice: { presentPractice(knowledgePointID: $0) },
                              onOpenWrongQuestion: openWrongQuestion,
                              onOpenKnowledge: openKnowledge)
                 }
@@ -147,6 +175,7 @@ struct AppShellView: View {
                 ScanView(store: store, onStart: { openTutor(knowledgePointID: $0) },
                          onOpenWrongQuestion: openWrongQuestion,
                          onOpenKnowledge: openKnowledge,
+                         onStartPractice: { presentPractice(knowledgePointID: $0) },
                          onReturnHome: { selectedTab = 0 })
             }
                 .tabItem { Label("扫描", systemImage: "viewfinder") }
@@ -154,11 +183,11 @@ struct AppShellView: View {
             Group {
                 if usesMockTutor {
                     StudyView(store: store, onStart: { openTutor() },
-                              onStartPractice: presentPractice)
+                              onStartPractice: { presentPractice() })
                 } else {
                     WrongQuestionsView(model: wrongQuestionsModel, onOpen: openWrongQuestion,
                                        onOpenKnowledgeOverview: openKnowledgeOverview,
-                                       onStartPractice: presentPractice)
+                                       onStartPractice: { presentPractice() })
                 }
             }
                 .tabItem { Label("学习", systemImage: "book.closed") }
@@ -188,7 +217,7 @@ struct AppShellView: View {
                     }
             }
         }
-        .fullScreenCover(item: $tutorPresentation, onDismiss: restoreRecordAfterTutor) { presentation in
+        .fullScreenCover(item: $tutorPresentation, onDismiss: handleTutorDismiss) { presentation in
             switch presentation {
             case .mock:
                 TutorView(store: store, provider: MockQuestionProvider()) { closeTutor() }
@@ -201,23 +230,26 @@ struct AppShellView: View {
                     existingSessionID: tutorSessionIDs[context],
                     createKey: tutorCreateKeys[context] ?? UUID().uuidString,
                     onSessionReady: { tutorSessionIDs[context] = $0 },
+                    onStartPractice: requestPracticeFromTutor,
                     onClose: { closeTutor(completed: $0) })
             }
         }
         .fullScreenCover(item: $practicePresentation) { presentation in
+            let context = presentation.context
             switch presentation {
             case .mock:
                 PracticeSessionView(provider: MockDataProvider(),
-                                    onSessionReady: { practiceSessionID = $0 },
+                                    onSessionReady: { practiceSessionIDs[context] = $0 },
                                     onFinish: finishPractice,
                                     onClose: closePractice)
             case .live:
                 PracticeSessionView(
                     provider: LiveDataProvider(client: APIClient(),
                                                configuration: AppConfiguration(mode: .live)),
-                    existingSessionID: practiceSessionID,
-                    createKey: practiceCreateKey ?? IdempotencyKey.generate(),
-                    onSessionReady: { practiceSessionID = $0 },
+                    existingSessionID: practiceSessionIDs[context],
+                    knowledgePointID: context.knowledgePointID,
+                    createKey: practiceCreateKeys[context] ?? IdempotencyKey.generate(),
+                    onSessionReady: { practiceSessionIDs[context] = $0 },
                     // Phase 6D: use the completed outcome to refresh Home / Knowledge
                     // and to run `next_action`.
                     onFinish: finishPractice,
@@ -351,13 +383,37 @@ private struct PracticeCompletionBanner: View {
     }
 }
 
-private enum PracticePresentation: Identifiable {
-    case mock, live
+private enum PracticeEntryContext: Hashable, Identifiable {
+    case recommended
+    case knowledgePoint(String)
 
     var id: String {
         switch self {
-        case .mock: "mock"
-        case .live: "live"
+        case .recommended: "recommended"
+        case .knowledgePoint(let id): "knowledge:\(id)"
+        }
+    }
+
+    var knowledgePointID: String? {
+        if case .knowledgePoint(let id) = self { return id }
+        return nil
+    }
+}
+
+private enum PracticePresentation: Identifiable {
+    case mock(PracticeEntryContext)
+    case live(PracticeEntryContext)
+
+    var id: String {
+        switch self {
+        case .mock(let context): "mock:\(context.id)"
+        case .live(let context): "live:\(context.id)"
+        }
+    }
+
+    var context: PracticeEntryContext {
+        switch self {
+        case .mock(let context), .live(let context): context
         }
     }
 }

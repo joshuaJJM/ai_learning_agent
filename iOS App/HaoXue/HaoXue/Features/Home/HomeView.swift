@@ -3,10 +3,10 @@ import SwiftUI
 struct HomeView: View {
     let model: HomeViewModel
     let onStartTutor: (String?) -> Void
+    let onStartPractice: (String?) -> Void
     let onOpenWrongQuestion: (String) -> Void
     let onOpenKnowledge: (String) -> Void
     @State private var showsAllKnowledge = false
-    @State private var notice: Notice?
 
     var body: some View {
         ScrollView {
@@ -31,13 +31,6 @@ struct HomeView: View {
         .background(DemoStyle.background)
         .refreshable { await model.refresh() }
         .task { await model.loadIfNeeded() }
-        .alert(notice?.title ?? "", isPresented: Binding(
-            get: { notice != nil }, set: { if !$0 { notice = nil } }
-        )) {
-            Button("好") { notice = nil }
-        } message: {
-            Text(notice?.message ?? "")
-        }
     }
 
     private var errorContent: some View {
@@ -198,24 +191,9 @@ struct HomeView: View {
         switch HomeActionRoute(action) {
         case .tutor(let knowledgePointID): onStartTutor(knowledgePointID)
         case .wrongQuestion(let id): onOpenWrongQuestion(id)
-        case .practice: notice = .practice
+        case .practice(let knowledgePointID): onStartPractice(knowledgePointID)
+        case .knowledge(let id): onOpenKnowledge(id)
         case .none: break
-        }
-    }
-
-    private enum Notice {
-        case practice
-
-        var title: String {
-            switch self {
-            case .practice: "针对练习即将开放"
-            }
-        }
-
-        var message: String {
-            switch self {
-            case .practice: "练习功能将在后续阶段接入。"
-            }
         }
     }
 }

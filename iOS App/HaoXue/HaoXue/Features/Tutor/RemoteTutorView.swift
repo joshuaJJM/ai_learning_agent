@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RemoteTutorView: View {
     let onSessionReady: (String) -> Void
+    let onStartPractice: (String?) -> Void
     let onClose: (Bool) -> Void
     @State private var model: RemoteTutorViewModel
     @State private var showingScratchpad = false
@@ -12,8 +13,10 @@ struct RemoteTutorView: View {
          masteryService: (any MasteryOverviewServing)? = nil,
          existingSessionID: String? = nil, createKey: String = UUID().uuidString,
          onSessionReady: @escaping (String) -> Void = { _ in },
+         onStartPractice: @escaping (String?) -> Void = { _ in },
          onClose: @escaping (Bool) -> Void) {
         self.onSessionReady = onSessionReady
+        self.onStartPractice = onStartPractice
         self.onClose = onClose
         _model = State(initialValue: RemoteTutorViewModel(
             service: service, masteryService: masteryService,
@@ -280,6 +283,12 @@ struct RemoteTutorView: View {
                 Text("接下来").font(.headline)
                 Text(action.title).font(.body.weight(.medium))
                 Text(action.reason).font(.subheadline).foregroundStyle(DemoStyle.secondary)
+            }
+            if case .practice(let knowledgePointID) = model.completionRoute {
+                Button("开始针对性练习") { onStartPractice(knowledgePointID) }
+                    .buttonStyle(.borderedProminent)
+                    .frame(maxWidth: .infinity)
+                    .accessibilityIdentifier("tutor-start-practice")
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

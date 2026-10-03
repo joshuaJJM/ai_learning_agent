@@ -4,7 +4,8 @@ import Observation
 enum HomeActionRoute: Equatable {
     case tutor(String?)
     case wrongQuestion(String)
-    case practice
+    case practice(String?)
+    case knowledge(String)
     case none
 
     init(_ action: NextLearningAction) {
@@ -15,7 +16,11 @@ enum HomeActionRoute: Equatable {
         case "review_wrong_question":
             if let id = action.wrongQuestionID, !id.isEmpty { self = .wrongQuestion(id) }
             else { self = .none }
-        case "continue_practice", "increase_difficulty": self = .practice
+        case "continue_practice", "increase_difficulty":
+            self = .practice(action.knowledgePointID)
+        case "next_knowledge_point":
+            if let id = action.knowledgePointID, !id.isEmpty { self = .knowledge(id) }
+            else { self = .none }
         case "review_later", "all_good": self = .none
         default: self = .none
         }

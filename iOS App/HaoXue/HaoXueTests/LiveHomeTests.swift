@@ -59,11 +59,32 @@ struct LiveHomeTests {
         #expect(HomeActionRoute(action("start_tutor")) == .none)
         #expect(HomeActionRoute(action("review_wrong_question", wrongID: "wq_1")) == .wrongQuestion("wq_1"))
         #expect(HomeActionRoute(action("review_wrong_question")) == .none)
-        #expect(HomeActionRoute(action("continue_practice")) == .practice)
-        #expect(HomeActionRoute(action("increase_difficulty")) == .practice)
+        #expect(HomeActionRoute(action("continue_practice")) == .practice(nil))
+        #expect(HomeActionRoute(action("increase_difficulty", knowledgeID: "kp_2"))
+                == .practice("kp_2"))
+        #expect(HomeActionRoute(action("next_knowledge_point", knowledgeID: "kp_3"))
+                == .knowledge("kp_3"))
+        #expect(HomeActionRoute(action("next_knowledge_point")) == .none)
         #expect(HomeActionRoute(action("review_later")) == .none)
         #expect(HomeActionRoute(action("all_good")) == .none)
         #expect(HomeActionRoute(action("future_action")) == .none)
+    }
+
+    /// Tutor completion offers Practice only when the *structured* backend action
+    /// says so; the natural-language title never influences routing.
+    @Test func tutorCompletionRoutesFromStructuredNextActionOnly() {
+        func dto(_ kind: String, knowledgeID: String?, title: String = "下一步") -> NextActionDTO {
+            NextActionDTO(action: kind, title: title, reason: "原因", ctaLabel: "继续",
+                          knowledgePointId: knowledgeID, knowledgePointName: nil,
+                          wrongQuestionId: nil)
+        }
+        let mapper = Phase5Mapper()
+        #expect(HomeActionRoute(mapper.action(dto("continue_practice", knowledgeID: "kp_1")))
+                == .practice("kp_1"))
+        #expect(HomeActionRoute(mapper.action(dto("start_tutor", knowledgeID: "kp_1")))
+                == .tutor("kp_1"))
+        #expect(HomeActionRoute(mapper.action(dto("all_good", knowledgeID: "kp_9",
+                                                  title: "开始针对性练习"))) == .none)
     }
 
     @Test func tutorCreationUsesHomeKnowledgePointID() throws {

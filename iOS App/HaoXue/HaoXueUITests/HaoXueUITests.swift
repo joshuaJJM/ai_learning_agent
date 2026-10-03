@@ -143,6 +143,20 @@ final class HaoXueUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["巩固导数与单调性"].exists)
         app.tabBars.buttons["学习"].tap()
         XCTAssertTrue(app.staticTexts["51%"].exists)
+        // Mock E2E：Tutor 之后进入 Practice，提交 → 完成 → 学习状态更新提示。
+        app.buttons["start-practice"].tap()
+        XCTAssertTrue(app.staticTexts["practice-question-stem"].waitForExistence(timeout: 10))
+        app.buttons["choice-A"].tap()
+        app.buttons["practice-submit-answer"].tap()
+        XCTAssertTrue(app.staticTexts["practice-result-correctness"].waitForExistence(timeout: 10))
+        app.buttons["practice-next-question"].tap()
+        XCTAssertTrue(app.staticTexts["practice-progress"].waitForExistence(timeout: 5))
+        app.buttons["choice-B"].tap()
+        app.buttons["practice-submit-answer"].tap()
+        let finishPractice = app.buttons["practice-finish"]
+        XCTAssertTrue(finishPractice.waitForExistence(timeout: 10))
+        finishPractice.tap()
+        XCTAssertTrue(app.staticTexts["practice-completion-notice"].waitForExistence(timeout: 10))
         app.terminate()
         app.launch()
         XCTAssertTrue(app.staticTexts["导数与函数单调性"].waitForExistence(timeout: 5))
@@ -214,6 +228,11 @@ final class HaoXueUITests: XCTestCase {
         // 关闭提示后仍停留在学习面，练习入口还在。
         app.buttons["关闭提示"].tap()
         XCTAssertTrue(app.buttons["start-practice"].waitForExistence(timeout: 5))
+        // 完成后的 identity 已清理：再进入是新 session（第 1 题），不是恢复已完成会话。
+        app.buttons["start-practice"].tap()
+        XCTAssertEqual(app.staticTexts["practice-progress"].label, "第 1 / 2 题")
+        XCTAssertFalse(app.buttons["practice-submit-answer"].isEnabled)
+        app.buttons["关闭练习"].tap()
     }
 
     @MainActor

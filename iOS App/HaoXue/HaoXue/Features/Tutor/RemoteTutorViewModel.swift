@@ -53,6 +53,13 @@ final class RemoteTutorViewModel {
 
     var hasMasteryChange: Bool { sessionStartMastery != nil && currentMastery != nil }
 
+    /// Structured completion routing for the CTA: only the backend `next_action`
+    /// decides where a finished lesson can go. Never derived from turn text.
+    var completionRoute: HomeActionRoute? {
+        guard completed, let nextAction else { return nil }
+        return HomeActionRoute(Phase5Mapper().action(nextAction))
+    }
+
     var canSubmit: Bool {
         guard let turn, !completed, errorMessage == nil, !isSubmitting, !isLoading, pendingAnswer == nil,
               pendingNextTurn == nil else { return false }

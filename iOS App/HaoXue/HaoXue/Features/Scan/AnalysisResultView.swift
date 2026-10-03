@@ -3,12 +3,12 @@ import SwiftUI
 struct AnalysisResultView: View {
     let result: HomeworkAnalysisResult
     let onStartTutor: (String?) -> Void
+    let onStartPractice: (String?) -> Void
     let onOpenWrongQuestion: (String) -> Void
     let onOpenKnowledge: (String) -> Void
     let onReturnHome: () -> Void
 
     @State private var showsCorrectQuestions = false
-    @State private var notice: Notice?
 
     private var presentation: AnalysisResultPresentation { AnalysisResultPresentation(result: result) }
 
@@ -91,13 +91,6 @@ struct AnalysisResultView: View {
         .background(DemoStyle.background)
         .navigationTitle("本次分析")
         .navigationBarTitleDisplayMode(.inline)
-        .alert(notice?.title ?? "", isPresented: Binding(
-            get: { notice != nil }, set: { if !$0 { notice = nil } }
-        )) {
-            Button("好") { notice = nil }
-        } message: {
-            Text(notice?.message ?? "")
-        }
     }
 
     private var summarySection: some View {
@@ -235,24 +228,9 @@ struct AnalysisResultView: View {
         switch HomeActionRoute(action) {
         case .tutor(let id): onStartTutor(id)
         case .wrongQuestion(let id): onOpenWrongQuestion(id)
-        case .practice: notice = .practice
+        case .practice(let knowledgePointID): onStartPractice(knowledgePointID)
+        case .knowledge(let id): onOpenKnowledge(id)
         case .none: break
-        }
-    }
-
-    private enum Notice {
-        case practice
-
-        var title: String {
-            switch self {
-            case .practice: "针对练习即将开放"
-            }
-        }
-
-        var message: String {
-            switch self {
-            case .practice: "练习功能将在后续阶段接入。"
-            }
         }
     }
 }
