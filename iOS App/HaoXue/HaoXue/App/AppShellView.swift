@@ -16,6 +16,7 @@ struct AppShellView: View {
     @State private var practicePresentation: PracticePresentation?
     @State private var practiceSessionID: String?
     @State private var practiceCreateKey: IdempotencyKey?
+    @State private var completionCoordinator: PracticeCompletionCoordinator?
     @State private var homeModel = HomeViewModel(provider: LiveDataProvider(
         client: APIClient(), configuration: AppConfiguration(mode: .live)))
     @State private var wrongQuestionsModel = WrongQuestionsListViewModel(provider: LiveDataProvider(
@@ -51,6 +52,37 @@ struct AppShellView: View {
 
     private func closePractice() {
         practicePresentation = nil
+    }
+
+    /// Practice finished: the cover closes immediately, then the authoritative
+    /// learning state is re-fetched from the backend (never patched locally).
+    private func finishPractice(_ outcome: PracticeAnswerOutcome) {
+        practiceSessionID = nil
+        practiceCreateKey = nil
+        practicePresentation = nil
+        let coordinator = learningCompletionCoordinator()
+        Task { await coordinator.practiceCompleted(outcome) }
+    }
+
+    private func learningCompletionCoordinator() -> PracticeCompletionCoordinator {
+        if let completionCoordinator { return completionCoordinator }
+        let home = homeModel
+        let knowledge = knowledgeOverviewModel
+        let mock = usesMockTutor
+        let coordinator = PracticeCompletionCoordinator(
+            refreshHome: {
+                // Mock/Development configuration has no live backend to re-GET.
+                if mock { return true }
+                await home.refresh()
+                return home.phase == .loaded
+            },
+            refreshKnowledge: {
+                if mock { return true }
+                await knowledge.refresh()
+                return knowledge.phase == .loaded
+            })
+        completionCoordinator = coordinator
+        return coordinator
     }
 
     private func openWrongQuestion(_ id: String) {
@@ -177,7 +209,7 @@ struct AppShellView: View {
             case .mock:
                 PracticeSessionView(provider: MockDataProvider(),
                                     onSessionReady: { practiceSessionID = $0 },
-                                    onFinish: { _ in closePractice() },
+                                    onFinish: finishPractice,
                                     onClose: closePractice)
             case .live:
                 PracticeSessionView(
@@ -187,15 +219,28 @@ struct AppShellView: View {
                     createKey: practiceCreateKey ?? IdempotencyKey.generate(),
                     onSessionReady: { practiceSessionID = $0 },
                     // Phase 6D: use the completed outcome to refresh Home / Knowledge
-                    // and to run `next_action`. Phase 6C only leaves the session.
-                    onFinish: { _ in
-                        practiceSessionID = nil
-                        practiceCreateKey = nil
-                        closePractice()
-                    },
+                    // and to run `next_action`.
+                    onFinish: finishPractice,
                     onClose: closePractice)
             }
         }
+        .overlay(alignment: .top) {
+            if let coordinator = completionCoordinator, let notice = coordinator.notice {
+                PracticeCompletionBanner(
+                    notice: notice,
+                    onRetry: { Task { await coordinator.refreshLearningState() } },
+                    onDismiss: { coordinator.dismissNotice() })
+                    .padding(.horizontal, 16)
+                    .padding(.top, 6)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .task(id: notice) {
+                        guard notice == .refreshed else { return }
+                        try? await Task.sleep(for: .seconds(6))
+                        if coordinator.notice == notice { coordinator.dismissNotice() }
+                    }
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: completionCoordinator?.notice)
     }
 
     @ViewBuilder
@@ -252,6 +297,56 @@ private enum TutorPresentation: Identifiable {
         case .mock: "mock"
         case .live(.knowledgePoint(let id)): "knowledge:\(id)"
         case .live(.wrongQuestion(let id)): "wrong:\(id)"
+        }
+    }
+}
+
+/// Quiet, native acknowledgement that practice finished and the learning state
+/// was re-read. Refresh failures keep the completion and offer a GET-only retry.
+private struct PracticeCompletionBanner: View {
+    let notice: PracticeCompletionCoordinator.Notice
+    let onRetry: () -> Void
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .foregroundStyle(tint)
+            Text(notice.text)
+                .font(.subheadline.weight(.medium))
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("practice-completion-notice")
+            Spacer(minLength: 8)
+            if case .refreshFailed = notice {
+                Button("重试", action: onRetry)
+                    .font(.subheadline.bold())
+                    .accessibilityIdentifier("practice-refresh-retry")
+            }
+            Button(action: onDismiss) {
+                Image(systemName: "xmark")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(DemoStyle.secondary)
+            }
+            .accessibilityLabel("关闭提示")
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(.regularMaterial, in: Capsule())
+        .overlay(Capsule().stroke(Color(uiColor: .systemGray5)))
+        .shadow(color: .black.opacity(0.06), radius: 12, y: 4)
+    }
+
+    private var icon: String {
+        switch notice {
+        case .refreshed: "checkmark.circle.fill"
+        case .refreshFailed: "exclamationmark.circle"
+        }
+    }
+
+    private var tint: Color {
+        switch notice {
+        case .refreshed: .green
+        case .refreshFailed: .orange
         }
     }
 }

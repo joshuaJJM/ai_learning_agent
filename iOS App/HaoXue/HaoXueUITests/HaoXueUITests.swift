@@ -201,8 +201,18 @@ final class HaoXueUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["草稿本"].waitForExistence(timeout: 5))
         app.buttons["完成"].tap()
         XCTAssertTrue(app.buttons["practice-submit-answer"].waitForExistence(timeout: 5))
-        app.buttons["关闭练习"].tap()
-        // 关闭后回到 mock 学习页，练习入口仍在。
+
+        // 最后一题：提交 → 完成练习 → 回到学习面并出现完成提示。
+        app.buttons["choice-B"].tap()
+        app.buttons["practice-submit-answer"].tap()
+        let finish = app.buttons["practice-finish"]
+        XCTAssertTrue(finish.waitForExistence(timeout: 10))
+        finish.tap()
+        let notice = app.staticTexts["practice-completion-notice"]
+        XCTAssertTrue(notice.waitForExistence(timeout: 10))
+        XCTAssertEqual(notice.label, "练习完成 · 学习状态已更新")
+        // 关闭提示后仍停留在学习面，练习入口还在。
+        app.buttons["关闭提示"].tap()
         XCTAssertTrue(app.buttons["start-practice"].waitForExistence(timeout: 5))
     }
 
