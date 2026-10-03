@@ -48,26 +48,65 @@ struct FocusPreviewView: View {
 }
 
 struct AboutHaoXueView: View {
+    private var version: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+    }
+
     var body: some View {
         ScrollView {
-            VStack(spacing: 25) {
-                Text("好（hǎo）学\n＋\n好（hào）学\n↓\n学好")
-                    .font(.system(size: 32, weight: .semibold))
-                    .multilineTextAlignment(.center)
-                Text("Personal Learning Agent")
-                    .font(.subheadline).foregroundStyle(.secondary)
-                Text("我们相信，\n\n真正个性化的教育，\n不应该只知道你答错了什么，\n而应该记得你如何学习。")
-                    .font(.title3).multilineTextAlignment(.center)
-                Text("It remembers how you learn.\nSo it knows what you need next.")
-                    .font(.subheadline).multilineTextAlignment(.center)
-                    .foregroundStyle(.secondary)
-                Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")\nEcho · 48H Hackathon")
-                    .font(.caption).multilineTextAlignment(.center)
-                    .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 28) {
+                VStack(spacing: 8) {
+                    Text("好")
+                        .font(.system(size: 40, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .frame(width: 82, height: 82)
+                        .background(.blue, in: RoundedRectangle(cornerRadius: 19, style: .continuous))
+                        .accessibilityLabel("好学图标")
+                    Text("好学").font(.title2.bold())
+                    Text("Personal Learning Agent")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.top, 12)
+
+                Text("让每一次学习，\n都成为下一次学习的依据。")
+                    .font(.title3.weight(.medium))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Divider()
+                aboutSection("名字的含义") {
+                    Text("好（hǎo）学 + 好（hào）学 = 学好")
+                        .font(.body.weight(.medium))
+                    Text("“好学”既意味着学得更好，\n也意味着保持对学习的热爱。")
+                        .foregroundStyle(.secondary)
+                }
+
+                Divider()
+                aboutSection("关于这个项目") {
+                    Text("好学通过作业、错题、Tutor 与练习，\n逐步理解你的知识状态，\n并据此决定下一步最值得学习的内容。")
+                        .foregroundStyle(.secondary)
+                }
+
+                Divider()
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("It remembers how you learn.\nSo it knows what you need next.")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                    Text("Version \(version)\nEcho · 48H Hackathon")
+                        .font(.caption).foregroundStyle(.tertiary)
+                }
             }
-            .frame(maxWidth: .infinity)
-            .padding(32)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 24)
+            .padding(.bottom, 40)
         }
-        .navigationTitle("About 好学")
+        .navigationTitle("关于好学")
+    }
+
+    private func aboutSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title).font(.headline)
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

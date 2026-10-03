@@ -30,7 +30,7 @@ struct SettingsView: View {
                     NavigationLink("数据与隐私") { PrivacyView() }
                 }
                 Section("关于") {
-                    NavigationLink("About 好学") { AboutHaoXueView() }
+                    NavigationLink("关于好学") { AboutHaoXueView() }
                     SettingsValueRow(title: "Version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")
                 }
             }

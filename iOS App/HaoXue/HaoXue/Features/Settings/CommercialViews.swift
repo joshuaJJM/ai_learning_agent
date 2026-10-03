@@ -5,7 +5,6 @@ struct LearningPlanView: View {
     let commercial: CommercialDemoStore
     @State private var isPurchasing = false
     @State private var error: String?
-    @State private var showStoreKit = false
 
     var body: some View {
         ScrollView {
@@ -26,12 +25,10 @@ struct LearningPlanView: View {
                     Label("已加入好学计划", systemImage: "checkmark.circle.fill")
                         .foregroundStyle(.green)
                 } else {
-                    Button(isPurchasing ? "正在处理…" : "模拟加入好学计划") {
-                        Task { await purchase(with: SimulatedPurchaseProvider()) }
+                    Button(isPurchasing ? "正在处理…" : "加入好学计划") {
+                        Task { await purchase() }
                     }
                     .buttonStyle(.borderedProminent).disabled(isPurchasing)
-                    Button("使用 Xcode 本地 StoreKit 体验购买") { showStoreKit = true }
-                        .disabled(isPurchasing)
                 }
                 if let error { Text(error).foregroundStyle(.red).font(.subheadline) }
             }
@@ -39,23 +36,19 @@ struct LearningPlanView: View {
             .padding(24)
         }
         .navigationTitle("好学计划")
-        .confirmationDialog("本地 StoreKit 演示", isPresented: $showStoreKit) {
-            Button("继续购买") { Task { await purchase(with: StoreKitDemoPurchaseProvider()) } }
-        } message: {
-            Text("仅供 Xcode 本地测试，不代表真实订阅或服务端权益。")
-        }
     }
 
     private func benefit(_ title: String) -> some View {
         Label(title, systemImage: "checkmark").font(.body)
     }
 
-    private func purchase(with provider: any PurchaseProviding) async {
+    private func purchase() async {
+        guard !isPurchasing else { return }
         isPurchasing = true
         error = nil
         defer { isPurchasing = false }
         do {
-            try await provider.purchasePlan()
+            try await StoreKitDemoPurchaseProvider().purchasePlan()
             commercial.activatePlan()
         } catch {
             self.error = error.localizedDescription
@@ -83,14 +76,9 @@ struct CreditView: View {
             }
             Section("增加学习额度 · Demo") {
                 Button("1,000,000 学习额度 · ¥5") {
-                    Task { await purchase(with: SimulatedPurchaseProvider(), amount: 1_000_000) }
-                }
-                Button("5,000,000 学习额度 · ¥20") {
-                    Task { await purchase(with: SimulatedPurchaseProvider(), amount: 5_000_000) }
-                }
-                Button("通过 Xcode 本地 StoreKit 体验 ¥5 商品") {
                     Task { await purchase(with: StoreKitDemoPurchaseProvider(), amount: 1_000_000) }
                 }
+                LabeledContent("5,000,000 学习额度", value: "¥20 · 产品预览")
                 if isPurchasing { ProgressView("正在处理…") }
                 if let error { Text(error).foregroundStyle(.red) }
                 Text("金额与余额均为本地 Demo 数据，不构成真实充值。")

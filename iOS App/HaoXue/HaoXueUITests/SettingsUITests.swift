@@ -11,13 +11,13 @@ final class SettingsUITests: XCTestCase {
 
         app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "好学计划")).firstMatch.tap()
         XCTAssertTrue(app.navigationBars["好学计划"].exists)
-        app.buttons["模拟加入好学计划"].tap()
-        XCTAssertTrue(app.staticTexts["已加入好学计划"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["加入好学计划"].exists)
+        XCTAssertFalse(app.staticTexts["已加入好学计划"].exists)
         app.navigationBars.buttons["设置"].tap()
 
         app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "学习额度")).firstMatch.tap()
         XCTAssertTrue(app.navigationBars["学习额度"].exists)
-        XCTAssertTrue(app.staticTexts["20,000,000"].exists)
+        XCTAssertTrue(app.staticTexts["1,000,000"].exists)
         app.navigationBars.buttons["设置"].tap()
 
         app.buttons["邀请同学"].tap()
@@ -32,8 +32,10 @@ final class SettingsUITests: XCTestCase {
         app.buttons["专注模式"].tap()
         XCTAssertTrue(app.staticTexts["Hackathon Preview"].exists)
         app.navigationBars.buttons["设置"].tap()
-        app.buttons["About 好学"].tap()
+        app.buttons["关于好学"].tap()
+        XCTAssertTrue(app.navigationBars["关于好学"].exists)
         XCTAssertTrue(app.staticTexts["Personal Learning Agent"].exists)
+        XCTAssertTrue(app.staticTexts["名字的含义"].exists)
     }
 
     @MainActor
