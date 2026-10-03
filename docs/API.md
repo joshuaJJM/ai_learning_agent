@@ -200,6 +200,7 @@ GET /openapi.json
 
 | error_code | HTTP | 含义 |
 |---|---|---|
+| `INVALID_ANSWER` | 400 | 选项不是这道题的合法选项（单选题只能填 A/B/C/D 之一） |
 | `INVALID_IMAGE` | 400 | 图片为空 / 过大 / 不是图片 |
 | `INVALID_SERIAL_NUMBER` | 400 | 序列号无效、格式不对，或已用于兑换其他书 |
 | `QUESTION_NOT_IN_SESSION` | 400 | 提交的题不是当前练习的当前这一题 |
@@ -209,9 +210,12 @@ GET /openapi.json
 | `KNOWLEDGE_POINT_NOT_FOUND` | 404 | 知识点 id 不存在 |
 | `NOT_FOUND` | 404 | 目标资源不存在 |
 | `NO_QUESTIONS_AVAILABLE` | 404 | 这一组题已经做完了 |
+| `QUESTION_NOT_FOUND` | 404 | 这道题不在该分析里 |
 | `SESSION_NOT_FOUND` | 404 | Tutor / 练习 Session 不存在 |
 | `WRONG_QUESTION_NOT_FOUND` | 404 | 错题不存在 |
 | `IDEMPOTENCY_CONFLICT` | 409 | 同一个幂等键的请求正在处理中，稍后重试 |
+| `QUESTION_ALREADY_RESOLVED` | 409 | 这道题的标准答案已经确认过，且这次给的答案不一样；重复提交同一答案会直接回放原结果 |
+| `QUESTION_NOT_CONFIRMABLE` | 409 | 这道题不能人工确认标准答案（学生未作答，没有可判定的作答） |
 | `SESSION_COMPLETED` | 409 | Session 已结束，不能再作答 |
 | `QUESTION_NOT_RECOGNIZED` | 422 | 没有从图片中识别出题目 |
 | `VALIDATION_ERROR` | 422 | 请求参数不合法 |
@@ -522,6 +526,102 @@ GET /api/v1/homework/analyses/{analysis_id}
 
 ⚠️ **`possible_answer` 绝不参与算分**，只是一个「可能是 X」的提示。
 UI 建议显示成「AI 无法确认本题答案（可能是 D），未计入统计」。
+
+### 2.2.3 人工确认 / 纠正标准答案
+
+模型读错答案、或者它自己也不确定被复核判成 `unknown` 时，学生对着**答案册**
+给的答案是最可靠的信号源。这个接口就是「报错并改正」按钮的后端。
+
+```http
+POST /api/v1/homework/analyses/{analysis_id}/questions/{question_id}/confirm-answer
+Content-Type: application/json
+Idempotency-Key: <UUID>            # 可选；也可用 body 里的 client_request_id
+
+{ "correct_answer": "C", "client_request_id": "<UUID>" }
+```
+
+#### 服务端做什么（**不调 AI**）
+
+只换掉标准答案，**题干 / 选项 / 知识点 / 标签 / 讲解 / 难度全部沿用模型的产出**，
+然后重新判定对错，并在本地重跑这道题的下游：
+
+```
+旧 Evidence 作废（删掉）
+    → 按新判定写入新 Evidence
+        → 掌握度自动更新
+        → 标签统计自动更新（它从 Evidence 现算）
+        → 错题投影重算
+        → 分析里的 counts 重算
+```
+
+> ⚠️ **为什么是"删掉再写"而不是"追加"**：原来的 Evidence 建立在那个错答案的前提上。
+> 追加的话掌握度会同时算上"旧判定的错"和"新判定的对"，既双重计数、
+> 又永远留着一条错的。所以这道题在这次分析里的旧 Evidence 会被替换。
+
+`correctness` 由服务端用 **已保存的 `student_answer`** + 你提交的答案算出来。
+**客户端不提交 `correctness`，也不能改 `student_answer`。**
+
+#### 响应
+
+```json
+{
+  "analysis_id": "ana_xxx",
+  "question_id": "q_xxx",
+  "student_answer": "D",
+  "correct_answer": "C",
+  "correctness": "wrong",
+
+  "confirmation": {
+    "source": "user",
+    "confirmed_at": "2026-10-03T13:20:00+00:00",
+    "original_correct_answer": "C",
+    "correction_count": 1
+  },
+
+  "analysis_summary": {
+    "question_count": 9,
+    "correct_count": 5,
+    "wrong_count": 1,
+    "partial_count": 0,
+    "unanswered_count": 0,
+    "unknown_count": 3
+  },
+
+  "wrong_question": { "wrong_question_id": "wq_xxx", "status": "open", "attempt_count": 1 },
+  "next_action": { "action": "start_tutor", "title": "…", "cta_label": "开始学习" },
+  "replayed": false
+}
+```
+
+| 字段 | 说明 |
+|---|---|
+| `original_correct_answer` | **AI 原来的说法**（`unknown` 的题取自 `possible_answer` 的猜测）。留着是为了让模型的问题可追溯 —— 只看到"结果变了"是查不出模型哪里错的 |
+| `wrong_question` | 这道题**当前**的待复习项；判对、或已被收掉时为 `null` |
+| `replayed` | 同一答案重复提交时为 `true`，此时**没有**重复写 Evidence |
+
+#### 允许范围与错误
+
+**任何有学生作答的题**都可以人工改判 —— 不只 `unknown`。
+「AI 判错了，学生指出真正的答案」正是这个接口的主要用途。
+
+| 情况 | 结果 |
+|---|---|
+| 学生未作答（`unanswered`） | `409 QUESTION_NOT_CONFIRMABLE` —— 补答案也判不出对错 |
+| 分析还没跑完 | `409 QUESTION_NOT_CONFIRMABLE` |
+| 选项不在该题的 `choices` 里 | `400 INVALID_ANSWER` |
+| 这道题不属于该分析 | `404 QUESTION_NOT_FOUND` |
+| 分析不存在 / 不是本人的 | `404 ANALYSIS_NOT_FOUND` |
+| 已确认过、这次答案**相同** | `200`，`replayed: true`，**不重复写 Evidence** |
+| 已确认过、这次答案**不同** | `409 QUESTION_ALREADY_RESOLVED` —— 不允许静默覆盖 |
+
+> `unanswered` 与 `unknown` **语义不同，不能合并**：
+> 前者是"学生没作答"，后者是"AI 确认不了标准答案"。
+> 只有后者（以及任何已有作答的题）能通过这个接口改判。
+
+同一道题**可以反复改判**（`wrong` → `correct` → `wrong` 都行），
+每次会替换掉上一次的 Evidence，`correction_count` 累加。
+但**已确认过再提交一个不同的答案会被拒绝** —— 想改必须先明确覆盖的语义，
+现阶段宁可让前端提示用户"这道题已经确认过了"。
 
 ### 2.3 关于「AI 会不会教错」
 
@@ -1447,7 +1547,17 @@ score = (后验均值 − 一个标准差) × 100        ← 悲观估计
 > v1 的 `delta: ±1` 已移除。v2 里标签统计由 Evidence 派生，
 > 一次作答带来的变化量取决于该标签已有的证据量与难度，
 > 不再是固定的一分 —— 所以拆成了「变化后的值」和「变化量」两个映射，
-> 多个标签各自独立。**
+> 多个标签各自独立。
+
+**可选性（前端 Phase 8A 问的）**：两个字段在 schema 里都是 **`object`、非 required**，
+即使为空也**一定存在**（序列化成 `{}`，不会是 `null`、也不会缺席）。
+
+- `tag_scores`：这道题没有任何有效标签时为空对象
+- `tag_deltas`：**取不到作答前快照时为空对象** —— 回放（`replayed: true`）
+  就是这种情况，因为那时并不发生新的计分
+
+> 前端按 `[String: Int]` 直接解即可，不用处理 optional。
+> 但**别**把空对象理解成"标签没变"：回放时它只是没算变化量。
 
 **练习作答的三条保护**（都返回统一错误体）：
 

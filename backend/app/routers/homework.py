@@ -32,11 +32,18 @@ from ..dependencies import (
     idempotency_key_header,
     resolve_idempotency_key,
 )
-from ..errors import ANALYSIS_NOT_FOUND, INVALID_IMAGE, ApiError
+from ..errors import (
+    ANALYSIS_NOT_FOUND,
+    IDEMPOTENCY_CONFLICT,
+    INVALID_IMAGE,
+    ApiError,
+)
 from ..schemas import (
     AnalysisCreateResponse,
     AnalysisDetailResponse,
     BatchListResponse,
+    ConfirmAnswerRequest,
+    ConfirmAnswerResponse,
 )
 from ..services import homework_service
 
@@ -132,6 +139,67 @@ async def get_analysis(
     if doc is None or doc.get("user_id") != user["user_id"]:
         raise ApiError(ANALYSIS_NOT_FOUND, "分析任务不存在")
     return AnalysisDetailResponse(**homework_service.build_detail(doc))
+
+
+@router.post(
+    "/analyses/{analysis_id}/questions/{question_id}/confirm-answer",
+    response_model=ConfirmAnswerResponse,
+    summary="人工确认/纠正一道题的标准答案（重跑下游，不调 AI）",
+)
+async def confirm_answer(
+    analysis_id: str,
+    question_id: str,
+    payload: ConfirmAnswerRequest,
+    user: dict[str, Any] = Depends(current_user),
+    header_key: str | None = Depends(idempotency_key_header),
+) -> ConfirmAnswerResponse:
+    """模型读错答案、或判成 `unknown` 时，由学生人工补上标准答案。
+
+    **重跑的边界**：只换标准答案，题干 / 选项 / 知识点 / 标签 / 讲解全部
+    沿用模型已给的；然后重新判定对错，并走一遍
+    Evidence → 掌握度 / 标签 / 错题 / 统计。**不调 AI**。
+
+    旧的 Evidence 会被**删掉再写新的**（不是追加），否则掌握度会同时算上
+    "旧判定的错"和"新判定的对"。
+
+    | 情况 | 结果 |
+    |---|---|
+    | 学生未作答（`unanswered`） | `409 QUESTION_NOT_CONFIRMABLE` —— 补答案也判不出来 |
+    | 分析还没跑完 | `409 QUESTION_NOT_CONFIRMABLE` |
+    | 选项不在该题的 choices 里 | `400 INVALID_ANSWER` |
+    | 这道题不属于该分析 | `404 QUESTION_NOT_FOUND` |
+    | 已确认过、这次答案**相同** | `200`，`replayed: true`，**不重复写 Evidence** |
+    | 已确认过、这次答案**不同** | `409 QUESTION_ALREADY_RESOLVED` —— 不允许静默覆盖 |
+    """
+    endpoint = "POST /api/v1/homework/analyses/{id}/questions/{id}/confirm-answer"
+    raw_key = resolve_idempotency_key(header_key, payload.client_request_id)
+    idem_key = (
+        f"confirm-answer:{user['user_id']}:{analysis_id}:{question_id}:{raw_key}"
+        if raw_key
+        else None
+    )
+
+    if idem_key and not repositories.reserve_idempotency(
+        idem_key, user["user_id"], endpoint
+    ):
+        cached = repositories.get_idempotent_response(idem_key)
+        if cached:
+            return ConfirmAnswerResponse(**cached)
+        raise ApiError(IDEMPOTENCY_CONFLICT, "同一个请求正在处理中，请稍后重试")
+
+    try:
+        body = homework_service.confirm_answer(
+            user["user_id"], analysis_id, question_id, payload.correct_answer
+        )
+    except ApiError:
+        # 业务失败要释放幂等占位，否则客户端改答案重试会被卡住
+        if idem_key:
+            repositories.release_idempotency(idem_key)
+        raise
+
+    if idem_key:
+        repositories.put_idempotent_response(idem_key, user["user_id"], endpoint, body)
+    return ConfirmAnswerResponse(**body)
 
 
 @router.get(

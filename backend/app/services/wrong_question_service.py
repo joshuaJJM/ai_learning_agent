@@ -165,6 +165,43 @@ def record_attempt(
     return existing
 
 
+def resolve_for_question(
+    user_id: str, question_stem_hash: str, question_id: str
+) -> dict[str, Any] | None:
+    """某道题被人工改判为「答对」后，把它对应的待复习项收掉。
+
+    只在**这条错题确实包含这次作答**时才收 —— 同一道题可能因为别的作业
+    也做错过（同一 canonical question 的 attempts 里有多条），
+    那种情况下不该因为这一次改对就把整条错题标成已解决。
+
+    返回被收掉的那条（没找到或不该收则为 None）。
+    """
+    if not question_stem_hash:
+        return None
+    doc = repositories.find_wrong_question_by_stem(user_id, question_stem_hash)
+    if doc is None or doc.get("status") != "open":
+        return None
+
+    attempts = list(doc.get("attempts") or [])
+    if attempts:
+        if question_id not in {str(a.get("question_id")) for a in attempts}:
+            return None
+        # 把这一次作答摘掉；如果还有别的错答记录，错题保持 open
+        remaining = [a for a in attempts if str(a.get("question_id")) != question_id]
+        if remaining:
+            doc["attempts"] = remaining
+            doc["attempt_count"] = max(1, len(remaining))
+            repositories.save_wrong_question(doc)
+            return None
+    elif doc.get("question_id") != question_id:
+        return None
+
+    doc["status"] = "resolved"
+    doc["updated_at"] = db.to_iso(db.utcnow())
+    repositories.save_wrong_question(doc)
+    return doc
+
+
 def list_for_user(
     user_id: str,
     *,

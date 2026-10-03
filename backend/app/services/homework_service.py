@@ -15,12 +15,21 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Sequence
 
 from .. import db, knowledge, repositories
 from ..config import get_settings
+from ..errors import (
+    ANALYSIS_NOT_FOUND,
+    INVALID_ANSWER,
+    QUESTION_ALREADY_RESOLVED,
+    QUESTION_NOT_CONFIRMABLE,
+    QUESTION_NOT_FOUND,
+    ApiError,
+)
 from . import (
     knowledge_service,
     recommendation_service,
@@ -31,6 +40,8 @@ from . import (
 from .llm import LlmUnavailable
 from .knowledge_service import EvidenceInput
 from .vlm_service import RawQuestion, VlmOutcome
+
+logger = logging.getLogger("haoxue")
 
 ANALYSIS_STAGES: tuple[tuple[str, str, str], ...] = (
     ("image_received", "Image received", "已接收图片"),
@@ -611,6 +622,239 @@ def _wrong_question_attempt(
         "correctness": result["correctness"],
         "created_at": now,
     }
+
+
+# ---------------------------------------------------------------------------
+# 人工确认/纠正标准答案
+# ---------------------------------------------------------------------------
+
+#: 人工改判会影响判定的字段。**标准答案以外的 AI 产出全部沿用** ——
+#: 题干、选项、知识点、标签、讲解、难度都不动，只换答案再重跑一遍下游。
+_CONFIRM_CLEARS_ON_CORRECT = ("error_type", "error_label", "diagnosis")
+
+
+def confirm_answer(
+    user_id: str,
+    analysis_id: str,
+    question_id: str,
+    correct_answer: str,
+) -> dict[str, Any]:
+    """人工确认标准答案，然后**在本地重跑这道题的下游流程**。
+
+    解决的是识别准确率问题：模型读错答案、或它自己也不确定被复核判成
+    `unknown`。学生对着答案册是最可靠的信号源。
+
+    重跑的边界很清楚：
+
+      - **不调 AI** —— 题干、选项、知识点、标签、讲解、难度全部沿用模型已给的
+      - 只换掉标准答案，用它重新判定 `correctness`
+      - 再走一遍 Evidence → 掌握度 / 标签 / 错题 / counts
+
+    旧的 Evidence 是**删掉再写新的**，不是追加：旧判定的前提就是错的，
+    留着会双重计数，而且那条错的永远挂在学生档案上。
+
+    标签统计不用管 —— 它从 Evidence 现算，Evidence 一改自动就对。
+    """
+    doc = repositories.get_analysis(analysis_id)
+    if doc is None or doc.get("user_id") != user_id:
+        raise ApiError(ANALYSIS_NOT_FOUND, "分析任务不存在")
+
+    if doc.get("status") != "completed":
+        raise ApiError(
+            QUESTION_NOT_CONFIRMABLE,
+            f"分析还没完成（当前 {doc.get('status')}），不能确认标准答案",
+        )
+
+    results: list[dict[str, Any]] = doc.get("question_results") or []
+    question = next(
+        (item for item in results if item.get("question_id") == question_id), None
+    )
+    if question is None:
+        raise ApiError(QUESTION_NOT_FOUND, "这道题不在该分析里")
+
+    # --- 校验答案合法 ---
+    answer = str(correct_answer or "").strip().upper()
+    choices = question.get("choices") or {}
+    legal = set(choices) if choices else {"A", "B", "C", "D"}
+    if answer not in legal:
+        raise ApiError(
+            INVALID_ANSWER,
+            f"{answer or '(空)'} 不是这道题的合法选项（可选 {sorted(legal)}）",
+        )
+
+    # --- 重复确认 ---
+    already = question.get("confirmed_answer")
+    if already:
+        if already == answer:
+            # 同一个答案再提交 → 回放，**绝不重复写 Evidence / 改掌握度**
+            return _confirmation_body(doc, question, replayed=True)
+        raise ApiError(
+            QUESTION_ALREADY_RESOLVED,
+            f"这道题的标准答案已确认为 {already}，不能再改成 {answer}",
+        )
+
+    # --- 学生没作答就没有可判定的东西 ---
+    student = question.get("student_answer")
+    if not student:
+        raise ApiError(
+            QUESTION_NOT_CONFIRMABLE,
+            "学生未作答（unanswered），补充标准答案也判不出对错",
+        )
+
+    homework_id = doc.get("homework_id") or ""
+    now = db.to_iso(db.utcnow())
+    # AI 原来的说法（可能是 correct_answer，也可能只是 possible_answer 里的猜测）
+    original = question.get("correct_answer") or question.get("possible_answer")
+
+    new_correctness = "correct" if str(student).upper() == answer else "wrong"
+
+    # --- ① 旧 Evidence 作废 ---
+    # unknown / unanswered 本来就没有 Evidence，这里删到 0 条是正常的；
+    # 而纠正一道已判定的题（wrong → correct）就必须真的删掉旧的。
+    removed_evidence = repositories.delete_evidence_for_question(
+        user_id, homework_id, question_id
+    )
+
+    # --- ② 按新判定重写 Evidence，掌握度随之更新 ---
+    changes = []
+    if new_correctness not in NO_MASTERY_IMPACT:
+        changes = knowledge_service.apply_evidence(
+            user_id,
+            [
+                EvidenceInput(
+                    knowledge_point_id=ref["knowledge_point_id"],
+                    result=new_correctness,
+                    difficulty=question.get("difficulty") or 0.5,
+                    source_type="homework",
+                    source_id=homework_id,
+                    question_id=question_id,
+                    question_stem_hash=question.get("question_stem_hash"),
+                    error_type=(
+                        None
+                        if new_correctness == "correct"
+                        else question.get("error_type")
+                    ),
+                    confidence=1.0,
+                    detail="学生人工确认标准答案后重新判定",
+                    answer_excerpt=str(student),
+                )
+                for ref in (question.get("knowledge_points") or [])
+            ],
+        )
+
+    # --- ③ 更新题目本身（分析文档 + questions 表两处）---
+    question["correct_answer"] = answer
+    question["correctness"] = new_correctness
+    question["confirmed_answer"] = answer
+    question["confirmed_at"] = now
+    question["confirmed_source"] = "user"
+    question["answer_source"] = "user"
+    if question.get("original_correct_answer") is None:
+        question["original_correct_answer"] = original
+    question["correction_count"] = int(question.get("correction_count") or 0) + 1
+    if new_correctness == "correct":
+        # 判对了就不该再显示"你的错误类型是…"—— 那是基于 AI 那个错答案给的诊断。
+        # 仍然判错时保留 AI 的诊断（用户要求：答案以外的 AI 产出继续用）。
+        for field in _CONFIRM_CLEARS_ON_CORRECT:
+            question[field] = None if field != "diagnosis" else ""
+    repositories.save_question(question)
+
+    # --- ④ 错题投影跟着重算 ---
+    # 判错 → 记一次作答（新建或合并成一条待复习项）
+    # 判对 → 把这道题对应的待复习项收掉
+    if new_correctness in ("wrong", "partial"):
+        wrong_question_service.record_attempt(
+            user_id,
+            question_stem_hash=question["question_stem_hash"],
+            snapshot=_wrong_question_snapshot(question, doc, homework_id),
+            attempt=_wrong_question_attempt(question, homework_id, now),
+            now=now,
+        )
+    else:
+        wrong_question_service.resolve_for_question(
+            user_id, question.get("question_stem_hash") or "", question_id
+        )
+
+    # --- ⑤ 重算 counts 并保存分析文档 ---
+    counts = {"correct": 0, "wrong": 0, "partial": 0, "unanswered": 0, "unknown": 0}
+    for item in results:
+        key = item.get("correctness", "unknown")
+        counts[key] = counts.get(key, 0) + 1
+    doc["question_results"] = results
+    doc["counts"] = counts
+    repositories.save_analysis(doc)
+
+    logger.info(
+        "人工确认标准答案: analysis=%s question=%s %s -> %s（%s），"
+        "旧 Evidence %d 条已作废",
+        analysis_id,
+        question_id,
+        original or "unknown",
+        answer,
+        new_correctness,
+        removed_evidence,
+    )
+
+    return _confirmation_body(doc, question, replayed=False)
+
+
+def _confirmation_body(
+    doc: dict[str, Any], question: dict[str, Any], *, replayed: bool
+) -> dict[str, Any]:
+    """确认接口的响应体。重放时走同一段代码，保证两次返回结构一致。"""
+    counts = doc.get("counts") or {}
+    return {
+        "analysis_id": doc["analysis_id"],
+        "question_id": question["question_id"],
+        "student_answer": question.get("student_answer"),
+        "correct_answer": question.get("correct_answer"),
+        "correctness": question.get("correctness", "unknown"),
+        "confirmation": {
+            "source": question.get("confirmed_source") or "user",
+            "confirmed_at": question.get("confirmed_at"),
+            "original_correct_answer": question.get("original_correct_answer"),
+            "correction_count": int(question.get("correction_count") or 0),
+        },
+        "analysis_summary": {
+            "question_count": len(doc.get("question_results") or []),
+            "correct_count": counts.get("correct", 0),
+            "wrong_count": counts.get("wrong", 0),
+            "partial_count": counts.get("partial", 0),
+            "unanswered_count": counts.get("unanswered", 0),
+            "unknown_count": counts.get("unknown", 0),
+        },
+        "wrong_question": _current_wrong_question(doc["user_id"], question),
+        "next_action": _safe_next_action(doc["user_id"]),
+        "replayed": replayed,
+    }
+
+
+def _current_wrong_question(
+    user_id: str, question: dict[str, Any]
+) -> dict[str, Any] | None:
+    """这道题**当前**的待复习项。
+
+    只返回 `status == "open"` 的那条 —— 语义就是"这道题现在是不是还要复习"。
+    改判为答对、或者别的原因已经收掉的，返回 None。
+    """
+    stem = question.get("question_stem_hash")
+    if not stem:
+        return None
+    found = repositories.find_wrong_question_by_stem(user_id, stem)
+    if found is None or found.get("status") != "open":
+        return None
+    return {
+        "wrong_question_id": found["wrong_question_id"],
+        "status": "open",
+        "attempt_count": int(found.get("attempt_count") or 1),
+    }
+
+
+def _safe_next_action(user_id: str) -> dict[str, Any] | None:
+    try:
+        return recommendation_service.next_action(user_id).model_dump(mode="json")
+    except Exception:  # noqa: BLE001 - 推荐算不出来不该让确认失败
+        return None
 
 
 # ---------------------------------------------------------------------------

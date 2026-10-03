@@ -25,7 +25,7 @@ Correctness = Literal["correct", "wrong", "partial", "unanswered", "unknown"]
 SourceType = Literal["homework", "tutor", "practice", "exam"]
 AnalysisStatus = Literal["queued", "processing", "completed", "failed"]
 Trend = Literal["improving", "stable", "declining", "unknown"]
-StageState = Literal["done", "active", "pending", "failed"]
+StageState = Literal["done", "active", "retrying", "pending", "failed"]
 
 TutorPhase = Literal[
     "diagnose", "teach", "guided_practice", "independent_practice", "completed"
@@ -396,10 +396,25 @@ class AnalysisStage(BaseModel):
 class AnalysisProgress(BaseModel):
     """分析进度，用于「可持续追踪的进度卡片」。
 
-    `stages` 是固定 5 段，每段带 `state`（done / active / pending / failed），
-    直接渲染成勾选列表即可；`percent` 可驱动进度条。
-    分析失败时，出错的那一步是 `failed` 而不是 `active`。
-    实测整条流水线约 20–30 秒，建议 1 秒轮询一次。
+    `stages` 是固定 5 段，每段带 `state`，直接渲染成勾选列表即可；
+    `percent` 可驱动进度条。实测整条流水线约 20–30 秒，建议 1 秒轮询一次。
+
+    **`state` 有 5 种，不是 4 种**：
+
+    | state | 含义 |
+    |---|---|
+    | `done` | 这一步已完成 |
+    | `active` | 正在做这一步 |
+    | `retrying` | 正在做，但当前模型没成功、**正在换模型重试**（不是失败！） |
+    | `pending` | 还没轮到 |
+    | `failed` | 这一步失败了（此时 `failed` 优先于 `retrying`） |
+
+    > ⚠️ `retrying` 必须当成"进行中"渲染。把它当成 `failed`，学生就会在
+    > 模型降级的那几十秒里看到"分析失败"，而其实任务还在正常推进。
+
+    模型降级时 `retrying` 为 true，`retry_note` 给出可直接显示的中文说明
+    （例如「第 1 张：deepseek-flash 未成功，正在用 Qwen/Qwen3-VL-32B-Instruct 重试（2/3）」）。
+    两个字段只在降级期间出现，其余时候**不在响应里**（不是 null）。
     """
 
     percent: float
@@ -407,6 +422,93 @@ class AnalysisProgress(BaseModel):
     current_stage_key: str | None = None
     current_stage_label_zh: str | None = None
     stages: list[AnalysisStage]
+    retrying: bool = Field(
+        default=False,
+        description="是否正在换模型重试（true 时按「进行中」渲染，不要当成失败）",
+    )
+    retry_note: str | None = Field(
+        default=None, description="可直接显示的中文说明；不在重试时为 null"
+    )
+
+
+class ConfirmAnswerRequest(BaseModel):
+    """人工确认/纠正一道题的标准答案。
+
+    模型读错答案、或者它自己也不确定被复核判成 `unknown` 时，
+    学生对着答案册给的答案是最可靠的信号源。
+
+    前端**只提交标准答案** —— `correctness`、Evidence、掌握度、错题
+    全部由服务端算，客户端不参与判定。
+    """
+
+    correct_answer: str = Field(
+        ...,
+        min_length=1,
+        max_length=1,
+        description="单选题的正确选项，A/B/C/D 之一（暂不支持多选）",
+        examples=["C"],
+    )
+    client_request_id: str | None = Field(
+        default=None,
+        description=(
+            "客户端生成的 UUID。没带 `Idempotency-Key` 请求头时用它当幂等键。"
+            "手机网络不稳时重试不会重复写 Evidence。"
+        ),
+    )
+
+
+class AnswerConfirmation(BaseModel):
+    """这次确认的来源与痕迹。
+
+    `original_correct_answer` 是 **AI 原来的说法**（`unknown` 的题则取自
+    `possible_answer` 的猜测），留着是为了让模型的问题可被追溯 ——
+    这个接口本身就是"报错接口"，只看到"结果变了"是查不出模型哪里错的。
+    """
+
+    source: Literal["user"] = "user"
+    confirmed_at: str | None = None
+    original_correct_answer: str | None = None
+    correction_count: int = 0
+
+
+class AnalysisSummaryCounts(BaseModel):
+    """确认之后**重算过**的对错统计。"""
+
+    question_count: int
+    correct_count: int
+    wrong_count: int
+    partial_count: int
+    unanswered_count: int
+    unknown_count: int
+
+
+class ConfirmAnswerResponse(BaseModel):
+    """确认标准答案的结果。
+
+    这个接口会**在本地重跑这道题的下游流程（不调 AI）**：
+    旧 Evidence 作废 → 按新判定重写 → 掌握度 / 标签 / 错题 / counts 全部更新。
+    所以响应里带回更新后的统计与错题项。
+    """
+
+    analysis_id: str
+    question_id: str
+    student_answer: str | None = None
+    correct_answer: str | None = None
+    correctness: Correctness = "unknown"
+    confirmation: AnswerConfirmation
+    analysis_summary: AnalysisSummaryCounts
+    wrong_question: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "这道题**当前**的待复习项（`status: open`）。"
+            "判对、或已被收掉时为 null —— 也就是「这道题现在不用复习了」。"
+        ),
+    )
+    next_action: dict[str, Any] | None = None
+    replayed: bool = Field(
+        default=False,
+        description="同一个答案重复提交时为 true，此时**没有**重复写 Evidence",
+    )
 
 
 class AnalysisCreateResponse(BaseModel):

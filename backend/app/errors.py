@@ -44,9 +44,17 @@ _CODES: dict[str, tuple[int, str]] = {
     "KNOWLEDGE_POINT_NOT_FOUND": (status.HTTP_404_NOT_FOUND, "知识点 id 不存在"),
     "WRONG_QUESTION_NOT_FOUND": (status.HTTP_404_NOT_FOUND, "错题不存在"),
     "BOOK_NOT_FOUND": (status.HTTP_404_NOT_FOUND, "图书不存在"),
+    "QUESTION_NOT_FOUND": (
+        status.HTTP_404_NOT_FOUND,
+        "这道题不在该分析里",
+    ),
     "NO_QUESTIONS_AVAILABLE": (status.HTTP_404_NOT_FOUND, "这一组题已经做完了"),
     # 请求不合法
     "INVALID_IMAGE": (status.HTTP_400_BAD_REQUEST, "图片为空 / 过大 / 不是图片"),
+    "INVALID_ANSWER": (
+        status.HTTP_400_BAD_REQUEST,
+        "选项不是这道题的合法选项（单选题只能填 A/B/C/D 之一）",
+    ),
     "INVALID_SERIAL_NUMBER": (
         status.HTTP_400_BAD_REQUEST,
         "序列号无效、格式不对，或已用于兑换其他书",
@@ -65,6 +73,15 @@ _CODES: dict[str, tuple[int, str]] = {
     "IDEMPOTENCY_CONFLICT": (
         status.HTTP_409_CONFLICT,
         "同一个幂等键的请求正在处理中，稍后重试",
+    ),
+    "QUESTION_NOT_CONFIRMABLE": (
+        status.HTTP_409_CONFLICT,
+        "这道题不能人工确认标准答案（学生未作答，没有可判定的作答）",
+    ),
+    "QUESTION_ALREADY_RESOLVED": (
+        status.HTTP_409_CONFLICT,
+        "这道题的标准答案已经确认过，且这次给的答案不一样；"
+        "重复提交同一答案会直接回放原结果",
     ),
     # 服务端
     "VLM_TIMEOUT": (status.HTTP_504_GATEWAY_TIMEOUT, "视觉模型超时或不可用"),

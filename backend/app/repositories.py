@@ -198,6 +198,28 @@ def evidence_count(user_id: str) -> int:
     return int(row["n"]) if row else 0
 
 
+def delete_evidence_for_question(
+    user_id: str, source_id: str, question_id: str
+) -> int:
+    """删掉某道题在某次活动里产生的全部 Evidence，返回删除条数。
+
+    人工纠正标准答案时用：**旧的判定作废，必须抹掉再写新的**。
+    如果只是追加，掌握度会同时算上"旧判定的错"和"新判定的对" ——
+    既双重计数，又永远留着一条错的。
+
+    一道题可能有多个知识点 → 多条 Evidence，所以要按 (source_id, question_id)
+    一起删，不能只删一条。
+    """
+    rows = db.query_all(
+        "SELECT evidence_id FROM evidence "
+        "WHERE user_id = ? AND source_id = ? AND question_id = ?",
+        [user_id, source_id, question_id],
+    )
+    for row in rows:
+        db.delete_doc("evidence", "evidence_id", str(row["evidence_id"]))
+    return len(rows)
+
+
 def distinct_knowledge_points(user_id: str) -> list[str]:
     rows = db.query_all(
         "SELECT DISTINCT knowledge_point_id FROM evidence WHERE user_id = ?",
