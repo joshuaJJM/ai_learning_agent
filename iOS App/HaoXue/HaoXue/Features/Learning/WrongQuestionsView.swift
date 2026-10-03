@@ -8,73 +8,83 @@ struct WrongQuestionsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: DemoMetrics.sectionGap) {
                 DemoPageHeader(title: "学习", subtitle: "从已有的学习证据找到下一步。")
-                Button(action: onOpenKnowledgeOverview) {
-                    DemoCard {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text("知识掌握与补弱").font(.headline).foregroundStyle(.primary)
-                                Text("查看掌握度、薄弱点与学习证据")
-                                    .font(.subheadline).foregroundStyle(DemoStyle.secondary)
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                        }
-                    }
-                }
-                .buttonStyle(.plain)
-                Button(action: onStartPractice) {
-                    DemoCard {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text("针对性练习").font(.headline).foregroundStyle(.primary)
-                                Text("按当前最薄弱的标签自动出题")
-                                    .font(.subheadline).foregroundStyle(DemoStyle.secondary)
-                            }
-                            Spacer()
-                            Image(systemName: "arrow.right")
-                        }
-                    }
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("开始练习")
-                .accessibilityIdentifier("start-practice")
-                DemoSectionTitle(title: "错题")
-                switch model.phase {
-                case .idle, .loading:
-                    ProgressView("正在获取错题")
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 90)
-                case .failed:
-                    VStack(spacing: 15) {
-                        Text(model.errorMessage ?? "暂时无法获取错题")
-                            .foregroundStyle(DemoStyle.secondary)
-                        Button("重新加载") { Task { await model.refresh() } }
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 90)
-                case .loaded:
-                    if model.items.isEmpty {
+                VStack(spacing: 12) {
+                    Button(action: onOpenKnowledgeOverview) {
                         DemoCard {
-                            VStack(alignment: .leading, spacing: 10) {
-                                Text("暂无错题").font(.headline)
-                                Text("完成作业分析后，需要关注的题目会出现在这里。")
+                            HStack {
+                                VStack(alignment: .leading, spacing: 5) {
+                                    Text("知识掌握与补弱").font(.headline).foregroundStyle(.primary)
+                                    Text("查看掌握度、薄弱点与学习证据")
+                                        .font(DemoType.secondary).foregroundStyle(DemoStyle.secondary)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.subheadline.weight(.semibold))
                                     .foregroundStyle(DemoStyle.secondary)
                             }
-                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                    } else {
-                        ForEach(model.items, id: \.id) { question in
-                            Button { onOpen(question.id) } label: { row(question) }
-                                .buttonStyle(.plain)
+                    }
+                    .buttonStyle(.plain)
+                    Button(action: onStartPractice) {
+                        DemoCard {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 5) {
+                                    Text("针对性练习").font(.headline).foregroundStyle(.primary)
+                                    Text("按当前最薄弱的标签自动出题")
+                                        .font(DemoType.secondary).foregroundStyle(DemoStyle.secondary)
+                                }
+                                Spacer()
+                                Image(systemName: "arrow.right")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(DemoStyle.secondary)
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("开始练习")
+                    .accessibilityIdentifier("start-practice")
+                }
+                DemoSection(title: "错题") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        switch model.phase {
+                        case .idle, .loading:
+                            ProgressView("正在获取错题")
+                                .frame(maxWidth: .infinity)
+                                .padding(.top, 90)
+                        case .failed:
+                            VStack(spacing: 15) {
+                                Text(model.errorMessage ?? "暂时无法获取错题")
+                                    .foregroundStyle(DemoStyle.secondary)
+                                Button("重新加载") { Task { await model.refresh() } }
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 90)
+                        case .loaded:
+                            if model.items.isEmpty {
+                                DemoCard {
+                                    VStack(alignment: .leading, spacing: 10) {
+                                        Text("暂无错题").font(.headline)
+                                        Text("完成作业分析后，需要关注的题目会出现在这里。")
+                                            .foregroundStyle(DemoStyle.secondary)
+                                            .fixedSize(horizontal: false, vertical: true)
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                            } else {
+                                ForEach(model.items, id: \.id) { question in
+                                    Button { onOpen(question.id) } label: { row(question) }
+                                        .buttonStyle(.plain)
+                                }
+                            }
                         }
                     }
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 26)
-            .padding(.bottom, 36)
+            .padding(.horizontal, DemoMetrics.pagePadding)
+            .padding(.top, DemoMetrics.pageTopPadding)
+            .padding(.bottom, DemoMetrics.pageBottomPadding)
         }
         .background(DemoStyle.background)
         .refreshable { await model.refresh() }
@@ -88,7 +98,7 @@ struct WrongQuestionsView: View {
                     Text("第 \(question.questionNumber) 题").font(.headline)
                     Spacer(minLength: 10)
                     Text(WrongQuestionStatus.label(question.status))
-                        .font(.caption.weight(.medium))
+                        .font(DemoType.meta.weight(.medium))
                         .foregroundStyle(DemoStyle.secondary)
                 }
                 Text(question.content)
@@ -96,17 +106,17 @@ struct WrongQuestionsView: View {
                     .lineLimit(3)
                     .multilineTextAlignment(.leading)
                 if let name = question.knowledgePointName {
-                    Text(name).font(.subheadline).foregroundStyle(DemoStyle.secondary)
+                    Text(name).font(DemoType.secondary).foregroundStyle(DemoStyle.secondary)
                         .multilineTextAlignment(.leading)
                 }
                 HStack {
                     if let label = question.errorLabel {
-                        Text(label).font(.caption.weight(.medium))
+                        Text(label).font(DemoType.meta.weight(.medium))
                             .foregroundStyle(.orange)
                     }
                     Spacer()
                     Text(question.createdAt, format: .dateTime.year().month().day())
-                        .font(.caption)
+                        .font(DemoType.meta)
                         .foregroundStyle(DemoStyle.secondary)
                 }
             }
@@ -152,9 +162,9 @@ struct WrongQuestionDetailView: View {
                     if let detail = model.detail { content(detail) }
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 24)
-            .padding(.bottom, 36)
+            .padding(.horizontal, DemoMetrics.pagePadding)
+            .padding(.top, DemoMetrics.pageTopPadding)
+            .padding(.bottom, DemoMetrics.pageBottomPadding)
         }
         .background(DemoStyle.background)
         .navigationTitle("错题详情")
@@ -256,17 +266,16 @@ struct WrongQuestionDetailView: View {
             .foregroundStyle(DemoStyle.secondary)
             if detail.canStartTutor {
                 Button("针对这个问题学习") { onStartTutor(detail.summary.id) }
-                    .buttonStyle(.borderedProminent)
-                    .frame(maxWidth: .infinity)
+                    .buttonStyle(DemoPrimaryButtonStyle())
             }
             if detail.summary.status == "open" {
                 Button("标记为已解决") { Task { await changeStatus("resolved") } }
+                    .buttonStyle(DemoSecondaryButtonStyle())
                     .disabled(model.isUpdating)
-                    .frame(maxWidth: .infinity)
             } else if detail.summary.status == "resolved" {
                 Button("继续关注") { Task { await changeStatus("open") } }
+                    .buttonStyle(DemoSecondaryButtonStyle())
                     .disabled(model.isUpdating)
-                    .frame(maxWidth: .infinity)
             }
         }
     }

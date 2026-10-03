@@ -22,7 +22,8 @@ struct PrivacyView: View {
     private func privacyRow(_ title: String, _ detail: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title).font(.headline)
-            Text(detail).font(.subheadline).foregroundStyle(.secondary)
+            Text(detail).font(DemoType.secondary).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }.padding(.vertical, 4)
     }
 }
@@ -54,7 +55,7 @@ struct AboutHaoXueView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 28) {
+            VStack(alignment: .leading, spacing: DemoMetrics.sectionGap) {
                 VStack(spacing: 8) {
                     Image("HaoXueAppIcon")
                         .resizable()
@@ -63,14 +64,15 @@ struct AboutHaoXueView: View {
                         .accessibilityLabel("好学图标")
                     Text("好学").font(.title2.bold())
                     Text("Personal Learning Agent")
-                        .font(.subheadline).foregroundStyle(.secondary)
+                        .font(DemoType.secondary).foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.top, 12)
+                .padding(.bottom, 4)
 
                 Text("让每一次学习，\n都成为下一次学习的依据。")
                     .font(.title3.weight(.medium))
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 Divider()
                 aboutSection("名字的含义") {
@@ -78,25 +80,29 @@ struct AboutHaoXueView: View {
                         .font(.body.weight(.medium))
                     Text("“好学”既意味着学得更好，\n也意味着保持对学习的热爱。")
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 Divider()
                 aboutSection("关于这个项目") {
                     Text("好学通过作业、错题、Tutor 与练习，\n逐步理解你的知识状态，\n并据此决定下一步最值得学习的内容。")
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 Divider()
                 VStack(alignment: .leading, spacing: 12) {
                     Text("It remembers how you learn.\nSo it knows what you need next.")
-                        .font(.subheadline).foregroundStyle(.secondary)
+                        .font(DemoType.secondary).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                     Text("Version \(version)\nEcho · 48H Hackathon")
-                        .font(.caption).foregroundStyle(.tertiary)
+                        .font(DemoType.meta).foregroundStyle(.tertiary)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 24)
-            .padding(.bottom, 40)
+            .padding(.horizontal, DemoMetrics.pagePadding)
+            .padding(.top, DemoMetrics.pageTopPadding)
+            .padding(.bottom, DemoMetrics.pageBottomPadding)
         }
         .navigationTitle("关于好学")
     }

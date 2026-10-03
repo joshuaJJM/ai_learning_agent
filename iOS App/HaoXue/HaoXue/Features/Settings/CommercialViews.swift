@@ -8,9 +8,10 @@ struct LearningPlanView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 26) {
+            VStack(alignment: .leading, spacing: DemoMetrics.sectionGap) {
                 Text("让好学持续理解你的学习状态。")
-                    .font(.title2).padding(.top, 15)
+                    .font(.title2)
+                    .fixedSize(horizontal: false, vertical: true)
                 VStack(alignment: .leading, spacing: 16) {
                     benefit("解锁图书与题库中的全部练习资源")
                     benefit("每月 20,000,000 学习额度")
@@ -18,9 +19,10 @@ struct LearningPlanView: View {
                     benefit("长期知识状态与学习历史")
                 }
                 Divider()
-                Text("¥20 / 月").font(.largeTitle.bold())
+                Text("¥20 / 月").font(DemoType.metric)
                 Text("Hackathon Demo 定价；本页购买状态仅用于本机演示。")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(DemoType.meta).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 if commercial.isPlanActive {
                     Label("已加入好学计划", systemImage: "checkmark.circle.fill")
                         .foregroundStyle(.green)
@@ -28,12 +30,14 @@ struct LearningPlanView: View {
                     Button(isPurchasing ? "正在处理…" : "加入好学计划") {
                         Task { await purchase() }
                     }
-                    .buttonStyle(.borderedProminent).disabled(isPurchasing)
+                    .buttonStyle(DemoPrimaryButtonStyle()).disabled(isPurchasing)
                 }
                 if let error { Text(error).foregroundStyle(.red).font(.subheadline) }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(24)
+            .padding(.horizontal, DemoMetrics.pagePadding)
+            .padding(.top, DemoMetrics.pageTopPadding)
+            .padding(.bottom, DemoMetrics.pageBottomPadding)
         }
         .navigationTitle("好学计划")
     }
@@ -65,7 +69,7 @@ struct CreditView: View {
         List {
             Section {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(commercial.creditBalance.formatted()).font(.system(size: 42, weight: .bold))
+                    Text(commercial.creditBalance.formatted()).font(DemoType.metric)
                     Text("当前可用额度").foregroundStyle(.secondary)
                 }.padding(.vertical, 14)
                 LabeledContent("本月使用", value: commercial.usedCredits.formatted())
@@ -108,9 +112,10 @@ struct InviteView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: DemoMetrics.sectionGap) {
                 Text("与你的同学一起开始好学。")
-                    .font(.title2).padding(.top, 15)
+                    .font(.title2)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text("你的邀请码").font(.headline)
                 Text(commercial.referralCode)
                     .font(.system(.title, design: .monospaced, weight: .semibold))
@@ -118,16 +123,20 @@ struct InviteView: View {
                 Button(copied ? "已复制" : "复制邀请码") {
                     UIPasteboard.general.string = commercial.referralCode
                     copied = true
-                }.buttonStyle(.borderedProminent)
+                }.buttonStyle(DemoPrimaryButtonStyle())
                 Divider()
                 Text("邀请一位同学开始使用好学，并完成首次学习后：")
+                    .fixedSize(horizontal: false, vertical: true)
                 LabeledContent("你获得", value: "+1,000,000")
                 LabeledContent("对方获得", value: "+1,000,000")
                 Text("Hackathon Demo：暂不跟踪邀请或实际发放额度。")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(DemoType.meta).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(24)
+            .padding(.horizontal, DemoMetrics.pagePadding)
+            .padding(.top, DemoMetrics.pageTopPadding)
+            .padding(.bottom, DemoMetrics.pageBottomPadding)
         }
         .navigationTitle("邀请同学")
     }

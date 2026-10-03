@@ -7,7 +7,7 @@ struct KnowledgeOverviewView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: DemoMetrics.sectionGap) {
                 DemoPageHeader(title: "知识状态", subtitle: "看看每个知识点的理解与学习证据。")
                 switch model.phase {
                 case .idle, .loading:
@@ -35,9 +35,9 @@ struct KnowledgeOverviewView: View {
                     }
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 26)
-            .padding(.bottom, 36)
+            .padding(.horizontal, DemoMetrics.pagePadding)
+            .padding(.top, DemoMetrics.pageTopPadding)
+            .padding(.bottom, DemoMetrics.pageBottomPadding)
         }
         .background(DemoStyle.background)
         .navigationTitle("知识状态")
@@ -71,7 +71,7 @@ private struct KnowledgeNodeRow: View {
                     HStack(alignment: .firstTextBaseline) {
                         Text(node.name).font(.headline).multilineTextAlignment(.leading)
                         Spacer(minLength: 8)
-                        Text(node.mastery.demoPercent).font(.subheadline.weight(.semibold))
+                        Text(node.mastery.demoPercent).font(DemoType.inlineMetric)
                     }
                     .foregroundStyle(.primary)
                     MasteryBar(value: node.mastery,
@@ -85,7 +85,7 @@ private struct KnowledgeNodeRow: View {
                         Spacer()
                         Text("\(node.evidenceCount) 条学习证据")
                     }
-                    .font(.caption)
+                    .font(DemoType.meta)
                     .foregroundStyle(DemoStyle.secondary)
                 }
             }
@@ -115,7 +115,7 @@ struct KnowledgeDetailView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: DemoMetrics.sectionGap) {
                 switch model.phase {
                 case .idle, .loading:
                     ProgressView("正在获取知识点详情")
@@ -126,9 +126,9 @@ struct KnowledgeDetailView: View {
                     if let detail = model.detail { content(detail) }
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 26)
-            .padding(.bottom, 40)
+            .padding(.horizontal, DemoMetrics.pagePadding)
+            .padding(.top, DemoMetrics.pageTopPadding)
+            .padding(.bottom, DemoMetrics.pageBottomPadding)
         }
         .background(DemoStyle.background)
         .navigationTitle("知识点详情")
@@ -149,51 +149,52 @@ struct KnowledgeDetailView: View {
     }
 
     private func content(_ detail: KnowledgePointDetail) -> some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: DemoMetrics.sectionGap) {
             VStack(alignment: .leading, spacing: 11) {
-                Text(detail.name).font(.system(size: 31, weight: .bold))
+                Text(detail.name).font(DemoType.pageTitle)
                     .fixedSize(horizontal: false, vertical: true)
                 if !detail.description.isEmpty {
                     Text(detail.description).foregroundStyle(DemoStyle.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    Text(detail.mastery.demoPercent).font(.system(size: 40, weight: .bold))
-                    Text("当前掌握度").font(.subheadline).foregroundStyle(DemoStyle.secondary)
+                    Text(detail.mastery.demoPercent).font(DemoType.metric)
+                    Text("当前掌握度").font(DemoType.secondary).foregroundStyle(DemoStyle.secondary)
                     Spacer()
                 }
                 MasteryBar(value: detail.mastery,
                            color: detail.trend == "declining" ? .orange : .blue)
                 if let trend = KnowledgeEvidencePresentation.trendLabel(detail.trend) {
-                    Text(trend).font(.subheadline).foregroundStyle(DemoStyle.secondary)
+                    Text(trend).font(DemoType.secondary).foregroundStyle(DemoStyle.secondary)
                 }
             }
-            DemoSectionTitle(title: "为什么是 \(detail.mastery.demoPercent)？")
-            if detail.masteryExplanation.isEmpty {
-                Text("学习证据还比较少，暂时没有更详细的说明。")
-                    .foregroundStyle(DemoStyle.secondary)
-            } else {
-                Text(detail.masteryExplanation)
-                    .font(.body)
-                    .fixedSize(horizontal: false, vertical: true)
+            DemoSection(title: "为什么是 \(detail.mastery.demoPercent)？") {
+                if detail.masteryExplanation.isEmpty {
+                    Text("学习证据还比较少，暂时没有更详细的说明。")
+                        .foregroundStyle(DemoStyle.secondary)
+                } else {
+                    Text(detail.masteryExplanation)
+                        .font(.body)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             evidenceSection(detail)
             relatedSection
             if let action = detail.recommendedAction,
                case .tutor = HomeActionRoute(action) {
-                VStack(alignment: .leading, spacing: 12) {
-                    DemoSectionTitle(title: "接下来")
+                DemoSection(title: "接下来") {
                     Text(action.reason).foregroundStyle(DemoStyle.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                     Button(action.buttonTitle) { onStartTutor(detail.id) }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(DemoPrimaryButtonStyle())
+                        .padding(.top, 4)
                 }
             }
         }
     }
 
     private func evidenceSection(_ detail: KnowledgePointDetail) -> some View {
-        VStack(alignment: .leading, spacing: 13) {
-            DemoSectionTitle(title: "学习证据")
+        DemoSection(title: "学习证据") {
             if detail.evidence.isEmpty {
                 Text("学习证据还比较少，完成更多学习后，这里会形成更完整的记录。")
                     .foregroundStyle(DemoStyle.secondary)
@@ -212,25 +213,25 @@ struct KnowledgeDetailView: View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(alignment: .firstTextBaseline) {
                 Text(KnowledgeEvidencePresentation.sourceLabel(evidence.sourceType))
-                    .font(.subheadline.weight(.semibold))
+                    .font(DemoType.secondary.weight(.semibold))
                 Spacer(minLength: 8)
                 Text(evidence.createdAt, format: .dateTime.month().day())
-                    .font(.caption).foregroundStyle(DemoStyle.secondary)
+                    .font(DemoType.meta).foregroundStyle(DemoStyle.secondary)
             }
             Text(KnowledgeEvidencePresentation.resultLabel(evidence.result))
-                .font(.subheadline)
+                .font(DemoType.secondary)
                 .foregroundStyle(evidence.result == "incorrect" ? .orange : DemoStyle.secondary)
             if evidence.result == "incorrect" || evidence.result == "partial" {
                 if let label = evidence.errorLabel, !label.isEmpty {
-                    Text(label).font(.subheadline).foregroundStyle(DemoStyle.secondary)
+                    Text(label).font(DemoType.secondary).foregroundStyle(DemoStyle.secondary)
                 }
             }
             if let detail = evidence.detail, !detail.isEmpty {
-                Text(detail).font(.subheadline)
+                Text(detail).font(DemoType.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if let answer = evidence.answerExcerpt, !answer.isEmpty {
-                Text("当时的答案：\(answer)").font(.caption)
+                Text("当时的答案：\(answer)").font(DemoType.meta)
                     .foregroundStyle(DemoStyle.secondary)
             }
         }
@@ -238,8 +239,7 @@ struct KnowledgeDetailView: View {
     }
 
     private var relatedSection: some View {
-        VStack(alignment: .leading, spacing: 13) {
-            DemoSectionTitle(title: "相关错题")
+        DemoSection(title: "相关错题") {
             if model.isLoadingRelated {
                 ProgressView("正在获取相关错题")
             } else if let error = model.relatedError {
@@ -255,11 +255,13 @@ struct KnowledgeDetailView: View {
                                     .foregroundStyle(.primary).lineLimit(2)
                                     .multilineTextAlignment(.leading)
                                 if let label = wrong.errorLabel {
-                                    Text(label).font(.caption).foregroundStyle(DemoStyle.secondary)
+                                    Text(label).font(DemoType.meta).foregroundStyle(DemoStyle.secondary)
                                 }
                             }
                             Spacer(minLength: 8)
                             Image(systemName: "chevron.right")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(DemoStyle.secondary)
                         }
                     }
                     .buttonStyle(.plain)

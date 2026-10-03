@@ -17,14 +17,17 @@ struct AnalysisResultView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 17) {
+            VStack(alignment: .leading, spacing: DemoMetrics.sectionGap) {
                 DemoPageHeader(title: "分析完成", subtitle: "这次作答与学习状态已整理好。")
                 summarySection
 
                 if !presentation.attentionQuestions.isEmpty {
-                    DemoSectionTitle(title: "需要关注").padding(.top, 15)
-                    ForEach(presentation.attentionQuestions, id: \.id) { question in
-                        questionCard(question)
+                    DemoSection(title: "需要关注") {
+                        VStack(spacing: 12) {
+                            ForEach(presentation.attentionQuestions, id: \.id) { question in
+                                questionCard(question)
+                            }
+                        }
                     }
                 }
 
@@ -33,35 +36,40 @@ struct AnalysisResultView: View {
                 }
 
                 if !result.knowledgeChanges.isEmpty {
-                    DemoSectionTitle(title: "知识状态变化").padding(.top, 15)
-                    DemoCard {
-                        VStack(alignment: .leading, spacing: 17) {
-                            ForEach(Array(result.knowledgeChanges.enumerated()), id: \.offset) { index, change in
-                                if index > 0 { Divider() }
-                                knowledgeChangeRow(change)
+                    DemoSection(title: "知识状态变化") {
+                        DemoCard {
+                            VStack(alignment: .leading, spacing: 17) {
+                                ForEach(Array(result.knowledgeChanges.enumerated()), id: \.offset) { index, change in
+                                    if index > 0 { Divider() }
+                                    knowledgeChangeRow(change)
+                                }
                             }
                         }
                     }
                 }
 
                 if !result.newWrongQuestions.isEmpty {
-                    DemoSectionTitle(title: "已加入错题").padding(.top, 15)
-                    DemoCard {
-                        VStack(alignment: .leading, spacing: 15) {
-                            Text("\(result.newWrongQuestions.count) 道题已留待复习")
-                                .foregroundStyle(DemoStyle.secondary)
-                            ForEach(Array(result.newWrongQuestions.enumerated()), id: \.offset) { index, wrong in
-                                if index > 0 { Divider() }
-                                Button { onOpenWrongQuestion(wrong.id) } label: {
-                                    VStack(alignment: .leading, spacing: 5) {
-                                        Text("第 \(wrong.questionNumber) 题 · \(wrong.content)")
-                                            .foregroundStyle(.primary)
-                                            .multilineTextAlignment(.leading)
-                                        if let label = wrong.errorLabel {
-                                            Text(label).font(.subheadline).foregroundStyle(DemoStyle.secondary)
+                    DemoSection(title: "已加入错题") {
+                        DemoCard {
+                            VStack(alignment: .leading, spacing: 15) {
+                                Text("\(result.newWrongQuestions.count) 道题已留待复习")
+                                    .foregroundStyle(DemoStyle.secondary)
+                                ForEach(Array(result.newWrongQuestions.enumerated()), id: \.offset) { index, wrong in
+                                    if index > 0 { Divider() }
+                                    Button { onOpenWrongQuestion(wrong.id) } label: {
+                                        VStack(alignment: .leading, spacing: 5) {
+                                            Text("第 \(wrong.questionNumber) 题 · \(wrong.content)")
+                                                .foregroundStyle(.primary)
+                                                .multilineTextAlignment(.leading)
+                                                .fixedSize(horizontal: false, vertical: true)
+                                            if let label = wrong.errorLabel {
+                                                Text(label).font(DemoType.secondary)
+                                                    .foregroundStyle(DemoStyle.secondary)
+                                            }
                                         }
+                                        .frame(maxWidth: .infinity, alignment: .leading)
                                     }
-                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .buttonStyle(.plain)
                                 }
                             }
                         }
@@ -69,27 +77,28 @@ struct AnalysisResultView: View {
                 }
 
                 if let action = result.nextAction {
-                    DemoSectionTitle(title: "接下来").padding(.top, 15)
-                    DemoCard {
-                        VStack(alignment: .leading, spacing: 13) {
-                            Text(action.title).font(.title3.bold())
-                            Text(action.reason).foregroundStyle(DemoStyle.secondary)
-                            if HomeActionRoute(action) != .none {
-                                Button(action.buttonTitle) { perform(action) }
-                                    .font(.headline)
-                                    .padding(.top, 5)
+                    DemoSection(title: "接下来") {
+                        DemoCard {
+                            VStack(alignment: .leading, spacing: 13) {
+                                Text(action.title).font(.title3.bold())
+                                Text(action.reason).foregroundStyle(DemoStyle.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                if HomeActionRoute(action) != .none {
+                                    Button(action.buttonTitle) { perform(action) }
+                                        .font(.headline)
+                                        .padding(.top, 5)
+                                }
                             }
                         }
                     }
                 }
 
                 Button("返回首页", action: onReturnHome)
-                    .frame(maxWidth: .infinity, minHeight: 44)
-                    .padding(.top, 8)
+                    .buttonStyle(DemoSecondaryButtonStyle())
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 26)
-            .padding(.bottom, 40)
+            .padding(.horizontal, DemoMetrics.pagePadding)
+            .padding(.top, DemoMetrics.pageTopPadding)
+            .padding(.bottom, DemoMetrics.pageBottomPadding)
         }
         .background(DemoStyle.background)
         .navigationTitle("本次分析")
@@ -99,9 +108,9 @@ struct AnalysisResultView: View {
     private var summarySection: some View {
         DemoCard {
             VStack(alignment: .leading, spacing: 16) {
-                Text("本次分析").font(.headline).foregroundStyle(DemoStyle.secondary)
-                Text("\(presentation.totalCount) 道题").font(.largeTitle.bold())
-                HStack(alignment: .top, spacing: 8) {
+                Text("本次分析").font(DemoType.sectionTitle).foregroundStyle(DemoStyle.secondary)
+                Text("\(presentation.totalCount) 道题").font(DemoType.metric)
+                HStack(alignment: .top, spacing: 12) {
                     countLabel(result.correctCount, title: "正确")
                     countLabel(result.wrongCount, title: "需关注")
                     countLabel(result.partialCount, title: "部分正确")
@@ -134,9 +143,10 @@ struct AnalysisResultView: View {
     }
 
     private func countLabel(_ count: Int, title: String) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text("\(count)").font(.title3.bold()).monospacedDigit()
+        VStack(alignment: .leading, spacing: 4) {
+            Text("\(count)").font(.title3.bold().monospacedDigit())
             Text(title).font(.caption2).foregroundStyle(DemoStyle.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
@@ -150,7 +160,7 @@ struct AnalysisResultView: View {
                     Text("第 \(question.number) 题").font(.headline)
                     Spacer()
                     Text(presentation.label(for: question))
-                        .font(.subheadline.weight(.semibold))
+                        .font(DemoType.inlineMetric)
                         .foregroundStyle(presentation.labelTint(for: question))
                 }
                 Text(question.content).font(.body).fixedSize(horizontal: false, vertical: true)
@@ -158,19 +168,19 @@ struct AnalysisResultView: View {
                 if !question.choices.isEmpty {
                     VStack(alignment: .leading, spacing: 9) {
                         ForEach(question.choices.keys.sorted(), id: \.self) { key in
-                            HStack(alignment: .firstTextBaseline, spacing: 7) {
+                            HStack(alignment: .firstTextBaseline, spacing: 8) {
                                 Text("\(key).")
                                     .fontWeight(.semibold)
                                 Text(question.choices[key] ?? "")
                                 Spacer(minLength: 3)
                                 if key == question.studentAnswer {
-                                    Text("你的选择").font(.caption).foregroundStyle(.blue)
+                                    Text("你的选择").font(DemoType.meta).foregroundStyle(.blue)
                                 }
                                 if key == question.correctAnswer {
-                                    Text("参考答案").font(.caption).foregroundStyle(.green)
+                                    Text("参考答案").font(DemoType.meta).foregroundStyle(.green)
                                 }
                             }
-                            .font(.subheadline)
+                            .font(DemoType.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                         }
                     }
@@ -223,10 +233,12 @@ struct AnalysisResultView: View {
     private func answerRow(_ title: String, value: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 14) {
             Text(title).foregroundStyle(DemoStyle.secondary)
-                .frame(width: 72, alignment: .leading)
+                .fixedSize(horizontal: true, vertical: false)
+                .frame(minWidth: 72, alignment: .leading)
             Text(value).frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .font(.subheadline)
+        .font(DemoType.secondary)
     }
 
     private var correctQuestionsSection: some View {
@@ -258,7 +270,7 @@ struct AnalysisResultView: View {
                 }
                 if let delta = presentation.changeLabel(change) {
                     Text(delta)
-                        .font(.subheadline)
+                        .font(DemoType.secondary)
                         .foregroundStyle(DemoStyle.secondary)
                 }
             }

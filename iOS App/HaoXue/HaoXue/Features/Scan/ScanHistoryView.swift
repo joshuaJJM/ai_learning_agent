@@ -34,14 +34,14 @@ struct ScanHistoryView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 15) {
+            VStack(alignment: .leading, spacing: DemoMetrics.sectionGap) {
                 DemoPageHeader(title: "历史记录",
                                subtitle: "每一次扫描都留在服务器上，随时可以回看。")
                 content
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 26)
-            .padding(.bottom, 40)
+            .padding(.horizontal, DemoMetrics.pagePadding)
+            .padding(.top, DemoMetrics.pageTopPadding)
+            .padding(.bottom, DemoMetrics.pageBottomPadding)
         }
         .background(DemoStyle.background)
         .navigationTitle("历史记录")
@@ -65,43 +65,49 @@ struct ScanHistoryView: View {
 
     @ViewBuilder
     private var content: some View {
-        switch model.state {
-        case .idle, .loading:
-            DemoCard {
-                VStack(alignment: .leading, spacing: 12) {
-                    ProgressView().controlSize(.large)
-                    Text("正在读取扫描记录").font(.subheadline).foregroundStyle(DemoStyle.secondary)
-                }
-            }
-        case .failed(let message):
-            DemoCard {
-                VStack(alignment: .leading, spacing: 14) {
-                    Text(message).font(.subheadline).foregroundStyle(DemoStyle.secondary)
-                    Button("重新尝试") { model.refresh() }
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                }
-            }
-        case .loaded:
-            if model.isEmpty {
+        VStack(alignment: .leading, spacing: 12) {
+            switch model.state {
+            case .idle, .loading:
                 DemoCard {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("还没有扫描记录").font(.title3.bold())
-                        Text("从扫描页上传第一份作业后，这里会记录每一次分析。")
-                            .font(.subheadline)
+                    VStack(alignment: .leading, spacing: 12) {
+                        ProgressView().controlSize(.large)
+                        Text("正在读取扫描记录").font(DemoType.secondary)
                             .foregroundStyle(DemoStyle.secondary)
                     }
                 }
-            } else {
-                if model.refreshFailed {
-                    Label("列表刷新失败，稍后会自动重试", systemImage: "wifi.exclamationmark")
-                        .font(.caption)
-                        .foregroundStyle(DemoStyle.secondary)
+            case .failed(let message):
+                DemoCard {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text(message).font(DemoType.secondary).foregroundStyle(DemoStyle.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Button("重新尝试") { model.refresh() }
+                            .buttonStyle(DemoSecondaryButtonStyle())
+                    }
                 }
-                ForEach(model.batches) { batch in
-                    batchRow(batch)
+            case .loaded:
+                if model.isEmpty {
+                    DemoCard {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("还没有扫描记录").font(.title3.bold())
+                            Text("从扫描页上传第一份作业后，这里会记录每一次分析。")
+                                .font(DemoType.secondary)
+                                .foregroundStyle(DemoStyle.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                } else {
+                    if model.refreshFailed {
+                        Label("列表刷新失败，稍后会自动重试", systemImage: "wifi.exclamationmark")
+                            .font(DemoType.meta)
+                            .foregroundStyle(DemoStyle.secondary)
+                    }
+                    ForEach(model.batches) { batch in
+                        batchRow(batch)
+                    }
                 }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func batchRow(_ batch: ScanBatch) -> some View {

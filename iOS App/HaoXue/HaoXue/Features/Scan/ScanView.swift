@@ -22,7 +22,7 @@ struct ScanView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: DemoMetrics.sectionGap) {
                 header
                 if model.pages.isEmpty { emptyState } else {
                     pageCarousel
@@ -36,9 +36,9 @@ struct ScanView: View {
                 }
                 if model.isMock && model.state == .completed && store.scanAnalysisCompleted { scanResult }
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 26)
-            .padding(.bottom, 36)
+            .padding(.horizontal, DemoMetrics.pagePadding)
+            .padding(.top, DemoMetrics.pageTopPadding)
+            .padding(.bottom, DemoMetrics.pageBottomPadding)
         }
         .background(DemoStyle.background)
         .photosPicker(isPresented: $showingPhotoPicker, selection: $selectedPhotos,
@@ -135,7 +135,7 @@ struct ScanView: View {
             Button { showingHistory = true } label: {
                 Image(systemName: "clock.arrow.circlepath")
                     .font(.title3)
-                    .frame(width: 44, height: 44)
+                    .frame(width: DemoMetrics.iconButtonSize, height: DemoMetrics.iconButtonSize)
             }
             .accessibilityLabel("历史记录")
             .accessibilityIdentifier("scan-history-button")
@@ -144,7 +144,7 @@ struct ScanView: View {
             } label: {
                 Image(systemName: "ellipsis.circle")
                     .font(.title3)
-                    .frame(width: 44, height: 44)
+                    .frame(width: DemoMetrics.iconButtonSize, height: DemoMetrics.iconButtonSize)
             }
             .disabled(!model.canEdit)
             .accessibilityLabel("扫描设置")
@@ -155,11 +155,11 @@ struct ScanView: View {
         DemoCard {
             VStack(spacing: 20) {
                 Image(systemName: "doc.viewfinder")
-                    .font(.system(size: 58, weight: .ultraLight))
+                    .font(DemoMetrics.emptyStateSymbol)
                     .foregroundStyle(.blue)
                 Text("从一页作业开始").font(.title2.bold())
                 Text("可以连续扫描多页，也可以从相册选择。开始分析前，还能继续添加和删除页面。")
-                    .font(.subheadline)
+                    .font(DemoType.secondary)
                     .foregroundStyle(DemoStyle.secondary)
                     .multilineTextAlignment(.center)
                 scanButton
@@ -175,9 +175,9 @@ struct ScanView: View {
     }
 
     private var pageCarousel: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: DemoMetrics.sectionTitleGap) {
             Text("已扫描 \(model.pages.count) 页")
-                .font(.headline)
+                .font(DemoType.sectionTitle)
                 .foregroundStyle(DemoStyle.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
             GeometryReader { geometry in
@@ -194,7 +194,8 @@ struct ScanView: View {
                                         .scaledToFit()
                                         .frame(maxWidth: .infinity)
                                         .frame(height: 350)
-                                        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
+                                        .background(Color(uiColor: .secondarySystemBackground),
+                                                    in: RoundedRectangle(cornerRadius: DemoMetrics.controlCornerRadius))
                                 }
                             }
                             .frame(width: max(geometry.size.width - 64, 220))
@@ -212,7 +213,7 @@ struct ScanView: View {
             }
             .frame(height: 430)
             Text("\(currentIndex + 1) / \(model.pages.count)")
-                .font(.subheadline)
+                .font(DemoType.secondary.monospacedDigit())
                 .foregroundStyle(DemoStyle.secondary)
                 .frame(maxWidth: .infinity)
                 .accessibilityLabel("第 \(currentIndex + 1) 页，共 \(model.pages.count) 页")
@@ -225,7 +226,7 @@ struct ScanView: View {
     }
 
     private var reviewControls: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 12) {
             HStack(spacing: 12) {
                 Button(role: .destructive) {
                     let index = currentIndex
@@ -250,13 +251,13 @@ struct ScanView: View {
                 store.resetScanResult()
                 model.start()
             }
-                .buttonStyle(PrimaryScanButtonStyle())
+                .buttonStyle(DemoPrimaryButtonStyle())
         }
     }
 
     private var scanButton: some View {
         Button(action: openScanner) { Label("扫描文档", systemImage: "doc.viewfinder") }
-            .buttonStyle(PrimaryScanButtonStyle())
+            .buttonStyle(DemoPrimaryButtonStyle())
     }
 
     private var photoButton: some View {
@@ -264,7 +265,7 @@ struct ScanView: View {
             Label("从照片选择", systemImage: "photo.on.rectangle")
                 .font(.headline)
                 .frame(maxWidth: .infinity)
-                .frame(minHeight: 44)
+                .frame(minHeight: DemoMetrics.controlMinHeight)
         }
         .buttonStyle(.bordered)
     }
@@ -303,21 +304,9 @@ struct ScanView: View {
                 Text("完整题目结果将在后续集成阶段接入。你可以继续体验现有学习演示。")
                     .font(.subheadline).foregroundStyle(DemoStyle.secondary)
                 Button("开始学习") { onStart(nil) }
-                    .buttonStyle(PrimaryScanButtonStyle())
+                    .buttonStyle(DemoPrimaryButtonStyle())
             }
         }
-    }
-}
-
-private struct PrimaryScanButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.headline)
-            .foregroundStyle(.white)
-            .frame(maxWidth: .infinity)
-            .frame(minHeight: 50)
-            .background(.blue, in: Capsule())
-            .opacity(configuration.isPressed ? 0.75 : 1)
     }
 }
 
@@ -348,6 +337,7 @@ private struct AnalysisProgressView: View {
                     }
                     ForEach(progress.stages) { stage in
                         Label(stage.labelZH, systemImage: symbol(for: stage.state))
+                            .font(DemoType.secondary)
                             .foregroundStyle(stage.state == .failed || (stage.state == .active && model.state == .failed) ? .red :
                                              stage.state == .retrying ? .orange :
                                              stage.state == .active ? .blue : DemoStyle.secondary)
@@ -362,18 +352,18 @@ private struct AnalysisProgressView: View {
                         if ScanFailurePresentation(code: model.errorCode).requiresNewScan { model.newScan() }
                         else { model.retry() }
                     }
-                    .buttonStyle(PrimaryScanButtonStyle())
+                    .buttonStyle(DemoPrimaryButtonStyle())
                 }
                 if model.state == .completed {
                     Text("本次分析结果已准备好")
                         .font(.subheadline).foregroundStyle(DemoStyle.secondary)
                     Button("查看分析结果", action: onResult)
-                        .buttonStyle(PrimaryScanButtonStyle())
+                        .buttonStyle(DemoPrimaryButtonStyle())
                     Button("新建一次扫描") {
                         model.newScan()
                         onNewScan()
                     }
-                        .frame(maxWidth: .infinity, minHeight: 44)
+                    .buttonStyle(DemoSecondaryButtonStyle())
                 }
             }
         }

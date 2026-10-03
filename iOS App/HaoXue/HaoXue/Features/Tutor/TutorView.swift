@@ -16,15 +16,17 @@ struct TutorView: View {
         VStack(spacing: 0) {
             HStack {
                 Button(action: onClose) { Image(systemName: "xmark") }
+                    .frame(width: DemoMetrics.iconButtonSize, height: DemoMetrics.iconButtonSize, alignment: .leading)
                     .accessibilityLabel("关闭课程")
                 Spacer()
-                Text(store.lessonTitle).font(.headline)
+                Text(store.lessonTitle).font(.headline).lineLimit(1)
                 Spacer()
                 Button("草稿本") { showingScratchpad = true }
+                    .frame(height: DemoMetrics.iconButtonSize)
                     .accessibilityLabel("草稿本")
             }
-            .padding(.horizontal, 22)
-            .padding(.vertical, 19)
+            .padding(.horizontal, DemoMetrics.sessionPadding)
+            .padding(.vertical, 8)
             .background(DemoStyle.background)
             .overlay(alignment: .bottom) { Divider().opacity(0.3) }
 
@@ -86,17 +88,20 @@ struct TutorView: View {
     }
 
     private var questionContent: some View {
-        VStack(alignment: .leading, spacing: 22) {
+        VStack(alignment: .leading, spacing: 20) {
             if let question = model.session.currentQuestion {
                 Text("理解检查")
-                    .font(.subheadline.bold()).foregroundStyle(DemoStyle.secondary)
+                    .font(DemoType.secondary.weight(.bold)).foregroundStyle(DemoStyle.secondary)
                 Text(question.lead).font(.title2.bold())
+                    .fixedSize(horizontal: false, vertical: true)
                 Text(question.expression)
-                    .font(.system(size: 34, weight: .semibold))
+                    .font(.title.weight(.semibold))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 24)
-                    .background(DemoStyle.background, in: RoundedRectangle(cornerRadius: 18))
+                    .background(DemoStyle.background,
+                                in: RoundedRectangle(cornerRadius: DemoMetrics.controlCornerRadius))
                 Text(question.prompt).font(.title3.bold())
+                    .fixedSize(horizontal: false, vertical: true)
                 ForEach(question.choices, id: \.id) { choice in
                     choiceButton(choice, question: question)
                 }
@@ -107,12 +112,13 @@ struct TutorView: View {
                     .foregroundStyle(DemoStyle.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(17)
-                    .background(DemoStyle.background, in: RoundedRectangle(cornerRadius: 16))
+                    .background(DemoStyle.background,
+                                in: RoundedRectangle(cornerRadius: DemoMetrics.controlCornerRadius))
                 if model.session.hasSubmitted { feedbackContent(question) }
             }
         }
-        .padding(.horizontal, 22)
-        .padding(.top, 42)
+        .padding(.horizontal, DemoMetrics.sessionPadding)
+        .padding(.top, DemoMetrics.sessionContentTop)
         .padding(.bottom, 24)
     }
 
@@ -121,31 +127,12 @@ struct TutorView: View {
         let isCorrect = submitted && choice.id == question.correctAnswer
         let isWrong = submitted && choice.id == model.session.selectedAnswer && !isCorrect
         let isSelected = !submitted && choice.id == model.session.selectedAnswer
-        let color: Color = isCorrect ? .green : (isWrong ? .red : .blue)
-        return Button {
+        let emphasis: DemoChoiceRow.Emphasis = isCorrect ? .correct
+            : (isWrong ? .wrong : (isSelected ? .selected : .idle))
+        return DemoChoiceRow(key: choice.id.rawValue, text: choice.text, emphasis: emphasis) {
             model.select(choice.id)
-        } label: {
-            HStack(spacing: 15) {
-                Text(choice.id.rawValue)
-                    .font(.headline)
-                    .frame(width: 34, height: 34)
-                    .background(DemoStyle.background, in: Circle())
-                Text(choice.text).font(.body.weight(.medium))
-                Spacer()
-                if isCorrect { Label("正确答案", systemImage: "checkmark.circle.fill").font(.caption) }
-                else if isWrong { Label("选择错误", systemImage: "xmark.circle.fill").font(.caption) }
-                else if isSelected { Image(systemName: "checkmark").accessibilityHidden(true) }
-            }
-            .padding(12)
-            .foregroundStyle(.primary)
-            .background(isCorrect || isWrong || isSelected ? color.opacity(0.09) : .clear,
-                        in: RoundedRectangle(cornerRadius: 17))
-            .overlay(RoundedRectangle(cornerRadius: 17)
-                .stroke(isCorrect || isWrong || isSelected ? color : Color(uiColor: .systemGray4)))
         }
         .disabled(submitted)
-        .accessibilityIdentifier("choice-\(choice.id.rawValue)")
-        .accessibilityLabel("选项 \(choice.id.rawValue)，\(choice.text)\(isCorrect ? "，正确答案" : isWrong ? "，选择错误" : isSelected ? "，已选择" : "")")
     }
 
     private func feedbackContent(_ question: TutorQuestion) -> some View {
@@ -164,23 +151,24 @@ struct TutorView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 16))
+        .background(Color.blue.opacity(0.08),
+                    in: RoundedRectangle(cornerRadius: DemoMetrics.controlCornerRadius))
     }
 
     private var completionContent: some View {
         VStack(alignment: .leading, spacing: 22) {
             Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 45)).foregroundStyle(.green)
+                .font(.system(.largeTitle, design: .default)).foregroundStyle(.green)
             Text("学习完成").font(.largeTitle.bold())
             Text(store.lessonTitle).font(.title2)
             Text("\(model.session.startingMastery.demoPercent) → \(model.session.displayedMastery.demoPercent)")
-                .font(.system(size: 34, weight: .bold))
+                .font(DemoType.metric)
                 .foregroundStyle(.green)
             Text("本次重点提升").foregroundStyle(DemoStyle.secondary)
             Text("导数符号与函数单调性的关系").font(.title3.bold())
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 24)
+        .padding(.horizontal, DemoMetrics.sessionPadding)
         .padding(.top, 85)
     }
 

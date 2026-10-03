@@ -31,15 +31,17 @@ struct PracticeSessionView: View {
                     model.cancel()
                     onClose()
                 } label: { Image(systemName: "xmark") }
+                    .frame(width: DemoMetrics.iconButtonSize, height: DemoMetrics.iconButtonSize, alignment: .leading)
                     .accessibilityLabel("关闭练习")
                 Spacer()
                 Text("针对性练习").font(.headline).lineLimit(1)
                 Spacer()
                 Button("草稿本") { showingScratchpad = true }
+                    .frame(height: DemoMetrics.iconButtonSize)
                     .accessibilityLabel("草稿本")
             }
-            .padding(.horizontal, 22)
-            .padding(.vertical, 19)
+            .padding(.horizontal, DemoMetrics.sessionPadding)
+            .padding(.vertical, 8)
             .background(DemoStyle.background)
             .overlay(alignment: .bottom) { Divider().opacity(0.3) }
 
@@ -84,7 +86,7 @@ struct PracticeSessionView: View {
     // MARK: - Question
 
     private func questionContent(_ question: PracticeQuestion) -> some View {
-        VStack(alignment: .leading, spacing: 22) {
+        VStack(alignment: .leading, spacing: 20) {
             contextHeader
             Text("第 \(model.progressText) 题")
                 .font(.subheadline)
@@ -99,8 +101,8 @@ struct PracticeSessionView: View {
                 ForEach(question.choices) { choice in choiceButton(choice) }
             }
         }
-        .padding(.horizontal, 22)
-        .padding(.top, 32)
+        .padding(.horizontal, DemoMetrics.sessionPadding)
+        .padding(.top, DemoMetrics.sessionContentTop)
         .padding(.bottom, 24)
     }
 
@@ -118,32 +120,16 @@ struct PracticeSessionView: View {
     /// Selection is local presentation state: no verdict, no colour, no mastery.
     private func choiceButton(_ choice: PracticeChoice) -> some View {
         let selected = model.selectedChoiceKey == choice.key
-        return Button { model.select(choice.key) } label: {
-            HStack(spacing: 15) {
-                Text(choice.key)
-                    .font(.headline)
-                    .frame(width: 34, height: 34)
-                    .background(DemoStyle.background, in: Circle())
-                SafeMathText(choice.text).font(.body.weight(.medium))
-                    .fixedSize(horizontal: false, vertical: true)
-                    .multilineTextAlignment(.leading)
-                Spacer(minLength: 8)
-                if selected { Image(systemName: "checkmark") }
-            }
-            .padding(12)
-            .foregroundStyle(.primary)
-            .background(selected ? Color.blue.opacity(0.09) : .clear,
-                        in: RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8)
-                .stroke(selected ? .blue : Color(uiColor: .systemGray4)))
+        return DemoChoiceRow(key: choice.key, text: choice.text,
+                             emphasis: selected ? .selected : .idle) {
+            model.select(choice.key)
         }
-        .accessibilityIdentifier("choice-\(choice.key)")
     }
 
     // MARK: - Result
 
     private func resultContent(_ outcome: PracticeAnswerOutcome) -> some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 22) {
             Label(outcome.isCorrect ? "回答正确" : "再看看这里",
                   systemImage: outcome.isCorrect ? "checkmark.circle.fill"
                                                  : "exclamationmark.circle.fill")
@@ -160,7 +146,8 @@ struct PracticeSessionView: View {
             .padding(.vertical, 12)
             .padding(.horizontal, 16)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(DemoStyle.background, in: RoundedRectangle(cornerRadius: 12))
+            .background(DemoStyle.background,
+                        in: RoundedRectangle(cornerRadius: DemoMetrics.controlCornerRadius))
 
             if let explanation = outcome.explanation, !explanation.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {
@@ -222,8 +209,8 @@ struct PracticeSessionView: View {
                 .foregroundStyle(DemoStyle.secondary)
                 .accessibilityIdentifier("practice-result-progress")
         }
-        .padding(.horizontal, 22)
-        .padding(.top, 32)
+        .padding(.horizontal, DemoMetrics.sessionPadding)
+        .padding(.top, DemoMetrics.sessionContentTop)
         .padding(.bottom, 24)
     }
 
@@ -246,7 +233,7 @@ struct PracticeSessionView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 22)
+        .padding(.horizontal, DemoMetrics.sessionPadding)
         .padding(.top, 100)
     }
 
@@ -261,7 +248,7 @@ struct PracticeSessionView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 22)
+        .padding(.horizontal, DemoMetrics.sessionPadding)
         .padding(.top, 100)
         .accessibilityIdentifier("practice-submit-error")
     }
@@ -314,7 +301,7 @@ struct PracticeSessionView: View {
                     .foregroundStyle(DemoStyle.secondary)
                     .accessibilityIdentifier("practice-submit-exit")
             }
-            .padding(.horizontal, 22)
+            .padding(.horizontal, DemoMetrics.sessionPadding)
             .padding(.top, 16)
             .padding(.bottom, 10)
             .background(DemoStyle.background)
@@ -355,7 +342,7 @@ struct PracticeSessionView: View {
         .disabled(!enabled)
         .opacity(enabled ? 1 : 0.5)
         .accessibilityIdentifier(identifier)
-        .padding(.horizontal, 22)
+        .padding(.horizontal, DemoMetrics.sessionPadding)
         .padding(.top, 16)
         .padding(.bottom, 10)
         .background(DemoStyle.background)

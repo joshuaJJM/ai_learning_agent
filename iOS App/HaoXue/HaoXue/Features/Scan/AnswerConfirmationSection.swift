@@ -19,7 +19,7 @@ struct AnswerConfirmationSection: View {
             Text("确认标准答案").font(.headline)
 
             Text("请根据答案册选择本题的标准答案。")
-                .font(.subheadline)
+                .font(DemoType.secondary)
                 .foregroundStyle(DemoStyle.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -38,7 +38,7 @@ struct AnswerConfirmationSection: View {
                     if model.isSubmitting { ProgressView().controlSize(.small) }
                     Text(model.isSubmitting ? "提交中" : "确认答案")
                 }
-                .frame(maxWidth: .infinity, minHeight: 44)
+                .frame(maxWidth: .infinity, minHeight: DemoMetrics.controlMinHeight)
             }
             .disabled(!model.canConfirm)
             .accessibilityIdentifier("confirm-answer-submit")
@@ -59,7 +59,7 @@ struct AnswerConfirmationSection: View {
         } label: {
             Text(choice)
                 .font(.headline)
-                .frame(minWidth: 44, minHeight: 40)
+                .frame(minWidth: DemoMetrics.controlMinHeight, minHeight: 40)
                 .background(selected ? Color.blue : DemoStyle.background,
                             in: RoundedRectangle(cornerRadius: 10))
                 .foregroundStyle(selected ? .white : .primary)

@@ -31,14 +31,21 @@ struct RemoteTutorView: View {
                     model.cancel()
                     onClose(model.completed || model.sessionMissing)
                 } label: { Image(systemName: "xmark") }
+                    .frame(width: DemoMetrics.iconButtonSize, height: DemoMetrics.iconButtonSize, alignment: .leading)
                     .accessibilityLabel("关闭课程")
                 Spacer()
-                Text(model.knowledgePointName).font(.headline).lineLimit(1)
+                Text(model.knowledgePointName)
+                    .font(.headline)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
                 Spacer()
                 Button("草稿本") { showingScratchpad = true }
+                    .frame(height: DemoMetrics.iconButtonSize)
+                    .accessibilityLabel("草稿本")
             }
-            .padding(.horizontal, 22)
-            .padding(.vertical, 19)
+            .padding(.horizontal, DemoMetrics.sessionPadding)
+            .padding(.vertical, 8)
             .background(DemoStyle.background)
             .overlay(alignment: .bottom) { Divider().opacity(0.3) }
 
@@ -87,18 +94,20 @@ struct RemoteTutorView: View {
     }
 
     private func turnContent(_ turn: TutorTurnDTO) -> some View {
-        VStack(alignment: .leading, spacing: 22) {
+        VStack(alignment: .leading, spacing: 20) {
             Text(turn.remedialDepth > 0 ? "换个角度 · 第 \(turn.remedialDepth) / 4 层" : "理解检查")
-                .font(.subheadline.bold()).foregroundStyle(DemoStyle.secondary)
+                .font(DemoType.secondary.weight(.bold)).foregroundStyle(DemoStyle.secondary)
             SafeMathText(turn.text)
                 .font(.title3.weight(.semibold))
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
             if model.pendingNextTurn == nil, !model.isSubmitting,
                let feedback = model.feedback, !turn.text.hasPrefix(feedback) {
-                SafeMathText(feedback).font(.subheadline)
+                SafeMathText(feedback).font(DemoType.secondary)
                     .padding(12)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                    .background(Color.blue.opacity(0.08),
+                                in: RoundedRectangle(cornerRadius: DemoMetrics.controlCornerRadius))
             }
             if model.isSubmitting {
                 VStack(alignment: .leading, spacing: 12) {
@@ -110,7 +119,8 @@ struct RemoteTutorView: View {
                     }
                 }
                 .padding(16)
-                .background(DemoStyle.background, in: RoundedRectangle(cornerRadius: 8))
+                .background(DemoStyle.background,
+                            in: RoundedRectangle(cornerRadius: DemoMetrics.controlCornerRadius))
             }
             if model.pendingNextTurn == nil && !model.isSubmitting {
                 ForEach(turn.choices) { choice in choiceButton(choice) }
@@ -118,7 +128,8 @@ struct RemoteTutorView: View {
                     TextField("写下你的想法", text: $model.freeText, axis: .vertical)
                         .lineLimit(3...6)
                         .padding(14)
-                        .background(DemoStyle.background, in: RoundedRectangle(cornerRadius: 8))
+                        .background(DemoStyle.background,
+                                    in: RoundedRectangle(cornerRadius: DemoMetrics.controlCornerRadius))
                 }
             }
             if model.pendingNextTurn != nil { feedbackContent }
@@ -133,32 +144,18 @@ struct RemoteTutorView: View {
                     .font(.subheadline).foregroundStyle(.red)
             }
         }
-        .padding(.horizontal, 22)
-        .padding(.top, 42)
+        .padding(.horizontal, DemoMetrics.sessionPadding)
+        .padding(.top, DemoMetrics.sessionContentTop)
         .padding(.bottom, 24)
         .animation(.easeInOut(duration: 0.2), value: model.turn?.turnId)
     }
 
     private func choiceButton(_ choice: TutorChoiceDTO) -> some View {
         let selected = model.selectedKey == choice.key
-        return Button { model.select(choice.key) } label: {
-            HStack(spacing: 15) {
-                Text(choice.key)
-                    .font(.headline)
-                    .frame(width: 34, height: 34)
-                    .background(DemoStyle.background, in: Circle())
-                SafeMathText(choice.text).font(.body.weight(.medium))
-                Spacer()
-                if selected { Image(systemName: "checkmark") }
-            }
-            .padding(12)
-            .foregroundStyle(.primary)
-            .background(selected ? Color.blue.opacity(0.09) : .clear,
-                        in: RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8)
-                .stroke(selected ? .blue : Color(uiColor: .systemGray4)))
+        return DemoChoiceRow(key: choice.key, text: choice.text,
+                             emphasis: selected ? .selected : .idle) {
+            model.select(choice.key)
         }
-        .accessibilityIdentifier("choice-\(choice.key)")
     }
 
     private var feedbackContent: some View {
@@ -188,7 +185,8 @@ struct RemoteTutorView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+        .background(Color.blue.opacity(0.08),
+                    in: RoundedRectangle(cornerRadius: DemoMetrics.controlCornerRadius))
     }
 
     private var footer: some View {
@@ -221,7 +219,7 @@ struct RemoteTutorView: View {
                     .font(.caption).foregroundStyle(DemoStyle.secondary)
             }
         }
-        .padding(.horizontal, 22)
+        .padding(.horizontal, DemoMetrics.sessionPadding)
         .padding(.top, 16)
         .padding(.bottom, 10)
         .background(DemoStyle.background)
@@ -256,7 +254,7 @@ struct RemoteTutorView: View {
     private var completionContent: some View {
         VStack(alignment: .leading, spacing: 22) {
             Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 45)).foregroundStyle(.green)
+                .font(.system(.largeTitle, design: .default)).foregroundStyle(.green)
             Text("学习完成").font(.largeTitle.bold())
             Text(model.knowledgePointName).font(.title2)
             if let summary = model.turn?.text, !summary.isEmpty {
@@ -266,9 +264,10 @@ struct RemoteTutorView: View {
             ForEach(model.completionChanges, id: \.knowledgePointId) { change in
                 // Server values only: the client never recomputes mastery.
                 Text("\(change.before.demoPercent) → \(change.after.demoPercent)")
-                    .font(.system(size: 34, weight: .bold))
+                    .font(DemoType.metric)
                     .foregroundStyle(.green)
                 Text("\(change.name)的掌握度变化").foregroundStyle(DemoStyle.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             if model.completionChanges.isEmpty {
                 Text("本轮学习已完成").font(.body)
@@ -286,13 +285,12 @@ struct RemoteTutorView: View {
             }
             if case .practice(let knowledgePointID) = model.completionRoute {
                 Button("开始针对性练习") { onStartPractice(knowledgePointID) }
-                    .buttonStyle(.borderedProminent)
-                    .frame(maxWidth: .infinity)
+                    .buttonStyle(DemoPrimaryButtonStyle())
                     .accessibilityIdentifier("tutor-start-practice")
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 24)
+        .padding(.horizontal, DemoMetrics.sessionPadding)
         .padding(.top, 85)
     }
 
