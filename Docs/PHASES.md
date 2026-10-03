@@ -113,9 +113,11 @@ Tutor 会话 ID 按后端来源上下文保存在当前 App 进程内；重新�
 - [x] Scan 右上角「历史记录」入口 + `ScanHistoryView`，数据来自
       `GET /api/v1/homework/batches?limit=50`
 - [x] 历史详情复用同一个 `AnalysisResultView` / Domain Model / 结果接口
-- [x] Commit（`phase-8: sync backend contract and add scan history`）
-- [ ] unknown 标准答案人工确认：前端选择/提交状态机与 UI 组件已就绪并有单测，
-      但**未接线、也未假定接口结构**；等后端 `confirm-answer` 最终 Contract 落地后接入
+- [x] unknown 标准答案人工确认：接入后端 `confirm-answer`（Contract `8A-final`，commit 629f99e）
+      —— 选择/确认两步、提交中禁用、`Idempotency-Key` 重试、成功后重拉分析结果
+- [x] 4 个新错误码（`QUESTION_NOT_FOUND` / `INVALID_ANSWER` /
+      `QUESTION_NOT_CONFIRMABLE` / `QUESTION_ALREADY_RESOLVED`）进入 `ServiceErrorCode`
+- [x] Commit（`phase-8: sync backend contract and add scan history` 等 4 个 commit）
 
 ### Phase 8B — Online Reliability QA
 

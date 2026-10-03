@@ -12,6 +12,10 @@ struct ScanHistoryView: View {
 
     @State private var model: ScanHistoryViewModel
     @State private var showingResult = false
+    @State private var resultModel: AnalysisResultModel?
+    /// Previews and UI tests inject a mock service; only a live list gets the
+    /// live confirmation path.
+    private let usesLiveBackend: Bool
 
     init(service: (any ScanHistoryServing)? = nil,
          onStartTutor: @escaping (String?) -> Void,
@@ -20,6 +24,7 @@ struct ScanHistoryView: View {
          onOpenKnowledge: @escaping (String) -> Void,
          onReturnHome: @escaping () -> Void) {
         _model = State(initialValue: ScanHistoryViewModel(service: service))
+        self.usesLiveBackend = service == nil
         self.onStartTutor = onStartTutor
         self.onStartPractice = onStartPractice
         self.onOpenWrongQuestion = onOpenWrongQuestion
@@ -45,13 +50,14 @@ struct ScanHistoryView: View {
         .onAppear { model.start() }
         .onDisappear { model.stop() }
         .navigationDestination(isPresented: $showingResult) {
-            if let result = model.openedResult {
-                AnalysisResultView(result: result, onStartTutor: onStartTutor,
+            if let resultModel {
+                AnalysisResultView(model: resultModel, onStartTutor: onStartTutor,
                                    onStartPractice: onStartPractice,
                                    onOpenWrongQuestion: onOpenWrongQuestion,
                                    onOpenKnowledge: onOpenKnowledge) {
                     showingResult = false
                     model.clearOpenedResult()
+                    self.resultModel = nil
                 }
             }
         }
@@ -103,7 +109,10 @@ struct ScanHistoryView: View {
             guard !batch.isProcessing else { return }
             Task {
                 await model.openResult(id: batch.analysisID)
-                if model.openedResult != nil { showingResult = true }
+                guard let result = model.openedResult else { return }
+                resultModel = usesLiveBackend ? AnalysisResultModel(liveResult: result)
+                                              : AnalysisResultModel(result: result)
+                showingResult = true
             }
         } label: {
             DemoCard {

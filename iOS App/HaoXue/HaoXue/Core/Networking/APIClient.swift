@@ -14,9 +14,12 @@ enum NetworkError: Error, Equatable {
 // (`GET /api/v1/meta/error-codes`); `unknown` preserves any code added later.
 enum ServiceErrorCode: Equatable {
     case unauthorized, notFound, analysisNotFound, sessionNotFound
-    case knowledgePointNotFound, wrongQuestionNotFound, bookNotFound, noQuestionsAvailable
-    case invalidImage, invalidSerialNumber, questionNotInSession, questionNotRecognized
-    case validationError, sessionCompleted, idempotencyConflict, vlmTimeout
+    case knowledgePointNotFound, wrongQuestionNotFound, questionNotFound, bookNotFound
+    case noQuestionsAvailable
+    case invalidImage, invalidAnswer, invalidSerialNumber, questionNotInSession
+    case questionNotRecognized
+    case validationError, sessionCompleted, questionNotConfirmable, questionAlreadyResolved
+    case idempotencyConflict, vlmTimeout
     case serviceUnavailable, internalError
     case unknown(String)
 
@@ -28,14 +31,18 @@ enum ServiceErrorCode: Equatable {
         case "SESSION_NOT_FOUND": self = .sessionNotFound
         case "KNOWLEDGE_POINT_NOT_FOUND": self = .knowledgePointNotFound
         case "WRONG_QUESTION_NOT_FOUND": self = .wrongQuestionNotFound
+        case "QUESTION_NOT_FOUND": self = .questionNotFound
         case "BOOK_NOT_FOUND": self = .bookNotFound
         case "NO_QUESTIONS_AVAILABLE": self = .noQuestionsAvailable
         case "INVALID_IMAGE": self = .invalidImage
+        case "INVALID_ANSWER": self = .invalidAnswer
         case "INVALID_SERIAL_NUMBER": self = .invalidSerialNumber
         case "QUESTION_NOT_IN_SESSION": self = .questionNotInSession
         case "QUESTION_NOT_RECOGNIZED": self = .questionNotRecognized
         case "VALIDATION_ERROR": self = .validationError
         case "SESSION_COMPLETED": self = .sessionCompleted
+        case "QUESTION_NOT_CONFIRMABLE": self = .questionNotConfirmable
+        case "QUESTION_ALREADY_RESOLVED": self = .questionAlreadyResolved
         case "IDEMPOTENCY_CONFLICT": self = .idempotencyConflict
         case "VLM_TIMEOUT": self = .vlmTimeout
         case "SERVICE_UNAVAILABLE": self = .serviceUnavailable

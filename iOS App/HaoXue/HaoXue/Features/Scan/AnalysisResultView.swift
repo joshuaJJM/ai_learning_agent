@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct AnalysisResultView: View {
-    let result: HomeworkAnalysisResult
+    let model: AnalysisResultModel
     let onStartTutor: (String?) -> Void
     let onStartPractice: (String?) -> Void
     let onOpenWrongQuestion: (String) -> Void
@@ -10,6 +10,9 @@ struct AnalysisResultView: View {
 
     @State private var showsCorrectQuestions = false
 
+    /// The displayed result is always the server's latest answer for this
+    /// analysis; confirming a standard answer reloads it.
+    private var result: HomeworkAnalysisResult { model.result }
     private var presentation: AnalysisResultPresentation { AnalysisResultPresentation(result: result) }
 
     var body: some View {
@@ -114,6 +117,18 @@ struct AnalysisResultView: View {
                         .font(.caption)
                         .foregroundStyle(DemoStyle.secondary)
                 }
+                if model.isReloading {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("正在更新结果").font(.caption).foregroundStyle(DemoStyle.secondary)
+                    }
+                    .accessibilityIdentifier("analysis-reloading")
+                }
+                if let reloadError = model.reloadError {
+                    Label(reloadError, systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
             }
         }
     }
@@ -177,6 +192,15 @@ struct AnalysisResultView: View {
                         .foregroundStyle(DemoStyle.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("analysis-unanswered-\(question.id)")
+                }
+
+                if let confirmation = model.confirmation(for: question) {
+                    Divider()
+                    AnswerConfirmationSection(model: confirmation,
+                                              studentAnswer: question.studentAnswer,
+                                              possibleAnswer: question.possibleAnswer) {
+                        await model.refreshAfterConfirmation()
+                    }
                 }
 
                 if !question.diagnosis.isEmpty {

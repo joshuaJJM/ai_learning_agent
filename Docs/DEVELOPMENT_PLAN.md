@@ -368,9 +368,10 @@ phase-8: sync backend contract and add scan history
 phase-8: integrate manual answer confirmation
 ```
 
-> `confirm-answer` 的 Contract 目前仍在与 Backend Agent 协商
-> （proposal 已通过协调服务发出）。后端写入 `docs/API.md` 并实现前，
-> iOS 不假定其结构，也不提交「伪完成」状态。
+> `confirm-answer` 的 Contract 已由后端定稿（`8A-final`，commit 629f99e，
+> `docs/API.md` §2.2.3）并实现上线；iOS 侧已按最终 Contract 接入：
+> 仅 `unknown` 显示确认区、选择与确认分离、同题同答案复用同一个
+> `Idempotency-Key`、`409 IDEMPOTENCY_CONFLICT` 原样重发、成功后重拉分析结果。
 
 ### Phase 8B — Online Reliability QA
 

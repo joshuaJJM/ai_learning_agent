@@ -13,6 +13,9 @@ struct AnswerConfirmationSection: View {
     let model: AnswerConfirmationModel
     let studentAnswer: String?
     let possibleAnswer: String?
+    /// Called after the server accepted the confirmation so the screen can
+    /// reload the authoritative result.
+    var onConfirmed: () async -> Void = {}
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -35,7 +38,9 @@ struct AnswerConfirmationSection: View {
             }
 
             Button {
-                Task { await model.confirm() }
+                Task {
+                    if await model.confirm() { await onConfirmed() }
+                }
             } label: {
                 HStack(spacing: 8) {
                     if model.isSubmitting { ProgressView().controlSize(.small) }

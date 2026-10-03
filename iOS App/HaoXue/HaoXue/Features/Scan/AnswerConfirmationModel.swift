@@ -85,7 +85,16 @@ final class AnswerConfirmationModel {
         if let network = error as? NetworkError {
             switch network {
             case .backend(let code, _, _, _):
-                return ScanFailurePresentation(code: code).message
+                switch ServiceErrorCode(rawValue: code) {
+                case .questionNotConfirmable:
+                    return "这道题现在无法确认（学生未作答，或分析还没完成）。"
+                case .questionAlreadyResolved:
+                    return "这道题已经确认过了，正在刷新最新结果。"
+                case .invalidAnswer:
+                    return "这个选项不在本题的选项中，请重新选择。"
+                default:
+                    return ScanFailurePresentation(code: code).message
+                }
             case .timeout, .transport, .invalidResponse:
                 return "确认没有提交成功，请重试。"
             case .cancelled, .decoding, .httpStatus:

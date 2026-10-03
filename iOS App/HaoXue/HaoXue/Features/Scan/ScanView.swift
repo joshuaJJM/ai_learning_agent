@@ -18,6 +18,7 @@ struct ScanView: View {
     @State private var importError = false
     @State private var showingResult = false
     @State private var showingHistory = false
+    @State private var resultModel: AnalysisResultModel?
 
     var body: some View {
         ScrollView {
@@ -96,12 +97,13 @@ struct ScanView: View {
         .onDisappear { model.stop() }
         .onChange(of: model.state) { _, state in
             if state == .completed, !model.isMock, model.completedResult != nil {
+                presentResult()
                 showingResult = true
             }
         }
         .navigationDestination(isPresented: $showingResult) {
-            if let result = model.completedResult {
-                AnalysisResultView(result: result, onStartTutor: onStart,
+            if let resultModel {
+                AnalysisResultView(model: resultModel, onStartTutor: onStart,
                                    onStartPractice: onStartPractice,
                                    onOpenWrongQuestion: onOpenWrongQuestion,
                                    onOpenKnowledge: onOpenKnowledge) {
@@ -116,6 +118,14 @@ struct ScanView: View {
                             onOpenKnowledge: onOpenKnowledge,
                             onReturnHome: onReturnHome)
         }
+    }
+
+    /// Builds the result screen for the batch that just finished. Manual answer
+    /// confirmation is only attached for a real backend result.
+    private func presentResult() {
+        guard let result = model.completedResult else { return }
+        resultModel = model.isMock ? AnalysisResultModel(result: result)
+                                   : AnalysisResultModel(liveResult: result)
     }
 
     private var header: some View {

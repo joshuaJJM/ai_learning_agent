@@ -173,6 +173,15 @@ IDEMPOTENCY_CONFLICT
 INTERNAL_ERROR
 ```
 
+Phase 8A 新增（人工确认标准答案，后端共 22 个错误码）：
+
+```text
+QUESTION_NOT_FOUND            404  这道题不属于该分析
+INVALID_ANSWER                400  提交的选项不在本题 choices 里
+QUESTION_NOT_CONFIRMABLE      409  学生未作答，或分析还没跑完
+QUESTION_ALREADY_RESOLVED     409  已确认过，这次答案不同
+```
+
 前端不应通过匹配中文错误文案来判断逻辑。
 
 ---
@@ -251,10 +260,37 @@ Evidence 被重复写入
   是否揭示答案看布尔字段 `turn.remedial_exhausted`（配合 `answer_reveal`），
   主内容仍按 `turn_type` 渲染。
 
-### 待后端确认（尚未接入）
+### 人工确认标准答案（已定稿并接入）
 
-- `POST /api/v1/homework/analyses/{analysis_id}/questions/{question_id}/confirm-answer`：
-  学生按答案册确认 A/B/C/D，后端读服务器上的 `student_answer` 自行判定
-  correctness / 写 Evidence / 更新掌握度。前端只提交「确认的标准答案是 X」，
-  不提交 correctness。Contract 仍在协商，落地后本文件再定稿；
-- `app/schemas.py` 的 `StageState` Literal 仍缺 `retrying`，与运行时不一致（已提给后端）。
+后端 Contract `8A-final`（commit 629f99e，`docs/API.md` §2.2.3），iOS 已接入。
+
+```http
+POST /api/v1/homework/analyses/{analysis_id}/questions/{question_id}/confirm-answer
+Content-Type: application/json
+Idempotency-Key: <UUID>
+
+{ "correct_answer": "C", "client_request_id": "<UUID>" }
+```
+
+语义：
+
+- 前端**只提交标准答案**；`correctness`、Evidence、掌握度、错题、counts
+  全部由服务端用「已保存的 `student_answer` + 提交的答案」算出；
+- 服务端只换标准答案，题干/选项/知识点/讲解沿用模型产出，然后
+  **旧 Evidence 作废 → 按新判定写新 Evidence → 掌握度/标签/错题/counts 重算**；
+- 响应：`analysis_id / question_id / student_answer / correct_answer / correctness /
+  confirmation{source, confirmed_at, original_correct_answer, correction_count} /
+  analysis_summary(六项) / wrong_question | null / next_action | null / replayed`；
+- 同一答案再次提交 → `200 replayed=true`，不重复写 Evidence；
+  已确认后再提交**不同**答案 → `409 QUESTION_ALREADY_RESOLVED`；
+- 允许范围是**任何有学生作答的题**（后端实现比 Proposal 更宽）；
+  `unanswered` → `409 QUESTION_NOT_CONFIRMABLE`。
+
+iOS 侧约定（比接口更窄，按 Phase 8A 需求）：
+
+- 只有 `correctness == .unknown` 的题显示确认区，`unanswered` / `correct` /
+  `wrong` / `partial` 都不显示——接口支持更宽的用法，UI 暂不放开；
+- 一次逻辑确认一个 `Idempotency-Key`：同题同答案的重试复用同一个 key，
+  改答案视为新的逻辑操作；`409 IDEMPOTENCY_CONFLICT` 等 1 秒用**同一个请求**重发；
+- 确认成功后**重新拉取分析结果**（`GET /analyses/{id}`）作为唯一事实来源，
+  不在本地拼接 verdict。
