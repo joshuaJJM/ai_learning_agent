@@ -1105,7 +1105,7 @@ POST /api/v1/tutor/sessions/{session_id}/turns
 | 正式题答错 | 进入补救第 1 层，`strategy: "simplify"`，`turn_type: "simpler_question"` |
 | 补救第 1–3 层答错 | 下探一层，`remedial_depth` +1 |
 | **任意一层答对** | 结束补救，`remedial_depth` 归 0，回到正常教学/下一正式题流程 |
-| **第 4 层仍答错** | 停止继续出题 → `turn_type: "remedial_exhausted"`、`strategy: "reveal_answer"`，`answer_reveal` 给出答案与解析，并允许进入下一题 |
+| **第 4 层仍答错** | 停止继续出题 → `strategy: "reveal_answer"`、`turn.remedial_exhausted: true`，`answer_reveal` 给出答案与解析，并允许进入下一题 |
 
 补救**不计入进度**（`progress.step` 不动）——学生不该因为被补救而显得进度落后。
 
@@ -1172,7 +1172,7 @@ data: {"request_id":"3f9a","seq":2,"phase":"diagnose","completed":false,
 | `meta` | `request_id` / `tutor_session_id` / `seq` / `phase` / `turn_type` / `remedial_depth` | 建流、埋点 |
 | `delta` | `{ content }` | **只用于自然语言打字机显示** |
 | `turn` | 完整的 `TutorTurn` | **权威结构化数据**，所有可交互 UI 都读它 |
-| `done` | `seq` / `phase` / `completed` / `progress` / `student_understanding` | 收尾 |
+| `done` | `seq` / `phase` / `completed` / `progress` / `student_understanding` / **`evaluation`** / **`knowledge_changes`** / **`next_action`** / `replayed` | 收尾。**字段与 JSON 响应完全对齐**，只用流式接口也能拿到完整判定与掌握度变化 |
 | `error` | `error_code` / `message` / `request_id` | 流已经开出去之后才发生错误时收尾 |
 
 **给客户端的四条要求：**
@@ -1205,8 +1205,20 @@ JSON 提交与流式提交共用同一个幂等缓存 —— 先用 JSON、再�
 | `explanation` | 讲解卡片（`allow_free_text: false`，**无需作答，不会等待提交**） |
 | `guided_practice` | 分步引导题 |
 | `independent_practice` | 独立练习（强调「这次没有提示」） |
-| `remedial_exhausted` | **补救到上限**：展示 `answer_reveal` 的解析卡片 + 「下一题」按钮 |
 | `summary` | 总结卡片 + 掌握度变化动画 |
+
+> **`turn_type` 永远描述 turn 里真实装的内容。** 补救耗尽时**不会**有
+> `remedial_exhausted` 这个类型 —— 那时候会话已经推进到下一题了，
+> 所以 `turn_type` 是下一题的类型（`guided_practice` 等），
+> 甚至可能直接是 `summary`。
+>
+> 「要不要叠一张解析卡」看 `turn.remedial_exhausted` /
+> `turn.answer_reveal`，**不是**看 `turn_type`：
+>
+> ```
+> 主内容：照 turn_type 渲染（该给选项就给选项）
+> 叠加：  if turn.remedial_exhausted { 在下方叠一张 answer_reveal 解析卡 }
+> ```
 
 
 `phase` 取值：`diagnose` → `teach` → `guided_practice` → `independent_practice` → `completed`

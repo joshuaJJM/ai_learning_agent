@@ -542,6 +542,10 @@ def _persist_turn(session: dict[str, Any], turn: dict[str, Any]) -> dict[str, An
         # 服务端对教学策略的决定，客户端只呈现、不推断
         "strategy": turn.get("strategy"),
         "remedial_depth": turn.get("remedial_depth", 0),
+        # 补救已到上限、这一轮给出了答案揭示。
+        # **不要**用它去覆盖 turn_type —— 补救耗尽时会话已经推进到下一题，
+        # turn.type 描述的是 turn 里真实装的内容。
+        "remedial_exhausted": bool(turn.get("remedial_exhausted", False)),
         # 仅在「答对」或「补救耗尽」时出现；补救进行中恒为 None
         "answer_reveal": turn.get("answer_reveal"),
         "created_at": db.to_iso(db.utcnow()),
@@ -814,7 +818,6 @@ def submit_answer(
     # ------------------------------------------------------------------
     strategy: str
     answer_reveal: dict[str, Any] | None = None
-    force_turn_type: str | None = None
 
     if in_remedial:
         if is_correct:
@@ -831,7 +834,6 @@ def submit_answer(
             origin = _end_remedial(session)
             session["hint_count"] = 0
             strategy = "reveal_answer"
-            force_turn_type = "remedial_exhausted"
             answer_reveal = {
                 "current": _revealed(content),
                 "origin": _revealed(origin or {}),
@@ -918,8 +920,16 @@ def submit_answer(
         strategy=strategy,
         answer_reveal=answer_reveal,
     )
-    if force_turn_type:
-        turn["turn_type"] = force_turn_type
+    #: 补救耗尽用**独立字段**表达，不要覆盖 `turn_type`。
+    #:
+    #: 原来是把 turn_type 强行改成 remedial_exhausted，但那时候会话已经推进到
+    #: 下一题（甚至已经完成），turn 里装的其实是下一题的内容。前端按文档
+    #: 渲染成"解析卡 + 下一题按钮"，就会**把真正的下一题选项藏起来**；
+    #: 如果这一轮正好走完，连完成总结都会被盖掉。
+    #:
+    #: 现在 `turn_type` 始终描述 turn 里真实装的东西，
+    #: "要不要展示解析卡"由 `answer_reveal` / `remedial_exhausted` 表达。
+    turn["remedial_exhausted"] = strategy == "reveal_answer"
     record = _persist_turn(session, turn)
 
     # 显式先把 phase 刷新到最新，再组装响应体。

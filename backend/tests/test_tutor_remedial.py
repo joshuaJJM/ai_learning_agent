@@ -116,7 +116,7 @@ def test_remedial_never_exceeds_four_levels(
     seen.append(body["turn"]["remedial_depth"])
 
     for _ in range(8):  # 给足次数，逼出上限
-        if body["turn"]["turn_type"] == "remedial_exhausted":
+        if body["turn"]["remedial_exhausted"]:
             break
         if body["turn"]["remedial_depth"] == 0:
             break
@@ -133,9 +133,10 @@ def test_remedial_never_exceeds_four_levels(
     ladder = [d for d in seen if d > 0]
     assert ladder == list(range(1, len(ladder) + 1)), f"深度序列不连续：{seen}"
     assert max(ladder) <= 4, seen
-    assert body["turn"]["turn_type"] == "remedial_exhausted", (
+    assert body["turn"]["remedial_exhausted"] is True, (
         f"一路答错必须停在上限并揭示答案，实际 {body['turn']}"
     )
+    assert body["turn"]["answer_reveal"] is not None
     assert seen[-1] == 0, f"补救结束后深度应归零：{seen}"
 
 
@@ -147,7 +148,7 @@ def test_remedial_exhausted_reveals_answer_and_explanation(
     body = _answer(client, auth_headers, sid, _wrong_key(origin_answer))
 
     for _ in range(8):
-        if body["turn"]["turn_type"] == "remedial_exhausted":
+        if body["turn"]["remedial_exhausted"]:
             break
         answer = _active_answer(sid)
         if answer is None or body["turn"]["remedial_depth"] == 0:
@@ -155,9 +156,27 @@ def test_remedial_exhausted_reveals_answer_and_explanation(
         body = _answer(client, auth_headers, sid, _wrong_key(answer))
 
     turn = body["turn"]
-    assert turn["turn_type"] == "remedial_exhausted"
+    assert turn["remedial_exhausted"] is True
     assert body["evaluation"]["strategy"] == "reveal_answer"
     assert body["evaluation"]["remedial_exhausted"] is True
+
+    # ★ turn_type 必须描述 turn 里**真实装的内容**，不能在补救耗尽时
+    #   被强行改成 remedial_exhausted —— 那时候会话已经推进到下一题，
+    #   前端按"解析卡"渲染就会把真正的下一题选项藏起来。
+    assert turn["turn_type"] != "remedial_exhausted"
+    assert turn["turn_type"] in {
+        "concept_question",
+        "simpler_question",
+        "hint",
+        "explanation",
+        "guided_practice",
+        "independent_practice",
+        "summary",
+    }
+    if turn["turn_type"] == "summary":
+        assert body["completed"] is True, "渲染成总结就必须真的完成了"
+    else:
+        assert turn["choices"], "有下一题就必须把选项一起下发"
 
     reveal = turn["answer_reveal"]
     assert reveal is not None, "上限之后必须揭示答案"
@@ -205,7 +224,7 @@ def test_correct_at_deeper_level_also_ends_remedial(
     for _ in range(6):
         if body["turn"]["remedial_depth"] >= 2:
             break
-        if body["turn"]["turn_type"] == "remedial_exhausted":
+        if body["turn"]["remedial_exhausted"]:
             return
         body = _answer(client, auth_headers, sid, _wrong_key(_active_answer(sid)))
 

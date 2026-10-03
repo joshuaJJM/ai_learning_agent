@@ -100,12 +100,25 @@ def record_attempt(
     """
     existing = repositories.find_wrong_question_by_stem(user_id, question_stem_hash)
 
+    # 题干指纹不含选项，所以「同题干、不同选项」会撞到一起 ——
+    # 那是两道不同的题，合并会把其中一道的快照覆盖掉。
+    # 用选项指纹消歧（与题库侧的 disambiguate 同一套规则）。
+    key = question_stem_hash
+    if existing is not None:
+        from ..question_bank import choices_fingerprint
+
+        if choices_fingerprint(existing.get("choices")) != choices_fingerprint(
+            snapshot.get("choices")
+        ):
+            key = f"{question_stem_hash}-{choices_fingerprint(snapshot.get('choices'))}"
+            existing = repositories.find_wrong_question_by_stem(user_id, key)
+
     if existing is None:
         doc = {
             "wrong_question_id": db.new_id("wq"),
             **snapshot,
             "user_id": user_id,
-            "question_stem_hash": question_stem_hash,
+            "question_stem_hash": key,
             "status": "open",
             "favorite": False,
             "attempt_count": 1,
@@ -138,7 +151,9 @@ def record_attempt(
     attempts.append(attempt)
 
     existing.update(snapshot)
-    existing["question_stem_hash"] = question_stem_hash
+    # 用消歧后的 key，不是原始指纹 —— 否则"同题干不同选项"的消歧
+    # 会在合并这一步被撤销，两道题又撞回同一行。
+    existing["question_stem_hash"] = key
     existing["attempts"] = [a for a in attempts if a][-MAX_KEPT_ATTEMPTS:]
     existing["attempt_count"] = prior_count + 1
     existing["last_wrong_at"] = now

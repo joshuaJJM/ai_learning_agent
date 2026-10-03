@@ -116,6 +116,30 @@ def display_number(source_id: str, fallback_index: int) -> str:
     return str(fallback_index)
 
 
+def choices_fingerprint(options: Any, length: int = 4) -> str:
+    """选项的内容指纹（只取选项文字，不含键）。
+
+    **不参与题目身份**（`question_stem_hash` 仍然只看题干 —— 改它会让
+    已有 Evidence 的指纹全部失联）。它的用途是**消歧**：
+    「同题干、不同选项」其实是两道不同的题，靠这个区分。
+
+    用它做后缀既稳定又与题库文件顺序无关。
+    """
+    if not isinstance(options, dict) or not options:
+        return ""
+    joined = "\x00".join(
+        f"{str(key).strip().upper()}={str(value).strip()}"
+        for key, value in sorted(options.items())
+    )
+    return hashlib.sha1(joined.encode("utf-8")).hexdigest()[:length]
+
+
+def disambiguate(question_id: str, options: Any) -> str:
+    """给发生冲突的题目 id 加一个内容后缀，使两道题都能保留。"""
+    suffix = choices_fingerprint(options)
+    return f"{question_id}-{suffix}" if suffix else question_id
+
+
 def _resolve_difficulty(kp_ids: Sequence[str]) -> float:
     """题目难度。
 
@@ -275,11 +299,6 @@ class QuestionBank:
         if not _STABLE_ID_PATTERN.match(source_id):
             qid = stable_question_id(bank_id, source_id, stem)
             self._fingerprinted_ids += 1
-            if qid in self.questions:
-                self.report.warnings.append(
-                    f"{label} ({source_id}): 题干指纹与已有题目冲突（{qid}），已跳过"
-                )
-                return None
 
         raw_options = item.get("options")
         if not isinstance(raw_options, dict) or not (2 <= len(raw_options) <= 8):
@@ -288,6 +307,30 @@ class QuestionBank:
             )
             return None
         options = {str(k).strip().upper(): str(v).strip() for k, v in raw_options.items()}
+
+        # 指纹只看题干，所以「同题干、不同选项」会撞车。
+        # 那是**两道不同的题**，不能把后一道丢掉 —— 加一个选项指纹后缀消歧，
+        # 两道都保留。（没有任何冲突时 id 完全不变，不影响已有指纹。）
+        if qid in self.questions:
+            existing = self.questions[qid]
+            if choices_fingerprint(existing.options) != choices_fingerprint(options):
+                resolved = disambiguate(qid, options)
+                self.report.warnings.append(
+                    f"{label} ({source_id}): 题干与已有题目相同但选项不同，"
+                    f"已按选项指纹区分为 {resolved}（否则这道题会被误当成重复题丢掉）"
+                )
+                qid = resolved
+            else:
+                self.report.warnings.append(
+                    f"{label} ({source_id}): 与已有题目完全相同（题干与选项都一致），"
+                    f"已跳过"
+                )
+                return None
+            if qid in self.questions:
+                self.report.warnings.append(
+                    f"{label} ({source_id}): 消歧后仍与已有题目冲突（{qid}），已跳过"
+                )
+                return None
 
         expected_keys = [chr(ord("A") + offset) for offset in range(len(options))]
         if sorted(options) != expected_keys:

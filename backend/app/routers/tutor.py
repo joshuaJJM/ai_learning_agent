@@ -166,15 +166,26 @@ async def _stream_turn(
                 if STREAM_CHUNK_DELAY:
                     await asyncio.sleep(STREAM_CHUNK_DELAY)
         yield sse_frame("turn", turn)
+        # `done` 要把 JSON 响应里**其余的东西一并带上**。
+        #
+        # 原来只给了 seq/phase/completed/progress —— 只用流式接口的客户端
+        # 拿不到 evaluation（这次判对判错、用的什么策略）与
+        # knowledge_changes（掌握度变化），也没法播总结动画。
+        # 现在与 TutorTurnResponse 的字段对齐。
         yield sse_frame(
             "done",
             {
                 "request_id": request_id,
+                "tutor_session_id": body["tutor_session_id"],
                 "seq": turn["seq"],
                 "phase": body["phase"],
                 "completed": body["completed"],
                 "progress": body["progress"],
                 "student_understanding": body["student_understanding"],
+                "evaluation": body.get("evaluation"),
+                "knowledge_changes": body.get("knowledge_changes") or [],
+                "next_action": body.get("next_action"),
+                "replayed": bool(body.get("replayed")),
             },
         )
     except Exception as exc:  # noqa: BLE001 — 流已经开出去了，只能以事件收尾
@@ -221,9 +232,13 @@ def _stream_response(body: dict[str, Any], request_id: str) -> StreamingResponse
                         'data: {"turn_id":"turn_...","seq":3,'
                         '"turn_type":"simpler_question","choices":[...],'
                         '"strategy":"simplify","remedial_depth":1,'
-                        '"answer_reveal":null,...}\n\n'
+                        '"remedial_exhausted":false,"answer_reveal":null,...}\n\n'
                         'event: done\n'
-                        'data: {"request_id":"...","seq":3,"completed":false,...}\n\n'
+                        'data: {"request_id":"...","seq":3,"phase":"diagnose",'
+                        '"completed":false,"progress":{...},'
+                        '"student_understanding":0.28,"evaluation":{...},'
+                        '"knowledge_changes":[...],"next_action":null,'
+                        '"replayed":false}\n\n'
                     ),
                 }
             },

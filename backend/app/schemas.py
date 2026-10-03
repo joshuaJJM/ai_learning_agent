@@ -37,8 +37,6 @@ TutorTurnType = Literal[
     "simpler_question",
     "guided_practice",
     "independent_practice",
-    # 补救做到第 4 层仍答错 → 停止出题，改为揭示答案并允许进入下一题
-    "remedial_exhausted",
     "summary",
 ]
 TutorSource = Literal["knowledge_point", "wrong_question", "uploaded_question"]
@@ -744,6 +742,17 @@ class TutorTurn(BaseModel):
     )
     remedial_depth: int = Field(
         default=0, ge=0, le=MAX_REMEDIAL_DEPTH, description="0=不在补救；1..4=第几层"
+    )
+    remedial_exhausted: bool = Field(
+        default=False,
+        description=(
+            "补救已到上限，这一轮给出了答案揭示（`answer_reveal` 非 null）。"
+            "**不要用它决定渲染什么** —— `turn_type` 才是内容的类型："
+            "补救耗尽时会话已经推进，所以这一轮很可能同时带着下一题，"
+            "甚至已经走完（`turn_type: summary`）。"
+            "正确做法是：照 `turn_type` 渲染主内容，"
+            "再按 `answer_reveal` 额外叠一张解析卡。"
+        ),
     )
     answer_reveal: TutorAnswerReveal | None = None
     created_at: datetime

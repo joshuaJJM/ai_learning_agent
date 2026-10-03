@@ -169,12 +169,19 @@ def _clean_correctness(value: Any, student: str | None, correct: str | None) -> 
 
     两者都**不计入掌握度**，但对用户的意义完全不同：
     前者是"你没做"，后者是"我没算准"。混成一个值会让前端没法好好展示。
+
+    `correct is None`（没解出参考答案）**一律返回 `unknown`**，
+    **不采信模型自报的 correct/wrong**。
+
+    为什么不能采信：没有参考答案就没有可比较的对象，"对/错"是模型凭感觉说的。
+    更糟的是这类题会被复核流程过滤掉（复核的前提是有答案可比），
+    于是模型的一句"我判他做对了"会**绕过整个校验直接写进掌握度**。
+    判不出来就老实说判不出来。
     """
     if student is None:
         return "unanswered"
     if correct is None:
-        raw = str(value or "").strip().lower()
-        return raw if raw in ("correct", "wrong", "partial", "unknown") else "unknown"
+        return "unknown"
     return "correct" if student == correct else "wrong"
 
 
@@ -482,8 +489,24 @@ async def verify_answers(
         and question.correct_answer
     ]
     if len(pending) > MAX_VERIFY_PER_ANALYSIS:
-        warnings.append("题目较多，部分题目未做二次校验，结果仅供参考")
+        # 超出复核上限的题**不能照常计分**。
+        #
+        # 原来的写法只加一句警告就把它们放过去了 —— 那些题的答案没被独立复核，
+        # 却会照常写 Evidence、动标签。等于"复核"这个前提被数量绕过了。
+        # 现在与复核失败的题同等处理：判 unknown、保留 possible_answer、
+        # 不计入掌握度。
+        skipped = pending[MAX_VERIFY_PER_ANALYSIS:]
         pending = pending[:MAX_VERIFY_PER_ANALYSIS]
+        warnings.append(
+            f"题目较多，只对前 {MAX_VERIFY_PER_ANALYSIS} 道做了二次校验；"
+            f"其余 {len(skipped)} 道未复核，不计入掌握度统计"
+        )
+        for question in skipped:
+            question.possible_answer = question.correct_answer
+            question.possible_answer_source = "recognition"
+            question.correctness = "unknown"
+            question.correct_answer = None
+            question.error_type = None
     if not pending:
         return warnings
 
