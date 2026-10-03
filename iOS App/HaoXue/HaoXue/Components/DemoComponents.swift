@@ -63,6 +63,37 @@ enum DemoType {
     static let meta = Font.caption
 }
 
+/// Motion is functional, never decorative: it exists so a student can *see*
+/// that their answer changed the next teaching step.
+///
+/// Timings stay inside Apple's normal range — micro interactions under a
+/// quarter second, state transitions under half a second, mastery a beat longer.
+enum DemoMotion {
+    /// 轻量反馈：选中、颜色、微小状态变化
+    static let quick = Animation.easeOut(duration: 0.18)
+    /// 常规转场：内容出现、结果展开
+    static let standard = Animation.spring(duration: 0.32, bounce: 0.06)
+    /// 重要状态变化：Tutor 换一回合、Scratchpad 打开
+    static let emphasized = Animation.spring(duration: 0.48, bounce: 0.10)
+    /// 掌握度数值：Demo 的视觉高潮，稍长但绝不阻塞操作
+    static let mastery = Animation.spring(duration: 0.7, bounce: 0.08)
+
+    /// Reduce Motion keeps the state change and drops the movement.
+    static func resolved(_ reduceMotion: Bool, _ animation: Animation = standard) -> Animation {
+        reduceMotion ? .easeInOut(duration: 0.2) : animation
+    }
+}
+
+extension View {
+    /// Native digit roll for numbers the backend owns (mastery, percent).
+    /// The view always renders the authoritative value — this only animates
+    /// the digits towards it and never computes a value of its own.
+    func demoNumberTransition(_ value: Double, reduceMotion: Bool = false) -> some View {
+        contentTransition(reduceMotion ? .identity : .numericText())
+            .animation(reduceMotion ? DemoMotion.quick : DemoMotion.mastery, value: value)
+    }
+}
+
 struct DemoPageHeader: View {
     let title: String
     var subtitle: String? = nil
@@ -197,6 +228,8 @@ struct DemoChoiceRow: View {
     let key: String
     let text: String
     var emphasis: Emphasis = .idle
+    /// Once the student has picked an answer the other choices step back.
+    var dimmed: Bool = false
     var action: () -> Void
 
     var body: some View {
@@ -222,6 +255,9 @@ struct DemoChoiceRow: View {
             .contentShape(RoundedRectangle(cornerRadius: DemoMetrics.controlCornerRadius))
         }
         .buttonStyle(.plain)
+        .opacity(dimmed ? 0.72 : 1)
+        .animation(DemoMotion.quick, value: emphasis)
+        .animation(DemoMotion.quick, value: dimmed)
         .accessibilityIdentifier("choice-\(key)")
         .accessibilityLabel(accessibilityLabel)
     }
@@ -253,6 +289,8 @@ struct MasteryBar: View {
                 Capsule().fill(Color(uiColor: .systemGray5))
                 Capsule().fill(color).frame(width: geometry.size.width * min(max(value, 0), 1))
             }
+            // The bar keeps the same beat as the number it represents.
+            .animation(DemoMotion.mastery, value: value)
         }
         .frame(height: 7)
         .accessibilityLabel("掌握度 \(value.demoPercent)")

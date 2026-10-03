@@ -9,6 +9,7 @@ struct PracticeSessionView: View {
     @State private var model: PracticeSessionViewModel
     @State private var showingScratchpad = false
     @State private var actionTask: Task<Void, Never>?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(provider: any PracticeDataProviding, existingSessionID: String? = nil,
          knowledgePointID: String? = nil, createKey: IdempotencyKey? = nil,
@@ -64,9 +65,12 @@ struct PracticeSessionView: View {
                     submitErrorContent(message)
                 case .result(let outcome):
                     resultContent(outcome)
+                        .transition(reduceMotion ? .opacity
+                                    : .offset(y: 10).combined(with: .opacity))
                 }
             }
             .background(Color(uiColor: .systemBackground))
+            .animation(DemoMotion.resolved(reduceMotion, DemoMotion.standard), value: model.phase)
             .safeAreaInset(edge: .bottom) { footer }
         }
         .onAppear { actionTask = Task { await model.loadIfNeeded() } }
@@ -121,7 +125,8 @@ struct PracticeSessionView: View {
     private func choiceButton(_ choice: PracticeChoice) -> some View {
         let selected = model.selectedChoiceKey == choice.key
         return DemoChoiceRow(key: choice.key, text: choice.text,
-                             emphasis: selected ? .selected : .idle) {
+                             emphasis: selected ? .selected : .idle,
+                             dimmed: model.selectedChoiceKey != nil && !selected) {
             model.select(choice.key)
         }
     }
@@ -172,6 +177,7 @@ struct PracticeSessionView: View {
                             if let before = change.beforeMastery, let after = change.afterMastery {
                                 Text("\(before.demoPercent) → \(after.demoPercent)")
                                     .font(.subheadline.weight(.semibold))
+                                    .demoNumberTransition(after, reduceMotion: reduceMotion)
                             }
                         }
                     }

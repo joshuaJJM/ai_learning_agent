@@ -5,6 +5,7 @@ struct TutorView: View {
     let onClose: () -> Void
     @State private var model: TutorViewModel
     @State private var showingScratchpad = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(store: DemoScenarioStore, provider: any QuestionProvider, onClose: @escaping () -> Void) {
         self.store = store
@@ -40,6 +41,8 @@ struct TutorView: View {
                 }
             }
             .background(Color(uiColor: .systemBackground))
+            .animation(DemoMotion.resolved(reduceMotion, DemoMotion.emphasized),
+                       value: model.session.currentQuestion?.id)
             .safeAreaInset(edge: .bottom) {
                 if model.session.state != .loading && model.session.state != .error {
                     footer
@@ -117,9 +120,15 @@ struct TutorView: View {
                 if model.session.hasSubmitted { feedbackContent(question) }
             }
         }
+        .id(model.session.currentQuestion?.id)
+        .transition(reduceMotion ? .opacity
+                    : .asymmetric(insertion: .offset(y: 12).combined(with: .opacity),
+                                  removal: .offset(y: -8).combined(with: .opacity)))
         .padding(.horizontal, DemoMetrics.sessionPadding)
         .padding(.top, DemoMetrics.sessionContentTop)
         .padding(.bottom, 24)
+        .animation(DemoMotion.quick, value: model.session.selectedAnswer)
+        .animation(DemoMotion.quick, value: model.session.hasSubmitted)
     }
 
     private func choiceButton(_ choice: TutorChoice, question: TutorQuestion) -> some View {
@@ -129,7 +138,9 @@ struct TutorView: View {
         let isSelected = !submitted && choice.id == model.session.selectedAnswer
         let emphasis: DemoChoiceRow.Emphasis = isCorrect ? .correct
             : (isWrong ? .wrong : (isSelected ? .selected : .idle))
-        return DemoChoiceRow(key: choice.id.rawValue, text: choice.text, emphasis: emphasis) {
+        let dimmed = model.session.selectedAnswer != nil && choice.id != model.session.selectedAnswer
+        return DemoChoiceRow(key: choice.id.rawValue, text: choice.text,
+                             emphasis: emphasis, dimmed: dimmed) {
             model.select(choice.id)
         }
         .disabled(submitted)
@@ -164,6 +175,7 @@ struct TutorView: View {
             Text("\(model.session.startingMastery.demoPercent) → \(model.session.displayedMastery.demoPercent)")
                 .font(DemoType.metric)
                 .foregroundStyle(.green)
+                .demoNumberTransition(model.session.displayedMastery, reduceMotion: reduceMotion)
             Text("本次重点提升").foregroundStyle(DemoStyle.secondary)
             Text("导数符号与函数单调性的关系").font(.title3.bold())
         }

@@ -10,14 +10,26 @@ private enum ScratchpadTool: String, CaseIterable {
 
 struct ScratchpadView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Binding var drawing: PKDrawing
     @State private var tool: ScratchpadTool = .pen
     @State private var showingClearConfirmation = false
+    @State private var isPresented = false
 
     var body: some View {
         NavigationStack {
             ScratchpadCanvas(drawing: $drawing, tool: $tool)
                 .background(Color(uiColor: .systemBackground))
+                // The scratchpad is a temporary thinking layer: it settles in
+                // instead of hard-cutting over the lesson. Behaviour unchanged.
+                .opacity(isPresented ? 1 : 0)
+                .offset(y: isPresented || reduceMotion ? 0 : 20)
+                .animation(DemoMotion.resolved(reduceMotion, DemoMotion.emphasized), value: isPresented)
+                .onAppear {
+                    withAnimation(DemoMotion.resolved(reduceMotion, DemoMotion.emphasized)) {
+                        isPresented = true
+                    }
+                }
                 .navigationTitle("草稿本")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {

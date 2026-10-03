@@ -19,6 +19,7 @@ struct ScanView: View {
     @State private var showingResult = false
     @State private var showingHistory = false
     @State private var resultModel: AnalysisResultModel?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ScrollView {
@@ -184,6 +185,8 @@ struct ScanView: View {
                 ScrollView(.horizontal) {
                     LazyHStack(spacing: 14) {
                         ForEach(Array(model.pages.enumerated()), id: \.element.id) { index, page in
+                            let isCentered = selectedID == page.id
+                            let step = Double(min(max(index - currentIndex, -1), 1))
                             DemoCard {
                                 VStack(alignment: .leading, spacing: 12) {
                                     Text("第 \(index + 1) 页")
@@ -199,8 +202,11 @@ struct ScanView: View {
                                 }
                             }
                             .frame(width: max(geometry.size.width - 64, 220))
-                            .scaleEffect(selectedID == page.id ? 1 : 0.94)
-                            .opacity(selectedID == page.id ? 1 : 0.72)
+                            // Light Cover Flow: the neighbours step back, never a 3D carousel.
+                            .scaleEffect(isCentered ? 1 : 0.95)
+                            .opacity(isCentered ? 1 : 0.78)
+                            .rotation3DEffect(.degrees(reduceMotion ? 0 : -step * 2.5),
+                                              axis: (x: 0, y: 1, z: 0))
                             .id(page.id)
                             .accessibilityLabel("扫描页面 \(index + 1)，共 \(model.pages.count) 页")
                         }
@@ -218,7 +224,7 @@ struct ScanView: View {
                 .frame(maxWidth: .infinity)
                 .accessibilityLabel("第 \(currentIndex + 1) 页，共 \(model.pages.count) 页")
         }
-        .animation(.interactiveSpring(), value: selectedID)
+        .animation(DemoMotion.resolved(reduceMotion, Animation.interactiveSpring()), value: selectedID)
     }
 
     private var currentIndex: Int {
@@ -314,6 +320,7 @@ private struct AnalysisProgressView: View {
     let model: ScanViewModel
     let onResult: () -> Void
     let onNewScan: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         DemoCard {
@@ -322,9 +329,10 @@ private struct AnalysisProgressView: View {
                 if let progress = model.analysis?.progress {
                     ProgressView(value: progress.percent)
                         .tint(.blue)
-                        .animation(.easeInOut, value: progress.percent)
+                        .animation(DemoMotion.standard, value: progress.percent)
                     Text("\(Int((progress.percent * 100).rounded()))%")
                         .font(.subheadline.monospacedDigit())
+                        .demoNumberTransition(progress.percent, reduceMotion: reduceMotion)
                     if progress.isRetrying {
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
                             ProgressView().controlSize(.small)
@@ -336,11 +344,15 @@ private struct AnalysisProgressView: View {
                         .accessibilityIdentifier("analysis-retrying-note")
                     }
                     ForEach(progress.stages) { stage in
-                        Label(stage.labelZH, systemImage: symbol(for: stage.state))
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Image(systemName: symbol(for: stage.state))
+                                .contentTransition(.symbolEffect(.replace))
+                            Text(stage.labelZH)
+                        }
                             .font(DemoType.secondary)
-                            .foregroundStyle(stage.state == .failed || (stage.state == .active && model.state == .failed) ? .red :
-                                             stage.state == .retrying ? .orange :
-                                             stage.state == .active ? .blue : DemoStyle.secondary)
+                            .foregroundStyle(tint(for: stage.state))
+                            .animation(DemoMotion.standard, value: stage.state)
+                            .accessibilityElement(children: .combine)
                             .accessibilityLabel("\(stage.labelZH)，\(stateLabel(for: stage.state))")
                     }
                 } else if model.isBusy {
@@ -383,6 +395,15 @@ private struct AnalysisProgressView: View {
 
     private var errorMessage: String {
         ScanFailurePresentation(code: model.errorCode).message
+    }
+
+    private func tint(for state: AnalysisStageState) -> Color {
+        switch state {
+        case .failed: .red
+        case .retrying: .orange
+        case .active: model.state == .failed ? .red : .blue
+        case .done, .pending, .unknown(_): DemoStyle.secondary
+        }
     }
 
     private func symbol(for state: AnalysisStageState) -> String {

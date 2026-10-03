@@ -8,6 +8,7 @@ struct RemoteTutorView: View {
     @State private var showingScratchpad = false
     @State private var actionTask: Task<Void, Never>?
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(service: any TutorRemoteServing,
          masteryService: (any MasteryOverviewServing)? = nil,
@@ -56,12 +57,16 @@ struct RemoteTutorView: View {
                 } else if model.completed {
                     completionContent
                 } else if let turn = model.turn {
+                    // Phase 9 motion: the answer visibly changes the next turn.
                     turnContent(turn)
+                        .id(turn.turnId)
+                        .transition(turnTransition)
                 } else {
                     errorContent
                 }
             }
             .background(Color(uiColor: .systemBackground))
+            .animation(DemoMotion.resolved(reduceMotion, DemoMotion.emphasized), value: model.turn?.turnId)
             .safeAreaInset(edge: .bottom) {
                 if model.turn != nil { footer }
             }
@@ -147,13 +152,16 @@ struct RemoteTutorView: View {
         .padding(.horizontal, DemoMetrics.sessionPadding)
         .padding(.top, DemoMetrics.sessionContentTop)
         .padding(.bottom, 24)
-        .animation(.easeInOut(duration: 0.2), value: model.turn?.turnId)
+        .animation(DemoMotion.quick, value: model.selectedKey)
+        .animation(DemoMotion.quick, value: model.pendingNextTurn == nil)
+        .animation(DemoMotion.quick, value: model.isSubmitting)
     }
 
     private func choiceButton(_ choice: TutorChoiceDTO) -> some View {
         let selected = model.selectedKey == choice.key
         return DemoChoiceRow(key: choice.key, text: choice.text,
-                             emphasis: selected ? .selected : .idle) {
+                             emphasis: selected ? .selected : .idle,
+                             dimmed: model.selectedKey != nil && !selected) {
             model.select(choice.key)
         }
     }
@@ -209,7 +217,9 @@ struct RemoteTutorView: View {
                     HStack {
                         Text(model.knowledgePointName).lineLimit(1)
                         Spacer()
-                        Text(mastery.demoPercent).font(.headline)
+                        Text(mastery.demoPercent)
+                            .font(.headline)
+                            .demoNumberTransition(mastery, reduceMotion: reduceMotion)
                     }
                     .font(.subheadline)
                     .foregroundStyle(DemoStyle.secondary)
@@ -266,6 +276,7 @@ struct RemoteTutorView: View {
                 Text("\(change.before.demoPercent) → \(change.after.demoPercent)")
                     .font(DemoType.metric)
                     .foregroundStyle(.green)
+                    .demoNumberTransition(change.after, reduceMotion: reduceMotion)
                 Text("\(change.name)的掌握度变化").foregroundStyle(DemoStyle.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -300,5 +311,13 @@ struct RemoteTutorView: View {
             Button("重试") { actionTask = Task { await model.retry() } }
         }
         .frame(maxWidth: .infinity).padding(.top, 100)
+    }
+
+    /// Reduce Motion keeps the fade and drops the travel.
+    private var turnTransition: AnyTransition {
+        reduceMotion
+            ? .opacity
+            : .asymmetric(insertion: .offset(y: 12).combined(with: .opacity),
+                          removal: .offset(y: -8).combined(with: .opacity))
     }
 }
