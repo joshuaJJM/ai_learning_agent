@@ -3,7 +3,7 @@ import SwiftUI
 struct StudyView: View {
     let store: DemoScenarioStore
     let onStart: () -> Void
-    @State private var showingPracticeInfo = false
+    let onStartPractice: () -> Void
 
     var body: some View {
         ScrollView {
@@ -38,11 +38,12 @@ struct StudyView: View {
                         Text("针对薄弱点练习").font(.title3.bold())
                         Text(store.practiceSummary)
                             .foregroundStyle(DemoStyle.secondary)
-                        Button("开始练习") { showingPracticeInfo = true }
+                        Button("开始练习") { onStartPractice() }
                             .font(.headline)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
                             .background(Color.blue.opacity(0.1), in: Capsule())
+                            .accessibilityIdentifier("start-practice")
                     }
                 }
                 if let change = store.home.recentChanges.first {
@@ -63,10 +64,5 @@ struct StudyView: View {
             .padding(.bottom, 32)
         }
         .background(DemoStyle.background)
-        .alert("练习即将开放", isPresented: $showingPracticeInfo) {
-            Button("好") { }
-        } message: {
-            Text("当前演示先完成一节模拟课程，练习功能将在后续阶段加入。")
-        }
     }
 }

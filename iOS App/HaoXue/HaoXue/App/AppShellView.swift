@@ -13,6 +13,9 @@ struct AppShellView: View {
     @State private var recordPath: [LearningRecordRoute] = []
     @State private var tutorReturnRecord: LearningRecordRoute?
     @State private var tutorReturnPath: [LearningRecordRoute] = []
+    @State private var practicePresentation: PracticePresentation?
+    @State private var practiceSessionID: String?
+    @State private var practiceCreateKey: IdempotencyKey?
     @State private var homeModel = HomeViewModel(provider: LiveDataProvider(
         client: APIClient(), configuration: AppConfiguration(mode: .live)))
     @State private var wrongQuestionsModel = WrongQuestionsListViewModel(provider: LiveDataProvider(
@@ -37,6 +40,17 @@ struct AppShellView: View {
             tutorCreateKeys[context] = UUID().uuidString
         }
         tutorPresentation = .live(context)
+    }
+
+    /// One logical create per practice entry: the key survives retries and re-entry,
+    /// so a slow first request is replayed instead of scored twice.
+    private func presentPractice() {
+        if practiceCreateKey == nil { practiceCreateKey = IdempotencyKey.generate() }
+        practicePresentation = usesMockTutor ? .mock : .live
+    }
+
+    private func closePractice() {
+        practicePresentation = nil
     }
 
     private func openWrongQuestion(_ id: String) {
@@ -107,10 +121,12 @@ struct AppShellView: View {
                 .tag(1)
             Group {
                 if usesMockTutor {
-                    StudyView(store: store, onStart: { openTutor() })
+                    StudyView(store: store, onStart: { openTutor() },
+                              onStartPractice: presentPractice)
                 } else {
                     WrongQuestionsView(model: wrongQuestionsModel, onOpen: openWrongQuestion,
-                                       onOpenKnowledgeOverview: openKnowledgeOverview)
+                                       onOpenKnowledgeOverview: openKnowledgeOverview,
+                                       onStartPractice: presentPractice)
                 }
             }
                 .tabItem { Label("学习", systemImage: "book.closed") }
@@ -154,6 +170,24 @@ struct AppShellView: View {
                     createKey: tutorCreateKeys[context] ?? UUID().uuidString,
                     onSessionReady: { tutorSessionIDs[context] = $0 },
                     onClose: { closeTutor(completed: $0) })
+            }
+        }
+        .fullScreenCover(item: $practicePresentation) { presentation in
+            switch presentation {
+            case .mock:
+                PracticeSessionView(provider: MockDataProvider(),
+                                    onSessionReady: { practiceSessionID = $0 },
+                                    onClose: closePractice)
+            case .live:
+                PracticeSessionView(
+                    provider: LiveDataProvider(client: APIClient(),
+                                               configuration: AppConfiguration(mode: .live)),
+                    existingSessionID: practiceSessionID,
+                    createKey: practiceCreateKey ?? IdempotencyKey.generate(),
+                    onSessionReady: { practiceSessionID = $0 },
+                    // Phase 6C: hand the draft to PracticeService.submitAnswer(...).
+                    onSubmit: { _ in },
+                    onClose: closePractice)
             }
         }
     }
@@ -212,6 +246,17 @@ private enum TutorPresentation: Identifiable {
         case .mock: "mock"
         case .live(.knowledgePoint(let id)): "knowledge:\(id)"
         case .live(.wrongQuestion(let id)): "wrong:\(id)"
+        }
+    }
+}
+
+private enum PracticePresentation: Identifiable {
+    case mock, live
+
+    var id: String {
+        switch self {
+        case .mock: "mock"
+        case .live: "live"
         }
     }
 }

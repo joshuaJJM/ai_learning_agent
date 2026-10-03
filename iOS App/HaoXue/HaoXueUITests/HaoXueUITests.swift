@@ -149,6 +149,74 @@ final class HaoXueUITests: XCTestCase {
     }
 
     @MainActor
+    func testMockPracticeSessionShowsBackendQuestionAndEnablesSubmit() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments.append("-useMockTutor")
+        app.launch()
+        app.tabBars.buttons["学习"].tap()
+        let start = app.buttons["start-practice"]
+        XCTAssertTrue(start.waitForExistence(timeout: 10))
+        start.tap()
+
+        // 真实 backend 形状的题目与选项：题干、A-D 全部来自服务器 payload。
+        let stem = app.staticTexts["practice-question-stem"]
+        XCTAssertTrue(stem.waitForExistence(timeout: 10))
+        XCTAssertEqual(stem.label, "在一个区间内 f′(x) > 0，函数有什么性质？")
+        XCTAssertTrue(app.staticTexts["practice-progress"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["practice-progress"].label.hasPrefix("第 1 /"))
+        for key in ["A", "B", "C", "D"] {
+            XCTAssertTrue(app.buttons["choice-\(key)"].exists)
+        }
+
+        let submit = app.buttons["practice-submit-answer"]
+        XCTAssertTrue(submit.exists)
+        XCTAssertFalse(submit.isEnabled)
+        app.buttons["choice-B"].tap()
+        XCTAssertTrue(submit.isEnabled)
+        // 改选只替换本地选择，不产生任何判定。
+        app.buttons["choice-C"].tap()
+        XCTAssertTrue(submit.isEnabled)
+        XCTAssertFalse(app.staticTexts["回答正确"].exists)
+        XCTAssertFalse(app.staticTexts["回答错误"].exists)
+
+        app.buttons["草稿本"].tap()
+        XCTAssertTrue(app.navigationBars["草稿本"].waitForExistence(timeout: 5))
+        app.buttons["完成"].tap()
+        XCTAssertTrue(app.buttons["practice-submit-answer"].waitForExistence(timeout: 5))
+        app.buttons["关闭练习"].tap()
+        // 关闭后回到 mock 学习页，练习入口仍在。
+        XCTAssertTrue(app.buttons["start-practice"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testLivePracticeSessionShowsBackendQuestion() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launch()
+        app.tabBars.buttons["学习"].tap()
+        let start = app.buttons["start-practice"]
+        XCTAssertTrue(start.waitForExistence(timeout: 20))
+        start.tap()
+
+        // Live 后端：题干与 A-D 都来自服务器，本地不做任何判定。
+        let stem = app.staticTexts["practice-question-stem"]
+        XCTAssertTrue(stem.waitForExistence(timeout: 30))
+        XCTAssertFalse(stem.label.isEmpty)
+        XCTAssertTrue(app.buttons["choice-A"].exists)
+        XCTAssertTrue(app.staticTexts["practice-progress"].label.hasPrefix("第 1 /"))
+        let submit = app.buttons["practice-submit-answer"]
+        XCTAssertTrue(submit.exists)
+        XCTAssertFalse(submit.isEnabled)
+        app.buttons["choice-A"].tap()
+        XCTAssertTrue(submit.isEnabled)
+        XCTAssertFalse(app.staticTexts["回答正确"].exists)
+        XCTAssertFalse(app.staticTexts["回答错误"].exists)
+        // Phase 6C 才提交答案；6B 只验证“坐到题前并完成选择”。
+        app.buttons["关闭练习"].tap()
+    }
+
+    @MainActor
     func testScratchpadDrawingPersistsThenClearsForNextQuestion() {
         continueAfterFailure = false
         let app = XCUIApplication()

@@ -4,6 +4,7 @@ struct WrongQuestionsView: View {
     let model: WrongQuestionsListViewModel
     let onOpen: (String) -> Void
     let onOpenKnowledgeOverview: () -> Void
+    let onStartPractice: () -> Void
 
     var body: some View {
         ScrollView {
@@ -23,6 +24,22 @@ struct WrongQuestionsView: View {
                     }
                 }
                 .buttonStyle(.plain)
+                Button(action: onStartPractice) {
+                    DemoCard {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text("针对性练习").font(.headline).foregroundStyle(.primary)
+                                Text("按当前最薄弱的标签自动出题")
+                                    .font(.subheadline).foregroundStyle(DemoStyle.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "arrow.right")
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("开始练习")
+                .accessibilityIdentifier("start-practice")
                 DemoSectionTitle(title: "错题")
                 switch model.phase {
                 case .idle, .loading:
