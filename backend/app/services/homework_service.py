@@ -21,7 +21,13 @@ from typing import Any, Sequence
 
 from .. import db, knowledge, repositories
 from ..config import get_settings
-from . import knowledge_service, recommendation_service, tag_service, vlm_service
+from . import (
+    knowledge_service,
+    recommendation_service,
+    tag_service,
+    vlm_service,
+    wrong_question_service,
+)
 from .llm import LlmUnavailable
 from .knowledge_service import EvidenceInput
 from .vlm_service import RawQuestion, VlmOutcome
@@ -412,8 +418,15 @@ async def run_analysis(analysis_id: str) -> None:
                     )
 
             if result["correctness"] in ("wrong", "partial"):
-                wrong_doc = _build_wrong_question(result, doc, homework_id, now)
-                repositories.save_wrong_question(wrong_doc)
+                # 按**规范题目**归并：同一道题多次做错只留一条待复习项，
+                # 但每一次的 attempt 明细都累积进去，历史不丢。
+                wrong_doc = wrong_question_service.record_attempt(
+                    doc["user_id"],
+                    question_stem_hash=result["question_stem_hash"],
+                    snapshot=_wrong_question_snapshot(result, doc, homework_id),
+                    attempt=_wrong_question_attempt(result, homework_id, now),
+                    now=now,
+                )
                 new_wrong.append(wrong_doc)
 
         # --- 阶段 5：更新 Knowledge State（唯一入口）---
@@ -547,20 +560,21 @@ def _build_question_result(
     }
 
 
-def _build_wrong_question(
-    result: dict[str, Any], doc: dict[str, Any], homework_id: str, now: str
+def _wrong_question_snapshot(
+    result: dict[str, Any], doc: dict[str, Any], homework_id: str
 ) -> dict[str, Any]:
+    """错题快照（不含 `wrong_question_id` —— 那由 record_attempt 决定）。
+
+    同一道题多次做错时，这份快照会被**最近一次**覆盖 ——
+    学生想看的显然是"我这次错在哪"。
+    """
     # 知识点可能为空（模型既没给出知识点、标签也反查不到）。
     # 错题本身仍然要留下来给学生看，只是不挂知识点。
     primary = result["knowledge_points"][0] if result["knowledge_points"] else None
     return {
-        "wrong_question_id": db.new_id("wq"),
-        "user_id": doc["user_id"],
         "question_id": result["question_id"],
         "knowledge_point_id": primary["knowledge_point_id"] if primary else None,
         "knowledge_point_name": primary["name"] if primary else None,
-        "status": "open",
-        "favorite": False,
         "question_number": result["question_number"],
         "question_type": result["question_type"],
         "question_content": result["question_content"],
@@ -577,8 +591,19 @@ def _build_wrong_question(
         "source_id": homework_id,
         "source_name": doc.get("source_name"),
         "book_id": doc.get("book_id"),
+    }
+
+
+def _wrong_question_attempt(
+    result: dict[str, Any], homework_id: str, now: str
+) -> dict[str, Any]:
+    """这一次作答的明细，累积在错题项里供 UI 展示「做错几次」。"""
+    return {
+        "question_id": result["question_id"],
+        "homework_id": homework_id,
+        "student_answer": result["student_answer"],
+        "correctness": result["correctness"],
         "created_at": now,
-        "updated_at": now,
     }
 
 

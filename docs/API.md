@@ -819,6 +819,28 @@ GET /api/v1/knowledge/{knowledge_point_id}
 
 ## 4. 错题库
 
+### 4.0 一行错题 = 一道「当前要复习的题」
+
+**列表的语义是「我现在有哪些题需要复习」，不是「历史上有过多少次做错」。**
+
+同一道题在不同作业里做错多次，列表里**只出现一条**：
+
+```
+canonical question（题干指纹 question_stem_hash）
+    └── attempts / evidence           ← 每次作答的完整历史，永不删除
+            └── 错题项（本节）         ← 去重后的「当前待复习」投影
+```
+
+- 第一次做错时创建，`wrong_question_id` **就此固定，之后不再变** ——
+  可以安全地长期引用、存本地缓存、跨设备对齐
+- 之后每次做错**合并进同一条**：`attempt_count` 累加、
+  `attempts` 追加明细、快照刷新成**最近一次**的内容、状态拉回 `open`
+- **历史不会被删**：每次作答的原始记录在 `questions` 表，
+  知识点层面的证据在 `evidence` 表（都带 `question_stem_hash`）
+
+> 所以「错题条数」和「Evidence 条数」本来就不相等，这是设计如此。
+> 做过 3 次错 3 次 → 错题 1 条、Evidence 3 条。
+
 ```http
 GET /api/v1/wrong-questions?knowledge_point_id=math.derivative.monotonicity&status=open&limit=100
 ```
@@ -835,10 +857,25 @@ GET /api/v1/wrong-questions?knowledge_point_id=math.derivative.monotonicity&stat
       "question_content": "已知函数 f(x) = x^3 - 3x^2 + 2，求 f(x) 的单调递增区间。",
       "knowledge_point_id": "math.derivative.monotonicity", "knowledge_point_name": "利用导数判断函数单调性与单调区间",
       "error_type": "transformation", "error_label": "函数性质转换错误",
-      "status": "open", "created_at": "2026-10-01T21:30:00+00:00" }
+      "status": "open",
+      "question_stem_hash": "25d381143d",
+      "attempt_count": 3,
+      "first_wrong_at": "2026-09-28T21:30:00+00:00",
+      "last_wrong_at": "2026-10-01T21:30:00+00:00",
+      "created_at": "2026-09-28T21:30:00+00:00" }
   ]
 }
 ```
+
+| 字段 | 含义 |
+|---|---|
+| `attempt_count` | 这道题**累计**做错几次，UI 可以显示「做错 3 次」 |
+| `question_stem_hash` | 规范题目身份。**客户端不需要用它去重**（列表已去重），可用作本地缓存键 |
+| `first_wrong_at` / `last_wrong_at` | 第一次 / 最近一次做错的时间 |
+| `question_id` | **最近一次** attempt 的题目 id（不是固定的，别拿它当主键） |
+
+> ⚠️ 要长期引用请用 `wrong_question_id`（稳定）。
+> `question_id` 每次 attempt 都不同，它标识的是"那一次作业里的那道题"。
 
 ```http
 GET /api/v1/wrong-questions/{wrong_question_id}
@@ -846,7 +883,20 @@ GET /api/v1/wrong-questions/{wrong_question_id}
 
 在列表字段基础上追加：`question_type`、`choices`、`student_answer`、`correct_answer`、
 `explanation`、`correctness`、`diagnosis`、`image_url`、`source_type`、`source_id`、
-`source_name`、`favorite`、`updated_at`、`can_start_tutor`。
+`source_name`、`favorite`、`updated_at`、`can_start_tutor`，
+以及**逐次作答明细** `attempts`：
+
+```json
+"attempts": [
+  { "question_id": "q_aaa", "homework_id": "hw_111", "student_answer": "B",
+    "correctness": "wrong", "created_at": "2026-09-28T21:30:00+00:00" },
+  { "question_id": "q_bbb", "homework_id": "hw_222", "student_answer": "A",
+    "correctness": "wrong", "created_at": "2026-10-01T21:30:00+00:00" }
+]
+```
+
+最早的在前面，最多保留 20 条（更早的仍可在后端 Evidence 里查到）。
+想展示「这道题我错过哪几次、每次选了什么」就用它。
 
 > 详情页的 **Start Learning** 按钮：
 > `POST /api/v1/tutor/sessions` + `{"source_type": "wrong_question", "wrong_question_id": "wq_1a2b"}`
@@ -855,6 +905,9 @@ GET /api/v1/wrong-questions/{wrong_question_id}
 PATCH /api/v1/wrong-questions/{wrong_question_id}
 { "status": "resolved", "favorite": true }
 ```
+
+> 标记成 `resolved` 之后如果**又做错了**，这条会自动变回 `open` ——
+> 否则学生会看到一道"已解决"的题其实是错的。
 
 ---
 

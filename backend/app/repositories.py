@@ -407,9 +407,30 @@ def save_wrong_question(doc: dict[str, Any]) -> None:
         knowledge_point_id=doc.get("knowledge_point_id"),
         status=doc.get("status", "open"),
         book_id=doc.get("book_id"),
+        question_stem_hash=doc.get("question_stem_hash"),
         created_at=doc["created_at"],
         updated_at=doc["updated_at"],
     )
+
+
+def find_wrong_question_by_stem(
+    user_id: str, question_stem_hash: str
+) -> dict[str, Any] | None:
+    """按**规范题目身份**找当前待复习项。
+
+    这是「同一道题多次做错只留一条」的依据。前端不需要用它 ——
+    他们拿到的 `wrong_question_id` 是稳定的不透明 id。
+    """
+    if not question_stem_hash:
+        return None
+    rows = db.list_docs(
+        "wrong_questions",
+        "user_id = ? AND question_stem_hash = ?",
+        [user_id, question_stem_hash],
+        order_by="created_at ASC",
+        limit=1,
+    )
+    return rows[0] if rows else None
 
 
 def get_wrong_question(wrong_question_id: str) -> dict[str, Any] | None:

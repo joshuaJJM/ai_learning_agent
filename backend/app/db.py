@@ -115,13 +115,16 @@ _MYSQL_SCHEMA: tuple[str, ...] = (
         user_id             VARCHAR(64) NOT NULL,
         knowledge_point_id  VARCHAR(64) NULL,
         book_id             VARCHAR(64) NULL,
+        question_stem_hash  VARCHAR(40) NULL,
         status              VARCHAR(32) NOT NULL DEFAULT 'open',
         created_at          VARCHAR(40) NOT NULL,
         updated_at          VARCHAR(40) NOT NULL,
         doc                 LONGTEXT    NOT NULL,
         PRIMARY KEY (wrong_question_id),
         KEY idx_wq_user_kp (user_id, knowledge_point_id),
-        KEY idx_wq_book (user_id, book_id)
+        KEY idx_wq_book (user_id, book_id),
+        -- 规范题目身份：同一道题多次做错只保留一条「当前待复习项」
+        UNIQUE KEY uk_wq_user_stem (user_id, question_stem_hash)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
     """
@@ -276,6 +279,7 @@ SQLITE_SCHEMA: tuple[str, ...] = (
         user_id             TEXT NOT NULL,
         knowledge_point_id  TEXT,
         book_id             TEXT,
+        question_stem_hash  TEXT,
         status              TEXT NOT NULL DEFAULT 'open',
         created_at          TEXT NOT NULL,
         updated_at          TEXT NOT NULL,
@@ -284,6 +288,8 @@ SQLITE_SCHEMA: tuple[str, ...] = (
     """,
     "CREATE INDEX IF NOT EXISTS idx_wq_user_kp ON wrong_questions(user_id, knowledge_point_id)",
     "CREATE INDEX IF NOT EXISTS idx_wq_book ON wrong_questions(user_id, book_id)",
+    # 同一道题多次做错只保留一条「当前待复习项」
+    "CREATE UNIQUE INDEX IF NOT EXISTS uk_wq_user_stem ON wrong_questions(user_id, question_stem_hash)",
     """
     CREATE TABLE IF NOT EXISTS analyses (
         analysis_id  TEXT PRIMARY KEY,
@@ -502,12 +508,19 @@ _COLUMN_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     # 题干指纹：让「这道题的作答历史」独立于题库版本被追溯。
     # 题库重新生成后 question_id 可能指向别的题，但指纹只跟内容走。
     ("evidence", "question_stem_hash", "VARCHAR(40) NULL"),
+    # 错题的**规范题目身份**。之前一行错题对应「某一次作业里的某道题」，
+    # 同一道题在不同作业里做错就会各留一行，列表上看起来是重复的。
+    # 加上指纹后，同一道题只保留一条「当前待复习项」，多次做错合并进去。
+    ("wrong_questions", "question_stem_hash", "VARCHAR(40) NULL"),
 )
 
 # (表名, 索引名, 列, 是否唯一)
 _INDEX_MIGRATIONS: tuple[tuple[str, str, str, bool], ...] = (
     ("analyses", "idx_analyses_batch", "user_id, batch_number", False),
     ("wrong_questions", "idx_wq_book", "user_id, book_id", False),
+    # 唯一索引在**合并完重复行之后**才建（见 _merge_duplicate_wrong_questions），
+    # 否则存量重复数据会让建索引直接失败。
+    ("wrong_questions", "uk_wq_user_stem", "user_id, question_stem_hash", True),
 )
 
 
@@ -550,13 +563,28 @@ def _run_migrations(conn: Any) -> None:
         conn.commit()
         applied.append(f"{table}.{column}")
 
+    # 错题的规范身份要先回填、再合并历史重复行，**最后**才能建唯一索引。
+    merged = _backfill_wrong_question_hashes(conn)
+    if merged:
+        applied.append(f"合并重复错题 {merged} 行")
+
     # 新加的列通常也要配索引
     for table, index_name, columns, unique in _INDEX_MIGRATIONS:
         if index_name in _index_names(conn, table):
             continue
         keyword = "UNIQUE INDEX" if unique else "INDEX"
-        conn.execute(f"CREATE {keyword} {index_name} ON {table} ({columns})")
-        conn.commit()
+        try:
+            conn.execute(f"CREATE {keyword} {index_name} ON {table} ({columns})")
+            conn.commit()
+        except Exception as exc:  # noqa: BLE001
+            # 唯一索引建不上说明还有重复行（不该发生，合并应当已经清干净）。
+            # 这里**不能吞掉**：宁可日志里响亮地报出来，也不要让唯一性悄悄失效。
+            import logging
+
+            logging.getLogger("haoxue").warning(
+                "索引 %s 创建失败（可能有残留重复行）: %s", index_name, exc
+            )
+            continue
         applied.append(index_name)
 
     if applied:
@@ -578,6 +606,198 @@ def _per_user_max_batch(conn: Any) -> dict[str, int]:
         except (KeyError, TypeError):
             result[str(row[0])] = int(row[1] or 0)
     return result
+
+
+#: 合并重复错题时，最多保留多少条 attempt 明细（更早的仍有 Evidence 可查）
+MAX_KEPT_ATTEMPTS = 20
+
+
+def _backfill_wrong_question_hashes(conn: Any) -> int:
+    """给错题补上题干指纹，并把同一道题的历史重复行**合并**成一条。
+
+    背景：`wrong_questions` 原来是一行对应「某次作业里的某道题」，
+    同一道题在不同作业里做错就各留一行，列表上看起来完全是重复的
+    （前端 Phase 6 报的就是这个）。
+
+    正确的模型是：**行 = 当前待复习的规范题目**，多次做错合并进同一条，
+    但 attempt 明细要留下来 —— 历史本身有价值，不能一删了之。
+
+    返回合并掉的（删除的）行数。
+    """
+    import json
+
+    from .question_bank import stem_fingerprint
+
+    rows = conn.execute(
+        "SELECT wrong_question_id, user_id, doc FROM wrong_questions"
+    ).fetchall()
+    if not rows:
+        return 0
+
+    def cell(row: Any, key: str, index: int) -> Any:
+        try:
+            return row[key]
+        except (KeyError, TypeError):
+            return row[index]
+
+    # 1) 回填指纹（老数据的 doc 里没有这个字段，从题干现算）
+    parsed: list[tuple[str, str, dict[str, Any], str]] = []
+    for row in rows:
+        wid = str(cell(row, "wrong_question_id", 0))
+        uid = str(cell(row, "user_id", 1))
+        raw_doc = cell(row, "doc", 2)
+        try:
+            doc = json.loads(raw_doc) if isinstance(raw_doc, str) else dict(raw_doc)
+        except (TypeError, ValueError):
+            doc = {}
+        digest = str(doc.get("question_stem_hash") or "")
+        if not digest:
+            digest = stem_fingerprint(str(doc.get("question_content") or ""))
+        parsed.append((wid, uid, doc, digest))
+
+    changed = 0
+    for wid, _uid, _doc, digest in parsed:
+        conn.execute(
+            "UPDATE wrong_questions SET question_stem_hash = ? "
+            "WHERE wrong_question_id = ? AND (question_stem_hash IS NULL "
+            "OR question_stem_hash <> ?)",
+            [digest, wid, digest],
+        )
+        changed += 1
+    if changed:
+        conn.commit()
+
+    # 2) 按 (user_id, 指纹) 分组，多于一条的合并
+    groups: dict[tuple[str, str], list[tuple[str, str, dict[str, Any], str]]] = {}
+    for item in parsed:
+        groups.setdefault((item[1], item[3]), []).append(item)
+
+    merged_rows = 0
+    for (uid, digest), members in groups.items():
+        if len(members) < 2:
+            # 单条也要补齐 attempts / attempt_count —— 否则老数据的这些字段
+            # 是 NULL，详情接口会返回空 attempts，与合并后的数据形状不一致。
+            wid, _u, only, _d = members[0]
+            if not (only.get("attempts") and only.get("attempt_count")):
+                single = only.get("attempts") or [
+                    {
+                        "question_id": only.get("question_id"),
+                        "homework_id": only.get("source_id"),
+                        "student_answer": only.get("student_answer"),
+                        "correctness": only.get("correctness"),
+                        "created_at": only.get("created_at"),
+                    }
+                ]
+                single = [a for a in single if a]
+                only["attempts"] = single
+                only["attempt_count"] = int(only.get("attempt_count") or 0) or len(single)
+                only["first_wrong_at"] = only.get("first_wrong_at") or only.get(
+                    "created_at"
+                )
+                only["last_wrong_at"] = (
+                    only.get("last_wrong_at")
+                    or only.get("updated_at")
+                    or only.get("created_at")
+                )
+                only["question_stem_hash"] = digest
+                conn.execute(
+                    "UPDATE wrong_questions SET doc = ?, question_stem_hash = ? "
+                    "WHERE wrong_question_id = ?",
+                    [json.dumps(only, ensure_ascii=False), digest, wid],
+                )
+            continue
+
+        # 存活者取**最早创建**的那条：id 最稳定，前端可能已经引用过它
+        members.sort(key=lambda m: str(m[2].get("created_at") or ""))
+        keeper_id, _u, keeper, _d = members[0]
+        duplicates = members[1:]
+
+        attempts: list[dict[str, Any]] = list(keeper.get("attempts") or [])
+        if not attempts:
+            # 老数据没有 attempts 字段，用 kept 自己的那条补上
+            attempts.append(
+                {
+                    "question_id": keeper.get("question_id"),
+                    "homework_id": keeper.get("source_id"),
+                    "student_answer": keeper.get("student_answer"),
+                    "correctness": keeper.get("correctness"),
+                    "created_at": keeper.get("created_at"),
+                }
+            )
+        for _wid, _u, dup, _dd in duplicates:
+            attempts.extend(dup.get("attempts") or [])
+            if not dup.get("attempts"):
+                attempts.append(
+                    {
+                        "question_id": dup.get("question_id"),
+                        "homework_id": dup.get("source_id"),
+                        "student_answer": dup.get("student_answer"),
+                        "correctness": dup.get("correctness"),
+                        "created_at": dup.get("created_at"),
+                    }
+                )
+
+        attempts = [a for a in attempts if a]
+        attempts.sort(key=lambda a: str(a.get("created_at") or ""))
+        # 快照取**最近一次**做错的内容
+        latest = duplicates[-1][2] if duplicates else keeper
+
+        keeper["attempts"] = attempts[-MAX_KEPT_ATTEMPTS:]
+        keeper["attempt_count"] = len(attempts)
+        keeper["first_wrong_at"] = keeper.get("created_at")
+        keeper["last_wrong_at"] = latest.get("created_at") or keeper.get("created_at")
+        for field in (
+            "question_id",
+            "question_number",
+            "question_content",
+            "choices",
+            "student_answer",
+            "correct_answer",
+            "explanation",
+            "correctness",
+            "error_type",
+            "error_label",
+            "diagnosis",
+            "image_url",
+            "source_id",
+            "source_name",
+            "book_id",
+        ):
+            if latest.get(field) is not None:
+                keeper[field] = latest[field]
+        keeper["question_stem_hash"] = digest
+        keeper["status"] = "open"
+        keeper["updated_at"] = latest.get("created_at") or keeper.get("updated_at")
+
+        for _wid, _u, _dup, _dd in duplicates:
+            conn.execute(
+                "DELETE FROM wrong_questions WHERE wrong_question_id = ?", [_wid]
+            )
+            merged_rows += 1
+
+        conn.execute(
+            "UPDATE wrong_questions SET doc = ?, question_stem_hash = ?, "
+            "status = ?, updated_at = ? WHERE wrong_question_id = ?",
+            [
+                json.dumps(keeper, ensure_ascii=False),
+                digest,
+                keeper["status"],
+                keeper["updated_at"],
+                keeper_id,
+            ],
+        )
+        import logging
+
+        logging.getLogger("haoxue").info(
+            "错题去重: %s 的同一道题由 %d 条合并为 1 条（累计做错 %d 次）",
+            uid,
+            len(members),
+            len(attempts),
+        )
+
+    if merged_rows:
+        conn.commit()
+    return merged_rows
 
 
 def _backfill_batch_numbers(conn: Any) -> int:

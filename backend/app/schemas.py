@@ -226,7 +226,29 @@ class KnowledgeSummaryNode(BaseModel):
     is_weak: bool
 
 
+class WrongQuestionAttempt(BaseModel):
+    """一次「做错」的明细。
+
+    同一道题多次做错会累积成多条 —— 历史本身有价值，不该被合并掉。
+    """
+
+    question_id: str | None = None
+    homework_id: str | None = None
+    student_answer: str | None = None
+    correctness: str | None = None
+    created_at: datetime | None = None
+
+
 class WrongQuestionSummary(BaseModel):
+    """**一道当前待复习的规范题目**（不是"某次作业里的某道题"）。
+
+    同一道题在不同作业里做错多次，这里只出现**一条** ——
+    列表的语义就是「我现在有哪些题需要复习」。
+    每次作答的历史保留在 `attempt_count` / `attempts` 与后端的 Evidence 里。
+
+    `wrong_question_id` 从第一次做错起就固定不变，可以安全地长期引用。
+    """
+
     wrong_question_id: str
     question_id: str
     question_number: str
@@ -236,6 +258,19 @@ class WrongQuestionSummary(BaseModel):
     error_type: str | None = None
     error_label: str | None = None
     status: str = "open"
+    question_stem_hash: str | None = Field(
+        default=None,
+        description=(
+            "规范题目身份。同一道题的多次做错共享同一个值。"
+            "客户端**不需要**用它去重（列表已经去过重），"
+            "但可以用作本地缓存键。"
+        ),
+    )
+    attempt_count: int = Field(
+        default=1, description="这道题累计做错几次，UI 可显示「做错 3 次」"
+    )
+    first_wrong_at: datetime | None = None
+    last_wrong_at: datetime | None = None
     created_at: datetime
 
 
@@ -575,7 +610,12 @@ class KnowledgeDetailResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 class WrongQuestionDetail(BaseModel):
-    """错题详情。`can_start_tutor` 对应详情页的 Start Learning 按钮。"""
+    """错题详情。`can_start_tutor` 对应详情页的 Start Learning 按钮。
+
+    `attempts` 是这道题的**逐次作答明细**（最早的在前，最多 20 条）——
+    想展示「这道题我错过哪几次」就用它。更早的记录仍可在后端
+    Evidence 里查到，只是不再随详情下发。
+    """
 
     wrong_question_id: str
     question_id: str
@@ -598,6 +638,11 @@ class WrongQuestionDetail(BaseModel):
     source_name: str | None = None
     status: str = "open"
     favorite: bool = False
+    question_stem_hash: str | None = None
+    attempt_count: int = 1
+    first_wrong_at: datetime | None = None
+    last_wrong_at: datetime | None = None
+    attempts: list[WrongQuestionAttempt] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
     can_start_tutor: bool = True
