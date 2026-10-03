@@ -86,9 +86,14 @@ GET /api/v1/health       # 同上（等价别名）
 | 3 | 图片识别 | `Qwen/Qwen3-VL-8B-Instruct` | SiliconFlow |
 | — | 二次求解校验 | 与识别模型**不同**的那个（优先 DeepSeek） | — |
 
-- **识别按质量优先降级**：DeepSeek → Qwen3-VL-32B → Qwen3-VL-8B。
-  DeepSeek 的识别质量最高（只是慢一些），所以排在最前。
+- **识别链**：Qwen3-VL-32B → deepseek-flash → Qwen3-VL-8B。
   全部失败才算失败，降级过程会在 `progress` 里以 `retrying` 状态暴露出来。
+
+  > DeepSeek 本来排第一（"质量优先"），2026-10-03 实测后与第二层对换：
+  > 它是推理模型，带图片时思维链吃掉 98.5% 的 `completion_tokens`
+  > （同一张图 31.1 秒 / 6106 tokens，其中 6015 是推理；Qwen3-VL-32B
+  > 只用 1.7 秒 / 53 tokens）。一张多题试卷必然撑爆 `max_tokens`，
+  > 触发翻倍重试 ×5，单张 150+ 秒后撞上超时。
 - **校验模型绝不会是刚做识别的那个**（见 §2.3）。识别是视觉模型、
   校验是文本模型，两边异构，独立性更好；识别降级后校验会自动换一个模型，
   避免"自己复核自己"。

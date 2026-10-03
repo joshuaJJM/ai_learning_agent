@@ -645,9 +645,31 @@ async def verify_answers(
 
 
 def recognition_models(settings: Any, llm: LlmClient) -> list[str]:
-    """图片识别的降级链，按**质量优先**排序。
+    """图片识别的降级链。
 
-        DeepSeek（质量最高）→ Qwen3-VL-32B → Qwen3-VL-8B
+        Qwen3-VL-32B → deepseek-flash → Qwen3-VL-8B
+
+    **为什么把 DeepSeek 从第一位挪开**（2026-10-03 实测后对换）：
+
+    `deepseek-flash` 是推理模型，思维链也占 `max_tokens`。带图片调用时
+    它的推理 token 会吃掉绝大部分预算 —— 同一张图实测：
+
+        模型              耗时     completion tokens   其中推理
+        deepseek-flash    31.1s    6106                6015（98.5%）
+        Qwen3-VL-32B       1.7s      53                   —
+
+    为了输出 173 字节的 JSON 烧掉 6015 个推理 token，慢 18 倍、贵 114 倍，
+    而且一张多题试卷必然撑爆 `max_tokens`，触发「翻倍预算重试」×5 次，
+    单张图就要 150+ 秒，直接撞上 120 秒超时。
+    线上 batch#2 就是这样整个失败的（553 秒后 VLM_TIMEOUT）。
+
+    纯文本调用它是正常的（2.2 秒、合法 JSON、231 个推理 token），
+    所以它更适合留在**文本校验**的位置。
+
+    ⚠️ 它现在排在**第二位**（按"第一层与第二层对换"实现）。
+    更省时间的做法是把它放到**最后**：Qwen32B → Qwen8B → DeepSeek ——
+    这样 Qwen32B 失败时先用 1~2 秒的 8B 顶一下，而不是先等 31 秒的推理模型。
+    需要的话改这一处即可。
 
     注意：**不要求某个模型必须成功**，只要有一个能出结果就算成功；
     但顺序决定了代价 —— 排在前面的优先被使用。
@@ -655,11 +677,15 @@ def recognition_models(settings: Any, llm: LlmClient) -> list[str]:
     抽成函数是为了让测试直接用它 —— 测试里再抄一份的话，两份迟早长歪。
     """
     models: list[str] = []
-    if llm.backup_configured:
-        models.append(settings.backup_llm_model)
-    for candidate in (settings.vlm_model, settings.vlm_fallback_model):
+
+    def add(candidate: str | None) -> None:
         if candidate and candidate not in models:
             models.append(candidate)
+
+    add(settings.vlm_model)
+    if llm.backup_configured:
+        add(settings.backup_llm_model)
+    add(settings.vlm_fallback_model)
     return models
 
 

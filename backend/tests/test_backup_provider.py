@@ -130,16 +130,26 @@ def _chain(settings: Settings) -> list[str]:
     return vlm_service.recognition_models(settings, LlmClient(settings))
 
 
-def test_vlm_chain_is_quality_first() -> None:
-    """★ 质量优先：DeepSeek（质量最高）→ Qwen3-VL-32B → Qwen3-VL-8B。"""
-    assert _chain(_settings()) == [BACKUP, PRIMARY, FALLBACK]
+def test_vlm_chain_puts_qwen32b_first_and_deepseek_second() -> None:
+    """★ 链首必须是 Qwen3-VL-32B。
+
+    曾经把 DeepSeek 放第一位（"质量优先"），实测被推翻：带图片时它是
+    推理模型，思维链吃掉 98.5% 的 completion token（同一张图 6015/6106），
+    耗时 31.1 秒（Qwen32B 是 1.7 秒），一张多题试卷必然撑爆 max_tokens、
+    触发翻倍重试 ×5，单张图 150+ 秒后撞上 120 秒超时。
+    """
+    assert _chain(_settings()) == [PRIMARY, BACKUP, FALLBACK]
+    assert _chain(_settings())[0] == PRIMARY
 
 
-def test_vlm_chain_starts_with_deepseek() -> None:
-    assert _chain(_settings())[0] == BACKUP
+def test_vlm_chain_keeps_deepseek_off_the_first_slot() -> None:
+    """第一层和第二层对换 —— DeepSeek 不再打头。"""
+    chain = _chain(_settings())
+    assert chain[0] == PRIMARY
+    assert chain.index(BACKUP) > 0
 
 
-def test_vlm_chain_without_backup_key_starts_with_qwen32b() -> None:
+def test_vlm_chain_without_backup_key_is_just_the_qwens() -> None:
     assert _chain(_settings(backup_llm_api_key="")) == [PRIMARY, FALLBACK]
 
 
@@ -151,7 +161,7 @@ def test_backup_model_is_not_duplicated_in_the_chain() -> None:
 
 
 def test_fallback_is_dropped_when_it_equals_the_primary() -> None:
-    assert _chain(_settings(vlm_fallback_model=PRIMARY)) == [BACKUP, PRIMARY]
+    assert _chain(_settings(vlm_fallback_model=PRIMARY)) == [PRIMARY, BACKUP]
 
 
 # ---------------------------------------------------------------------------
