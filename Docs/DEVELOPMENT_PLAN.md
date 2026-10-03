@@ -379,6 +379,22 @@ phase-8: integrate manual answer confirmation
 
 针对比赛现场的联网演示路径做稳定性检查，不额外实现离线模式。
 
+### 真实执行记录（2026-10-03）
+
+- 固定样张：`题目/示例题目 1/2/3`（2 张题目截图 + 1 张整页照片，共 3 张），
+  放进模拟器相册后走 App 真实「从照片选择」路径，不做任何绕过系统照片/扫描的改动；
+- 新增可复跑的真实上传 UI 测试
+  `HaoXueUITests.testFixedSampleUploadCompletesRealAnalysis`
+  （默认跳过，设置 `HAOXUE_LIVE_UPLOAD_TEST=1` 才运行，因为一次真实 VLM 分析要几分钟）；
+- 实测：batch 4 = 3 张图 / 11 题 / 218s / 成功；batch 5 在后端分析服务崩溃期间
+  卡在 `processing`（后端 `retrying` 已跑到最后一档 deepseek-flash）；
+- confirm-answer：App UI 真实跑通 3 次（`unknown` 减少、`correct`/`wrong` 由后端给出、
+  新建错题进入 Home），另做一次同 key 重复提交 → `replayed: true`、Evidence 不增长；
+- Tutor：真实会话、答错后服务端切换补救层级（1/4）并更新掌握度；
+- Practice：真实 session → 出题 → 作答 → 判定 + 解析 → 下一题，v2 `tag_changes` 正常解码；
+- Golden Demo 连续 10 次**未完成**：后端分析服务在测试期间崩溃，按人类要求停止上传，
+  待后端修复后重跑。
+
 ### 内容
 
 - 固定并验证比赛使用的测试图片与测试题；

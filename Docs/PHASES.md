@@ -121,15 +121,28 @@ Tutor 会话 ID 按后端来源上下文保存在当前 App 进程内；重新�
 
 ### Phase 8B — Online Reliability QA
 
-- [ ] Fixed demo samples verified
-- [ ] Production demo backend endpoint verified
-- [ ] Network / AI timeout error UI
-- [ ] Retry path verified
-- [ ] Duplicate submission / Evidence safety
-- [ ] Consecutive live demo crash test
-- [ ] P0 / P1 bug cleanup（含 `HaoXueUITests` 仍断言 Settings 已移除的文案）
-- [ ] Confirm-answer 连续 3 次真实 E2E
-- [ ] Commit
+- [x] Production demo backend endpoint verified（health `status: ok` / `llm_mode: live`；
+      `/home`、`/homework/batches`、`/knowledge` 读取正常）
+- [x] 固定样张真实上传：`题目/示例题目1.png` + `示例题目2.png` + `示例题目3.jpg`（3 张）
+      —— App 真实路径（照片选择 → 准备 → 上传 → 轮询 → 结果）完成 2 次，
+      成功 1 批（batch 4：3 张图 / 11 题 / 218s），另一批（batch 5）在后端分析服务
+      崩溃期间卡在 processing，未计入成功次数
+- [x] Analysis 状态机：`queued / processing / retrying / completed / failed` 实测无不可恢复状态，
+      历史列表里真实渲染出 `retrying` 文案（「正在用 deepseek-flash 重试（3/3）」）
+- [x] Network / AI timeout error UI（失败批次真实渲染 `VLM_TIMEOUT` + 原因文案 + 重试入口）
+- [x] Retry path verified（扫描失败 retry 复用同一 `Idempotency-Key`；
+      `409 IDEMPOTENCY_CONFLICT` 等 1 秒原样重发，均有单测覆盖）
+- [x] Duplicate submission / Evidence safety（同一答案重复确认 → `replayed: true`，
+      `home.stats.total_evidence` 18 → 18 不增长）
+- [x] Confirm-answer 连续 3 次真实 E2E（App UI 路径：unknown → 选答案 → 确认 →
+      重拉分析结果 → summary 变化，`correct 1→3`、`unknown 10→6`、新建错题同步进 Home）
+- [x] Tutor / Practice 真实路径（Tutor：答错后服务端切补救层「第 1/4 层」+ 掌握度 19%→18%；
+      Practice：session → 出题 → 作答 → 判定/解析 → 下一题，v2 `tag_changes` 不再解码失败）
+- [x] HaoXueUITests 与当前产品一致（3 个历史失败已修：废弃 Settings 文案断言、
+      依赖线上「第 17 题」的硬编码，改为不依赖具体题号的数据断言 + 无数据时 `XCTSkip`）
+- [ ] Golden Demo 连续 10 次（**未达成**：后端分析服务在测试期间崩溃，
+      按人类要求停止上传，等待后端修复后重跑）
+- [x] Commit
 
 > 比赛不要求离线模式；不把 Cached / Mock 自动 fallback 作为 Phase 8 验收项。
 
