@@ -197,6 +197,7 @@ phase-4: implement backend learning agent pipeline
 - Wrong Questions 列表 / 详情与 Tutor 入口；
 - Knowledge Detail 与 mastery explanation；
 - Tutor contract cleanup：补齐 `answering_turn_id` 等已知边界；
+- Tutor 入口保留后端来源上下文，当前进程内重入时从服务端恢复会话；
 - 保留 Mock / fixture 仅用于 Preview、UI Test 与开发调试。
 
 ### 不做
@@ -210,6 +211,7 @@ phase-4: implement backend learning agent pipeline
 - Home 的学习状态与 Next Step 来自真实后端；
 - 扫描完成后可看到题目、诊断、知识点和掌握度变化；
 - 错题或知识点可进入对应详情，并能从合适入口启动 Tutor。
+- Tutor 使用服务端结构化回合，能恢复当前进度并显示服务端总结与知识状态变化。
 
 ### Commit
 

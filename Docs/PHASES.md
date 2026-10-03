@@ -59,15 +59,17 @@
 
 ## Phase 5 — Core Frontend Integration
 
-- [ ] Live Home / Next Step
-- [ ] Full Analysis Result DTO
-- [ ] Scan Result UI
-- [ ] Knowledge Change display
-- [ ] Wrong Questions list / detail
-- [ ] Knowledge Detail
-- [ ] Tutor `answering_turn_id` cleanup
-- [ ] Remove production Home fixture dependency
-- [ ] Commit
+- [x] Live Home / Next Step
+- [x] Full Analysis Result DTO
+- [x] Scan Result UI
+- [x] Knowledge Change display
+- [x] Wrong Questions list / detail
+- [x] Knowledge Detail
+- [x] Tutor `answering_turn_id` cleanup and session restore
+- [x] Remove production Home fixture dependency
+- [x] Commit
+
+Tutor 会话 ID 按后端来源上下文保存在当前 App 进程内；重新进入同一来源时通过 `GET /api/v1/tutor/sessions/{id}` 恢复当前结构化回合。跨 App 冷启动恢复不属于当前实现范围。
 
 ## Phase 6 — Practice & Closed Learning Loop
 
