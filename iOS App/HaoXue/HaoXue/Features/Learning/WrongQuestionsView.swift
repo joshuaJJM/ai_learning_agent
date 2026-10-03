@@ -14,8 +14,8 @@ struct WrongQuestionsView: View {
                     DemoCard {
                         HStack {
                             VStack(alignment: .leading, spacing: 5) {
-                                Text("知识状态").font(.headline).foregroundStyle(.primary)
-                                Text("查看掌握度与学习证据")
+                                Text("知识掌握与补弱").font(.headline).foregroundStyle(.primary)
+                                Text("查看掌握度、薄弱点与学习证据")
                                     .font(.subheadline).foregroundStyle(DemoStyle.secondary)
                             }
                             Spacer()

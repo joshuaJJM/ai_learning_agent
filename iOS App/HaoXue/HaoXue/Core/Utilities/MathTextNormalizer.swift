@@ -38,7 +38,9 @@ enum MathTextNormalizer {
     private static let maximumExponentLength = 16
 
     private enum Exponentiation {
-        case superscript(String)
+        /// Display text plus how many source characters the span consumed, so a
+        /// replacement such as `^(')` → `′` cannot desynchronise the scanner.
+        case superscript(String, consumed: Int)
         /// The caret starts a balanced group we will not render: keep it verbatim so the
         /// carets inside it cannot be lifted either.
         case opaqueGroup(length: Int)
@@ -70,10 +72,10 @@ enum MathTextNormalizer {
             let character = characters[index]
             if character == "^" {
                 switch exponentiation(in: characters, after: index) {
-                case .superscript(let exponent):
+                case .superscript(let exponent, let consumed):
                     flushPlain(&plain, into: &tokens)
                     tokens.append(MathDisplayToken(text: exponent, isSuperscript: true))
-                    index += 1 + exponent.count
+                    index += consumed
                     continue
                 case .opaqueGroup(let length):
                     plain.append(contentsOf: characters[index..<(index + 1 + length)])
@@ -125,9 +127,19 @@ enum MathTextNormalizer {
             }
             let length = close - start + 1
             let inner = characters[(start + 1)..<close]
+            // The question bank writes the derivative as `f^(')`; that is the prime sign,
+            // not a parenthesised exponent, and the meaning is unambiguous.
+            if inner.count == 1, inner.first == "'" {
+                return .superscript("′", consumed: length + 1)
+            }
+            // `x^(2)` is the bank's flattened `x^{2}`: the parentheses only group a
+            // single digit, so dropping them cannot change the meaning.
+            if inner.count == 1, let digit = inner.first, digit.isASCII, digit.isNumber {
+                return .superscript(String(digit), consumed: length + 1)
+            }
             if !inner.isEmpty, inner.count <= maximumExponentLength,
                inner.allSatisfy(superscriptCharacters.contains) {
-                return .superscript(String(characters[start...close]))
+                return .superscript(String(characters[start...close]), consumed: length + 1)
             }
             return .opaqueGroup(length: length)
         }
@@ -149,11 +161,11 @@ enum MathTextNormalizer {
                 cursor += 1
             }
             guard digits.count <= maximumExponentLength else { return .keepLiteralCaret }
-            return .superscript(sign + digits)
+            return .superscript(sign + digits, consumed: 1 + sign.count + digits.count)
         }
         // A bare letter exponent stays a single character: `e^x2` is ambiguous input.
         guard sign.isEmpty, character.isLetter else { return .keepLiteralCaret }
-        return .superscript(String(character))
+        return .superscript(String(character), consumed: 2)
     }
 
     private static func matchingParenthesis(in characters: [Character], from open: Int) -> Int? {

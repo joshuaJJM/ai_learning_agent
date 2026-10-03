@@ -27,6 +27,32 @@ struct WrongQuestionsTests {
         #expect(detail.sourceType == dto.sourceType)
     }
 
+    /// Live backend currently returns two *distinct* wrong-question records for the same
+    /// 第 17 题（来自两次不同的 homework 批次）。The client maps the array 1:1 and must not
+    /// silently deduplicate: hiding a backend duplication is not the client's job.
+    @Test func duplicateLookingServerRecordsArePreservedVerbatim() throws {
+        let json = """
+        {"user_id":"user_1","total":2,"items":[
+          {"wrong_question_id":"wq_126cd9d311f8445590b5","question_id":"q_c5d4913a925542c292a9",
+           "question_number":"17","question_content":"已知函数 f(x) = x^3 - 3x^2 + 2",
+           "knowledge_point_id":"math.derivative.monotonicity","knowledge_point_name":"导数与单调性",
+           "error_type":"transformation","error_label":"函数性质转换错误","status":"open",
+           "created_at":"2026-10-02T17:38:53.716361Z"},
+          {"wrong_question_id":"wq_252b218cdf0b47f49b14","question_id":"q_40b98ab67b7c4f52a39e",
+           "question_number":"17","question_content":"已知函数 f(x) = x^3 - 3x^2 + 2",
+           "knowledge_point_id":"math.derivative.monotonicity","knowledge_point_name":"导数与单调性",
+           "error_type":"transformation","error_label":"函数性质转换错误","status":"open",
+           "created_at":"2026-10-02T15:15:32.679689Z"}]}
+        """
+        let list = try BackendJSON.decoder.decode(WrongQuestionListDTO.self, from: Data(json.utf8))
+        let items = list.items.map(Phase5Mapper().summary)
+        #expect(items.count == 2)
+        #expect(items.map(\.id) == ["wq_126cd9d311f8445590b5", "wq_252b218cdf0b47f49b14"])
+        #expect(Set(items.map(\.questionID)).count == 2)
+        #expect(items.allSatisfy { $0.questionNumber == "17" })
+        #expect(items[0].createdAt != items[1].createdAt)
+    }
+
     @Test func listLoadsEmptyAndRetriesTypedError() async {
         let provider = ScriptedWrongProvider()
         provider.listResults = [.failure(NetworkError.backend(code: "SERVICE_UNAVAILABLE", message: "internal", requestID: nil, status: 503)), .success([])]

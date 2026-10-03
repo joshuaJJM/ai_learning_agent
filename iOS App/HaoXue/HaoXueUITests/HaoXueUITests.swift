@@ -19,7 +19,7 @@ final class HaoXueUITests: XCTestCase {
         app.terminate()
         app.launch()
         app.tabBars.buttons["学习"].tap()
-        app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "知识状态")).firstMatch.tap()
+        app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "知识掌握与补弱")).firstMatch.tap()
         XCTAssertTrue(app.navigationBars["知识状态"].waitForExistence(timeout: 15))
         let overviewPoint = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", pointName)).firstMatch
         XCTAssertTrue(overviewPoint.waitForExistence(timeout: 15))

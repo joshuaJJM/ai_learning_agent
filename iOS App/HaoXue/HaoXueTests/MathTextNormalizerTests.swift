@@ -49,6 +49,23 @@ struct MathTextNormalizerTests {
         #expect(superscripts("1/(2e^(3/2))") == ["(3/2)"])
     }
 
+    /// Regression for the question-bank notation seen in the Practice explanation:
+    /// `f^(')(x)=3x^(2)-a`. The prime and the redundant single-digit parentheses are
+    /// safe typography; anything the bank wrote without those exact shapes stays as-is.
+    @Test func bankNotationRendersSafelyWithoutRewritingMath() {
+        #expect(rendered("f^(')(x)=3x^(2)-a") == "f′(x)=3x2-a")
+        #expect(superscripts("f^(')(x)=3x^(2)-a") == ["′", "2"])
+        #expect(rendered("f^(')") == "f′")
+        // 多字符括号指数保持原样，避免 `e^(3/2)` 被读成 `e^3/2`。
+        #expect(superscripts("e^(3/2)") == ["(3/2)"])
+        #expect(rendered("e^(3/2)") == "e(3/2)")
+        // 没有 caret 的括号、花引号 prime、sqrt 记法一律不猜。
+        #expect(rendered("x(2)") == "x(2)")
+        #expect(rendered("sqrt((a)/(3))") == "sqrt((a)/(3))")
+        #expect(rendered("f^(\u{2019})") == "f^(\u{2019})")
+        #expect(rendered("f^('')(x)") == "f^('')(x)")
+    }
+
     @Test func screenshotExpressionsKeepTheirMeaning() {
         #expect(plain("[2/e^3,1/e^2]") == "[2/e3,1/e2]")
         #expect(superscripts("[2/e^3,1/e^2]") == ["3", "2"])
