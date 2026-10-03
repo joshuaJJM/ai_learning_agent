@@ -1,7 +1,8 @@
 import SwiftUI
 
 struct RemoteTutorView: View {
-    let onClose: () -> Void
+    let onSessionReady: (String) -> Void
+    let onClose: (Bool) -> Void
     @State private var model: RemoteTutorViewModel
     @State private var showingScratchpad = false
     @State private var actionTask: Task<Void, Never>?
@@ -9,9 +10,14 @@ struct RemoteTutorView: View {
 
     init(service: any TutorRemoteServing,
          masteryService: (any MasteryOverviewServing)? = nil,
-         onClose: @escaping () -> Void) {
+         existingSessionID: String? = nil, createKey: String = UUID().uuidString,
+         onSessionReady: @escaping (String) -> Void = { _ in },
+         onClose: @escaping (Bool) -> Void) {
+        self.onSessionReady = onSessionReady
         self.onClose = onClose
-        _model = State(initialValue: RemoteTutorViewModel(service: service, masteryService: masteryService))
+        _model = State(initialValue: RemoteTutorViewModel(
+            service: service, masteryService: masteryService,
+            existingSessionID: existingSessionID, createKey: createKey))
     }
 
     var body: some View {
@@ -20,7 +26,7 @@ struct RemoteTutorView: View {
                 Button {
                     actionTask?.cancel()
                     model.cancel()
-                    onClose()
+                    onClose(model.completed || model.sessionMissing)
                 } label: { Image(systemName: "xmark") }
                     .accessibilityLabel("关闭课程")
                 Spacer()
@@ -51,9 +57,10 @@ struct RemoteTutorView: View {
             }
         }
         .onAppear {
-            if model.sessionId == nil {
-                actionTask = Task { await model.load() }
-            }
+            actionTask = Task { await model.load() }
+        }
+        .onChange(of: model.sessionId) { _, id in
+            if let id { onSessionReady(id) }
         }
         .onDisappear {
             actionTask?.cancel()
@@ -63,8 +70,11 @@ struct RemoteTutorView: View {
             if phase == .background {
                 actionTask?.cancel()
                 model.cancel()
-            } else if phase == .active && model.sessionId == nil {
-                actionTask = Task { await model.load() }
+            } else if phase == .active {
+                actionTask = Task {
+                    if model.sessionId == nil { await model.load() }
+                    else { await model.refresh() }
+                }
             }
         }
         .sheet(isPresented: $showingScratchpad) {
@@ -109,6 +119,12 @@ struct RemoteTutorView: View {
                 }
             }
             if model.pendingNextTurn != nil { feedbackContent }
+            if model.pendingNextTurn == nil, turn.turnType == "remedial_exhausted",
+               model.answerReveal != nil {
+                feedbackContent
+                Text("结合解析，再试一次")
+                    .font(.subheadline).foregroundStyle(DemoStyle.secondary)
+            }
             if let error = model.errorMessage {
                 Label(error, systemImage: "exclamationmark.triangle")
                     .font(.subheadline).foregroundStyle(.red)
@@ -214,6 +230,7 @@ struct RemoteTutorView: View {
         if model.isSubmitting { return "提交中" }
         if model.errorMessage != nil { return "重试" }
         if model.pendingNextTurn != nil {
+            if model.pendingNextTurn?.turnType == "remedial_exhausted" { return "查看解析" }
             return model.pendingNextTurn?.completed == true ? "查看总结" : "下一题"
         }
         return "提交答案"
@@ -227,7 +244,7 @@ struct RemoteTutorView: View {
     }
 
     private func primaryAction() {
-        if model.completed { onClose(); return }
+        if model.completed { onClose(true); return }
         if model.errorMessage != nil { actionTask = Task { await model.retry() }; return }
         if model.pendingNextTurn != nil { model.continueToNext(); return }
         actionTask = Task { await model.submit() }
@@ -239,19 +256,30 @@ struct RemoteTutorView: View {
                 .font(.system(size: 45)).foregroundStyle(.green)
             Text("学习完成").font(.largeTitle.bold())
             Text(model.knowledgePointName).font(.title2)
-            if let start = model.sessionStartMastery, let current = model.currentMastery {
+            if let summary = model.turn?.text, !summary.isEmpty {
+                SafeMathText(summary).font(.body)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            ForEach(model.completionChanges, id: \.knowledgePointId) { change in
                 // Server values only: the client never recomputes mastery.
-                Text("\(start.demoPercent) → \(current.demoPercent)")
+                Text("\(change.before.demoPercent) → \(change.after.demoPercent)")
                     .font(.system(size: 34, weight: .bold))
                     .foregroundStyle(.green)
-                Text("这个知识点的掌握度变化").foregroundStyle(DemoStyle.secondary)
-            } else {
+                Text("\(change.name)的掌握度变化").foregroundStyle(DemoStyle.secondary)
+            }
+            if model.completionChanges.isEmpty {
                 Text("本轮学习已完成").font(.body)
             }
             if let score = model.overallMasteryScore {
                 Text("全部知识点综合掌握度 \(score)%")
                     .font(.subheadline)
                     .foregroundStyle(DemoStyle.secondary)
+            }
+            if let action = model.nextAction {
+                Divider()
+                Text("接下来").font(.headline)
+                Text(action.title).font(.body.weight(.medium))
+                Text(action.reason).font(.subheadline).foregroundStyle(DemoStyle.secondary)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

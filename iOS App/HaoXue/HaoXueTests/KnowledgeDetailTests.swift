@@ -22,6 +22,12 @@ struct KnowledgeDetailTests {
         #expect(detail.evidence.first?.result == dto.evidence.first?.result)
         #expect(detail.recentPerformance.count == dto.recentPerformance.count)
         #expect(detail.recommendedAction?.knowledgePointID == dto.recommendedAction?.knowledgePointId)
+        let service = TutorRemoteService(baseURL: URL(string: "http://fixture.invalid")!,
+                                         knowledgePointID: detail.id)
+        let request = try #require(service.makeCreateRequest(key: "knowledge-entry").httpBody)
+        let body = try #require(JSONSerialization.jsonObject(with: request) as? [String: Any])
+        #expect(body["source_type"] as? String == "knowledge_point")
+        #expect(body["knowledge_point_id"] as? String == detail.id)
 
         let treeDTO = try BackendJSON.decoder.decode(KnowledgeTreeDTO.self, from: fixture("KnowledgeTree"))
         let overview = Phase5Mapper().knowledgeOverview(treeDTO)

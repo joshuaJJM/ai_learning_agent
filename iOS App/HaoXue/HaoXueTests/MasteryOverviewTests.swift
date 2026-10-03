@@ -126,6 +126,8 @@ struct MasteryOverviewTests {
         #expect(model.sessionStartMastery == 0.4322)
         #expect(model.currentMastery == 0.51)
         #expect(model.hasMasteryChange)
+        #expect(model.completionChanges.first?.before == 0.4322)
+        #expect(model.completionChanges.first?.after == 0.51)
     }
 
     @Test @MainActor func completionWithoutKnowledgeChangeDoesNotInventNumbers() async {
@@ -215,6 +217,10 @@ private final class MasteryTutorService: TutorRemoteServing {
                  "completed":false,"question_id":"q_1","strategy":null,"remedial_depth":0,
                  "answer_reveal":null,"created_at":"2026-10-02T12:00:00+00:00"}}
         """.utf8))
+    }
+
+    func fetchSession(id: String) async throws -> TutorSessionDTO {
+        try await createSession(key: "restore")
     }
 
     func submit(sessionId: String, selectedKey: String?, text: String?, key: String,

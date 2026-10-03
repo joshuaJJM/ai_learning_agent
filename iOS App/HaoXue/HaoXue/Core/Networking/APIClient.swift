@@ -14,6 +14,7 @@ enum NetworkError: Error, Equatable {
 enum ServiceErrorCode: Equatable {
     case invalidImage, analysisFailed, vlmTimeout, questionNotRecognized
     case idempotencyConflict, sessionNotFound, sessionCompleted, internalError
+    case serviceUnavailable, unauthorized, validationError
     case unknown(String)
 
     init(rawValue: String) {
@@ -26,6 +27,9 @@ enum ServiceErrorCode: Equatable {
         case "SESSION_NOT_FOUND": self = .sessionNotFound
         case "SESSION_COMPLETED": self = .sessionCompleted
         case "INTERNAL_ERROR": self = .internalError
+        case "SERVICE_UNAVAILABLE": self = .serviceUnavailable
+        case "UNAUTHORIZED": self = .unauthorized
+        case "VALIDATION_ERROR": self = .validationError
         default: self = .unknown(rawValue)
         }
     }

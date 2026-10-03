@@ -56,6 +56,7 @@ struct LiveHomeTests {
         }
 
         #expect(HomeActionRoute(action("start_tutor", knowledgeID: "kp_1")) == .tutor("kp_1"))
+        #expect(HomeActionRoute(action("start_tutor")) == .none)
         #expect(HomeActionRoute(action("review_wrong_question", wrongID: "wq_1")) == .wrongQuestion("wq_1"))
         #expect(HomeActionRoute(action("review_wrong_question")) == .none)
         #expect(HomeActionRoute(action("continue_practice")) == .practice)

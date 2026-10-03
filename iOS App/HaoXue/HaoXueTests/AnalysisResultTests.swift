@@ -34,6 +34,7 @@ struct AnalysisResultTests {
         #expect(result.knowledgeChanges[0].evidenceCount == 8)
         #expect(result.newWrongQuestions.map(\.questionNumber) == ["17"])
         #expect(result.nextAction?.knowledgePointID == "kp_monotonicity")
+        #expect(HomeActionRoute(try #require(result.nextAction)) == .tutor("kp_monotonicity"))
         #expect(result.warnings == ["技术诊断，默认不展示"])
     }
 

@@ -16,6 +16,7 @@ enum TutorStreamEvent {
 @MainActor
 protocol TutorRemoteServing {
     func createSession(key: String) async throws -> TutorSessionDTO
+    func fetchSession(id: String) async throws -> TutorSessionDTO
     func submit(sessionId: String, selectedKey: String?, text: String?, key: String,
                 onEvent: @escaping @MainActor (TutorStreamEvent) -> Void) async throws -> TutorTurnResponseDTO
 }

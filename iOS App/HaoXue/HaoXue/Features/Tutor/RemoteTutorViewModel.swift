@@ -6,7 +6,7 @@ import PencilKit
 final class RemoteTutorViewModel {
     private let service: any TutorRemoteServing
     private let masteryService: (any MasteryOverviewServing)?
-    private let createKey = UUID().uuidString
+    private let createKey: String
     private var requestGeneration = 0
     private var pendingAnswer: (selectedKey: String?, text: String?, key: String)?
     private var finishAfterReveal = false
@@ -22,7 +22,10 @@ final class RemoteTutorViewModel {
     private(set) var isLoading = false
     private(set) var isSubmitting = false
     private(set) var completed = false
+    private(set) var nextAction: NextActionDTO?
+    private(set) var completionChanges: [TutorKnowledgeChangeDTO] = []
     private(set) var errorMessage: String?
+    private(set) var sessionMissing = false
     // Server-owned mastery for the knowledge point of this session. `nil` means
     // "the backend has not reported a change yet" — never zero, never recomputed.
     private(set) var sessionStartMastery: Double?
@@ -33,9 +36,12 @@ final class RemoteTutorViewModel {
     var freeText = ""
     var drawing = PKDrawing()
 
-    init(service: any TutorRemoteServing, masteryService: (any MasteryOverviewServing)? = nil) {
+    init(service: any TutorRemoteServing, masteryService: (any MasteryOverviewServing)? = nil,
+         existingSessionID: String? = nil, createKey: String = UUID().uuidString) {
         self.service = service
         self.masteryService = masteryService
+        sessionId = existingSessionID
+        self.createKey = createKey
     }
 
     var progressText: String {
@@ -48,26 +54,54 @@ final class RemoteTutorViewModel {
     var hasMasteryChange: Bool { sessionStartMastery != nil && currentMastery != nil }
 
     var canSubmit: Bool {
-        guard let turn, !isSubmitting, !isLoading, pendingAnswer == nil,
+        guard let turn, !completed, errorMessage == nil, !isSubmitting, !isLoading, pendingAnswer == nil,
               pendingNextTurn == nil else { return false }
+        guard turn.turnType != "summary", turn.turnType != "explanation" else { return false }
         if !turn.choices.isEmpty { return selectedKey != nil }
         return turn.allowFreeText && !freeText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     func load() async {
-        guard sessionId == nil, !isLoading else { return }
+        guard turn == nil, !isLoading else { return }
+        await loadSession()
+    }
+
+    func refresh() async {
+        guard !isLoading, sessionId != nil else { return }
+        await loadSession()
+    }
+
+    private func loadSession() async {
         requestGeneration += 1
         let generation = requestGeneration
         isLoading = true
+        isSubmitting = false
         errorMessage = nil
         do {
-            let session = try await service.createSession(key: createKey)
+            let session: TutorSessionDTO
+            if let sessionId {
+                session = try await service.fetchSession(id: sessionId)
+            } else {
+                session = try await service.createSession(key: createKey)
+            }
             guard generation == requestGeneration, !Task.isCancelled else { return }
             sessionId = session.tutorSessionId
+            sessionMissing = false
             knowledgePointName = session.knowledgePointName ?? "学习"
             knowledgePointId = session.knowledgePointId
             turn = session.turn
+            pendingNextTurn = nil
+            pendingAnswer = nil
+            finishAfterReveal = false
+            answerReveal = session.turn?.answerReveal
+            feedback = nil
+            answeredCorrectly = nil
+            streamedText = ""
+            selectedKey = nil
+            freeText = ""
             completed = session.completed
+            nextAction = session.nextAction
+            completionChanges = session.completed ? session.knowledgeChanges : []
             isLoading = false
             apply(knowledgeChanges: session.knowledgeChanges)
             // Session state is already published; the overview request never gates the Tutor.
@@ -75,7 +109,7 @@ final class RemoteTutorViewModel {
         } catch {
             guard generation == requestGeneration, !Task.isCancelled else { return }
             isLoading = false
-            errorMessage = "题目加载失败，请重试"
+            errorMessage = errorText(for: error, restoring: sessionId != nil)
         }
     }
 
@@ -85,7 +119,7 @@ final class RemoteTutorViewModel {
     }
 
     func submit() async {
-        guard let sessionId, !isSubmitting, !isLoading else { return }
+        guard let sessionId, !isSubmitting, !isLoading, !completed else { return }
         guard canSubmit || pendingAnswer != nil else { return }
         let answer = pendingAnswer ?? (selectedKey, freeText.isEmpty ? nil : freeText, UUID().uuidString)
         pendingAnswer = answer
@@ -113,6 +147,8 @@ final class RemoteTutorViewModel {
             answerReveal = result.turn.answerReveal
             finishAfterReveal = result.completed && result.turn.strategy == "reveal_answer"
             completed = result.completed && !finishAfterReveal
+            nextAction = result.nextAction
+            completionChanges = result.completed ? result.knowledgeChanges : []
             apply(knowledgeChanges: result.knowledgeChanges)
             selectedKey = nil
             freeText = ""
@@ -129,7 +165,7 @@ final class RemoteTutorViewModel {
         } catch {
             guard generation == requestGeneration, !Task.isCancelled else { return }
             isSubmitting = false
-            errorMessage = "提交失败，请重试；本次答案不会重复计分"
+            errorMessage = errorText(for: error, restoring: true)
         }
     }
 
@@ -167,14 +203,31 @@ final class RemoteTutorViewModel {
     }
 
     func retry() async {
-        if pendingAnswer != nil { await submit() }
-        else if sessionId == nil { await load() }
+        if sessionId != nil { await refresh() }
+        else { await load() }
     }
 
     func cancel() {
         requestGeneration += 1
         isLoading = false
         isSubmitting = false
-        if pendingAnswer != nil { errorMessage = "请求已暂停，请重试原答案" }
+        if pendingAnswer != nil { errorMessage = "请求已暂停，请恢复课程状态" }
+    }
+
+    private func errorText(for error: Error, restoring: Bool) -> String {
+        if case TutorRemoteError.backend(let code) = error {
+            switch code {
+            case .sessionNotFound:
+                sessionMissing = true
+                return "课程记录不存在，请关闭后重新开始"
+            case .sessionCompleted: return "课程已完成，请恢复课程状态"
+            case .idempotencyConflict: return "请求仍在处理中，请稍后恢复课程"
+            case .serviceUnavailable, .internalError: return "课程暂时不可用，请稍后重试"
+            case .unauthorized: return "登录状态已失效，请重新进入课程"
+            case .validationError: return "课程数据未能提交，请恢复课程状态"
+            default: break
+            }
+        }
+        return restoring ? "暂时无法恢复课程，请重试" : "题目加载失败，请重试"
     }
 }

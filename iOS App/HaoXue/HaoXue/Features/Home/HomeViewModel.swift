@@ -9,7 +9,9 @@ enum HomeActionRoute: Equatable {
 
     init(_ action: NextLearningAction) {
         switch action.kind {
-        case "start_tutor": self = .tutor(action.knowledgePointID)
+        case "start_tutor":
+            if let id = action.knowledgePointID, !id.isEmpty { self = .tutor(id) }
+            else { self = .none }
         case "review_wrong_question":
             if let id = action.wrongQuestionID, !id.isEmpty { self = .wrongQuestion(id) }
             else { self = .none }

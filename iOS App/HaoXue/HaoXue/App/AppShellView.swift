@@ -3,14 +3,16 @@ import SwiftUI
 @MainActor
 struct AppShellView: View {
     let store: DemoScenarioStore
-    @State private var showingTutor = false
+    @State private var tutorPresentation: TutorPresentation?
     @State private var selectedTab = 0
-    @State private var tutorKnowledgePointID: String?
-    @State private var tutorWrongQuestionID: String?
+    @State private var tutorSessionIDs: [TutorEntryContext: String] = [:]
+    @State private var tutorCreateKeys: [TutorEntryContext: String] = [:]
     @State private var pendingTutorWrongQuestionID: String?
     @State private var pendingTutorKnowledgePointID: String?
     @State private var selectedRecord: LearningRecordRoute?
     @State private var recordPath: [LearningRecordRoute] = []
+    @State private var tutorReturnRecord: LearningRecordRoute?
+    @State private var tutorReturnPath: [LearningRecordRoute] = []
     @State private var homeModel = HomeViewModel(provider: LiveDataProvider(
         client: APIClient(), configuration: AppConfiguration(mode: .live)))
     @State private var wrongQuestionsModel = WrongQuestionsListViewModel(provider: LiveDataProvider(
@@ -20,10 +22,21 @@ struct AppShellView: View {
     private var usesMockTutor: Bool { ProcessInfo.processInfo.arguments.contains("-useMockTutor") }
 
     private func openTutor(knowledgePointID: String? = nil, wrongQuestionID: String? = nil) {
-        if usesMockTutor { store.startLesson() }
-        tutorKnowledgePointID = knowledgePointID
-        tutorWrongQuestionID = wrongQuestionID
-        showingTutor = true
+        if usesMockTutor {
+            store.startLesson()
+            tutorPresentation = .mock
+        } else if let wrongQuestionID, !wrongQuestionID.isEmpty {
+            presentTutor(.wrongQuestion(wrongQuestionID))
+        } else if let knowledgePointID, !knowledgePointID.isEmpty {
+            presentTutor(.knowledgePoint(knowledgePointID))
+        }
+    }
+
+    private func presentTutor(_ context: TutorEntryContext) {
+        if tutorCreateKeys[context] == nil {
+            tutorCreateKeys[context] = UUID().uuidString
+        }
+        tutorPresentation = .live(context)
     }
 
     private func openWrongQuestion(_ id: String) {
@@ -41,14 +54,34 @@ struct AppShellView: View {
         selectedRecord = .overview
     }
 
-    private func closeTutor() {
-        showingTutor = false
+    private func closeTutor(completed: Bool = false) {
+        if completed, case .live(let context) = tutorPresentation {
+            tutorSessionIDs[context] = nil
+            tutorCreateKeys[context] = nil
+        }
+        tutorPresentation = nil
         if !usesMockTutor {
             Task {
                 await homeModel.refresh()
                 if knowledgeOverviewModel.phase == .loaded { await knowledgeOverviewModel.refresh() }
             }
         }
+    }
+
+    private func startTutorFromRecord(knowledgePointID: String? = nil, wrongQuestionID: String? = nil) {
+        tutorReturnRecord = selectedRecord
+        tutorReturnPath = recordPath
+        pendingTutorKnowledgePointID = knowledgePointID
+        pendingTutorWrongQuestionID = wrongQuestionID
+        selectedRecord = nil
+    }
+
+    private func restoreRecordAfterTutor() {
+        guard let route = tutorReturnRecord else { return }
+        tutorReturnRecord = nil
+        recordPath = tutorReturnPath
+        tutorReturnPath = []
+        selectedRecord = route
     }
 
     var body: some View {
@@ -107,18 +140,20 @@ struct AppShellView: View {
                     }
             }
         }
-        .fullScreenCover(isPresented: $showingTutor) {
-            if usesMockTutor {
+        .fullScreenCover(item: $tutorPresentation, onDismiss: restoreRecordAfterTutor) { presentation in
+            switch presentation {
+            case .mock:
                 TutorView(store: store, provider: MockQuestionProvider()) { closeTutor() }
-            } else {
+            case .live(let context):
                 RemoteTutorView(
                     service: TutorRemoteService(baseURL: AppConfiguration.demoBackendURL,
-                                                knowledgePointID: tutorKnowledgePointID,
-                                                wrongQuestionID: tutorWrongQuestionID),
-                    masteryService: MasteryOverviewService(baseURL: AppConfiguration.demoBackendURL)
-                ) {
-                    closeTutor()
-                }
+                                                knowledgePointID: context.knowledgePointID,
+                                                wrongQuestionID: context.wrongQuestionID),
+                    masteryService: MasteryOverviewService(baseURL: AppConfiguration.demoBackendURL),
+                    existingSessionID: tutorSessionIDs[context],
+                    createKey: tutorCreateKeys[context] ?? UUID().uuidString,
+                    onSessionReady: { tutorSessionIDs[context] = $0 },
+                    onClose: { closeTutor(completed: $0) })
             }
         }
     }
@@ -131,8 +166,7 @@ struct AppShellView: View {
                 id: id, provider: LiveDataProvider(client: APIClient(),
                     configuration: AppConfiguration(mode: .live)),
                 onStartTutor: { id in
-                    pendingTutorWrongQuestionID = id
-                    selectedRecord = nil
+                    startTutorFromRecord(wrongQuestionID: id)
                 },
                 onOpenKnowledge: { recordPath.append(.knowledge($0)) },
                 onChanged: {
@@ -147,12 +181,37 @@ struct AppShellView: View {
                     configuration: AppConfiguration(mode: .live)),
                 onOpenWrongQuestion: { recordPath.append(.wrongQuestion($0)) },
                 onStartTutor: { id in
-                    pendingTutorKnowledgePointID = id
-                    selectedRecord = nil
+                    startTutorFromRecord(knowledgePointID: id)
                 })
         case .overview:
             KnowledgeOverviewView(model: knowledgeOverviewModel,
                                   onOpenKnowledge: { recordPath.append(.knowledge($0)) })
+        }
+    }
+}
+
+private enum TutorEntryContext: Hashable {
+    case knowledgePoint(String), wrongQuestion(String)
+
+    var knowledgePointID: String? {
+        if case .knowledgePoint(let id) = self { return id }
+        return nil
+    }
+
+    var wrongQuestionID: String? {
+        if case .wrongQuestion(let id) = self { return id }
+        return nil
+    }
+}
+
+private enum TutorPresentation: Identifiable {
+    case mock, live(TutorEntryContext)
+
+    var id: String {
+        switch self {
+        case .mock: "mock"
+        case .live(.knowledgePoint(let id)): "knowledge:\(id)"
+        case .live(.wrongQuestion(let id)): "wrong:\(id)"
         }
     }
 }
