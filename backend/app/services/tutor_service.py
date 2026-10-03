@@ -784,6 +784,8 @@ def submit_answer(
     evidence_changes: list[Any] = []
     if kind in ("concept", "remedial", "independent") and expected is not None:
         result = "correct" if is_correct else "wrong"
+        # 标签统计从 Evidence 派生，写 Evidence 前先取快照才算得出变化量
+        tag_snapshot = tag_service.tag_stats(user_id)
         evidence_changes = knowledge_service.apply_evidence(
             user_id,
             [
@@ -810,8 +812,10 @@ def submit_answer(
                 )
             ],
         )
-        # Tutor 的题来自教学脚本，没有题库题目 id，所以按知识点反查标签计分
-        tag_service.apply_for_knowledge_point(user_id, session["knowledge_point_id"], is_correct)
+        # Tutor 的题来自教学脚本，没有题库题目 id，所以按知识点反查标签
+        tag_service.apply_for_knowledge_point(
+            user_id, session["knowledge_point_id"], is_correct, before=tag_snapshot
+        )
 
     # ------------------------------------------------------------------
     # 教学策略：由服务端决定，客户端只负责呈现

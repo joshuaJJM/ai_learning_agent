@@ -157,21 +157,50 @@ class KnowledgeChange(BaseModel):
 # ---------------------------------------------------------------------------
 
 class TagChange(BaseModel):
-    """一次答题导致的标签分数变动。
+    """一次答题对相关标签的影响。
 
-    规则：答对 → 该题所有标签 +1；答错 → -1。
-    `correctness=unknown`（两个模型对答案有分歧）时不改动标签。
+    **v2 起标签统计从 Evidence 现算**（Beta 后验 + 悲观下界），
+    不再是 ±1 计数器，所以这里给的是「变化后的分数」与「相对作答前的变化量」，
+    而不是一个固定的 ±1。
+
+    `correctness=unknown` / `unanswered` 的题不会产生 Evidence，也就不会影响标签。
     """
 
     question_id: str
     is_correct: bool
-    delta: int
     tags: list[str] = Field(default_factory=list)
+    tag_scores: dict[str, int] = Field(
+        default_factory=dict, description="这些标签**变化后**的分数（0–100）"
+    )
+    tag_deltas: dict[str, int] = Field(
+        default_factory=dict,
+        description=(
+            "相对本次作答前的分数变化（0–100 单位）。"
+            "调用方没提供作答前快照时为空"
+        ),
+    )
 
 
 class TagScore(BaseModel):
+    """一个标签的统计。
+
+    `score` 是**悲观下界**（后验均值 − 一个标准差）×100，升序 = 最弱在前。
+    它同时表达"掌握得怎么样"和"有多确定"：
+
+        2 对 8 错    → 13   最该练
+        从没练过     → 21   次之（探索）
+        5 对 5 错    → 36   不急
+        9 对 1 错    → 73   最后
+
+    ⚠️ 没练过的标签**不是 0**，而是 21 —— 那是先验 Beta(1,1) 的悲观下界。
+    0 意味着"确信完全不会"，而我们其实只是"还不知道"。
+    """
+
     tag: str
     score: int
+    mastery: float = Field(default=0.0, description="后验均值（0..1）")
+    confidence: float = Field(default=0.0, description="对当前估计有多确定（0..1）")
+    attempts: int = Field(default=0, description="累计作答次数")
 
 
 class TagScoresResponse(BaseModel):

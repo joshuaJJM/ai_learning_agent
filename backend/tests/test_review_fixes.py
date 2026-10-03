@@ -321,20 +321,27 @@ def test_tutor_from_another_users_wrong_question_is_rejected(
 def test_tag_session_stays_on_one_tag(
     client: TestClient, auth_headers: dict[str, str], demo_user: dict
 ) -> None:
+    from app.question_bank import get_bank
     from app.services import tag_service
 
-    # 找一个题量足够的标签，把它压到最低
-    by_question = tag_service.bank_tags_by_question()
-    counts: dict[str, int] = {}
-    for tags in by_question.values():
-        for tag in tags:
-            counts[tag] = counts.get(tag, 0) + 1
-    target = next(t for t, n in counts.items() if n >= 5)
+    # v2 起标签统计从 Evidence 派生，直接改 tag_scores 表不再有效 ——
+    # 要真的把一个标签练差，只能靠**实际答错**。
+    # 会话本身会挑最弱的标签，所以连错几轮之后，那个标签会一直是最弱的（自我强化）。
+    for _ in range(4):
+        session = client.post(
+            "/api/v1/practice/sessions", headers=auth_headers, json={"count": 1}
+        ).json()
+        question = get_bank().get(session["next_question"]["question_id"])
+        assert question is not None
+        wrong_key = next(k for k in question.options if k != question.answer)
+        client.post(
+            f"/api/v1/practice/sessions/{session['practice_session_id']}/answers",
+            headers=auth_headers,
+            json={"question_id": question.id, "selected_key": wrong_key},
+        )
 
     scores = tag_service.scores(demo_user["user_id"])
-    repositories.bump_tag_scores(
-        demo_user["user_id"], [target], min(scores.values()) - 20
-    )
+    target = min(scores.items(), key=lambda kv: (kv[1], kv[0]))[0]
 
     body = client.get(
         "/api/v1/tags/recommend?count=5", headers=auth_headers

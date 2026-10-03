@@ -400,6 +400,10 @@ def submit_answer(
 
     # 先算增量，再落记录 —— 这样作答记录里带着本次的知识点/标签变动，
     # 回放时才能原样返回。
+    #
+    # 标签统计现在从 Evidence 现算，所以要在写 Evidence **之前**取快照，
+    # 否则算不出「这次作答让标签变了多少」。
+    tag_snapshot = tag_service.tag_stats(user_id)
     changes = knowledge_service.apply_evidence(
         user_id,
         [
@@ -420,8 +424,10 @@ def submit_answer(
             if knowledge.is_known(kp_id)
         ],
     )
-    # 标签计分：答对则该题所有标签 +1，答错 -1
-    tag_update = tag_service.apply_answer(user_id, question_id, is_correct)
+    # 标签统计由 Evidence 派生，这里只回显（不再直接改分数）
+    tag_update = tag_service.apply_answer(
+        user_id, question_id, is_correct, before=tag_snapshot
+    )
 
     now = db.to_iso(db.utcnow())
     attempts = list(session.get("attempts", []))

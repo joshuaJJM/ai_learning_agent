@@ -431,14 +431,20 @@ async def run_analysis(analysis_id: str) -> None:
 
         # --- 阶段 5：更新 Knowledge State（唯一入口）---
         _update(doc, progress=_progress(4, 0.88))
+        # 标签统计从 Evidence 派生，所以在写 Evidence 前取快照，
+        # 才能算出「这次作业让标签变了多少」。
+        tag_snapshot = tag_service.tag_stats(doc["user_id"])
         changes = knowledge_service.apply_evidence(doc["user_id"], evidence_entries)
 
-        # --- 标签计分：答对则该题所有标签 +1，否则 -1 ---
-        # `unknown` / `unanswered` 都不动标签：前者是"我们不知道学生对不对"，
-        # 后者是"学生根本没作答"，两种都不该瞎扣分。
+        # --- 标签回显：这些标签现在是什么水平 ---
+        # `unknown` / `unanswered` 的题不会产生 Evidence，也就不会影响标签：
+        # 前者是"我们不知道学生对不对"，后者是"学生根本没作答"。
         tag_updates = [
             tag_service.apply_answer(
-                doc["user_id"], result["question_id"], result["correctness"] == "correct"
+                doc["user_id"],
+                result["question_id"],
+                result["correctness"] == "correct",
+                before=tag_snapshot,
             )
             for result in question_results
             if result["correctness"] not in NO_MASTERY_IMPACT and result.get("tags")
