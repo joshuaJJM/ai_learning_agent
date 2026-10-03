@@ -125,7 +125,8 @@ final class ScanViewModel {
                     self.pollCount += 1
                     let progress = response.progress
                     let stages = progress?.stages.map { "\($0.key):\($0.state.rawValue)" }.joined(separator: ",") ?? "none"
-                    ScanDiagnostics.log("POLL #\(self.pollCount) analysis_id=\(id) status=\(response.status.rawValue) percent=\(progress?.percent.description ?? "nil") stage=\(progress?.currentStageKey ?? "nil") label=\(progress?.currentStageLabelZH ?? "nil") stages=[\(stages)] error_code=\(response.error?.errorCode ?? "nil")")
+                    let retry = progress?.isRetrying == true ? " retry_note=\(progress?.retryNote ?? "nil")" : ""
+                    ScanDiagnostics.log("POLL #\(self.pollCount) analysis_id=\(id) status=\(response.status.rawValue) percent=\(progress?.percent.description ?? "nil") stage=\(progress?.currentStageKey ?? "nil") label=\(progress?.currentStageLabelZH ?? "nil") stages=[\(stages)]\(retry) error_code=\(response.error?.errorCode ?? "nil")")
                     self.analysis = response
                     switch response.status {
                     case .queued: self.state = .queued
@@ -143,6 +144,10 @@ final class ScanViewModel {
                         self.errorCode = response.error?.errorCode ?? "ANALYSIS_FAILED"
                         self.state = .failed
                         return
+                    case .unknown:
+                        // A status this build does not know about is still "in
+                        // flight": keep polling instead of failing the demo.
+                        self.state = .processing
                     }
                     try await Task.sleep(for: .seconds(1))
                 }

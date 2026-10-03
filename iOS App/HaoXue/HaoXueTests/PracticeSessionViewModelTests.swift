@@ -332,7 +332,9 @@ struct PracticeSessionViewModelTests {
         #expect(model.outcome?.tagChange == nil)
 
         let tag = PracticeTagChange(questionID: "math.derivative.abc", isCorrect: false,
-                                    delta: -1, tags: ["函数关系式与导数的综合应用"])
+                                    tags: ["函数关系式与导数的综合应用"],
+                                    scores: ["函数关系式与导数的综合应用": 12],
+                                    deltas: ["函数关系式与导数的综合应用": -3])
         provider.outcomeToReturn = outcome(correctness: "wrong", isCorrect: false,
                                            correctAnswer: "A", tag: tag)
         let tagged = await loadedModel(provider)

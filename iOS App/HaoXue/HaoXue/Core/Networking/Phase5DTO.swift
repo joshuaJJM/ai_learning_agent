@@ -190,6 +190,8 @@ struct QuestionResultDTO: Decodable {
     let choices: [String: String]
     let studentAnswer: String?
     let correctAnswer: String?
+    let possibleAnswer: String?
+    let possibleAnswerSource: String?
     let correctness: String
     let knowledgePoints: [KnowledgePointRefDTO]
     let errorType: String?
@@ -218,6 +220,9 @@ struct AnalysisResultDTO: Decodable {
     let correctCount: Int
     let wrongCount: Int
     let partialCount: Int
+    /// Optional so older payloads (and fixtures) still decode; the live backend
+    /// always sends it.
+    let unansweredCount: Int?
     let unknownCount: Int
     let knowledgeChanges: [KnowledgeChangeDTO]
     let newWrongQuestions: [WrongQuestionSummaryDTO]

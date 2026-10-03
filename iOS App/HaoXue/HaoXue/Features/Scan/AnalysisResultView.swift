@@ -98,15 +98,20 @@ struct AnalysisResultView: View {
             VStack(alignment: .leading, spacing: 16) {
                 Text("本次分析").font(.headline).foregroundStyle(DemoStyle.secondary)
                 Text("\(presentation.totalCount) 道题").font(.largeTitle.bold())
-                HStack(spacing: 16) {
+                HStack(alignment: .top, spacing: 8) {
                     countLabel(result.correctCount, title: "正确")
                     countLabel(result.wrongCount, title: "需关注")
                     countLabel(result.partialCount, title: "部分正确")
+                    countLabel(result.unansweredCount, title: "未作答")
                     countLabel(result.unknownCount, title: "待确认")
                 }
                 if presentation.attentionQuestions.isEmpty {
                     Text("本次没有需要关注的题目")
                         .font(.subheadline)
+                        .foregroundStyle(DemoStyle.secondary)
+                } else if result.unansweredCount + result.unknownCount > 0 {
+                    Text("未作答与待确认都未计入掌握度统计")
+                        .font(.caption)
                         .foregroundStyle(DemoStyle.secondary)
                 }
             }
@@ -116,7 +121,7 @@ struct AnalysisResultView: View {
     private func countLabel(_ count: Int, title: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text("\(count)").font(.title3.bold()).monospacedDigit()
-            Text(title).font(.caption).foregroundStyle(DemoStyle.secondary)
+            Text(title).font(.caption2).foregroundStyle(DemoStyle.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
@@ -131,7 +136,7 @@ struct AnalysisResultView: View {
                     Spacer()
                     Text(presentation.label(for: question))
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(question.correctness == "unknown" ? DemoStyle.secondary : .orange)
+                        .foregroundStyle(presentation.labelTint(for: question))
                 }
                 Text(question.content).font(.body).fixedSize(horizontal: false, vertical: true)
 
@@ -157,8 +162,22 @@ struct AnalysisResultView: View {
                     .padding(.vertical, 3)
                 }
 
-                answerRow("你的答案", value: question.studentAnswer ?? "未提供")
+                answerRow("你的答案", value: presentation.studentAnswerLabel(for: question))
                 answerRow("参考答案", value: question.correctAnswer ?? "尚未确认")
+
+                if question.correctness == .unknown {
+                    Text(presentation.unverifiedHint(for: question))
+                        .font(.subheadline)
+                        .foregroundStyle(DemoStyle.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("analysis-unverified-\(question.id)")
+                } else if question.correctness == .unanswered {
+                    Text("本题学生未作答，不计入掌握度统计")
+                        .font(.subheadline)
+                        .foregroundStyle(DemoStyle.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("analysis-unanswered-\(question.id)")
+                }
 
                 if !question.diagnosis.isEmpty {
                     Divider()

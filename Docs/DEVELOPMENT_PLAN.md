@@ -320,6 +320,60 @@ phase-7: complete product and commercial demo surfaces
 
 ## Phase 8 — Online Demo Reliability & QA
 
+> Phase 8 拆成 8A（Backend Contract Sync & Missing Demo Features）与
+> 8B（Online Reliability QA）。8A 的 Commit 与 8B 分开，避免一个无法审查的巨大 commit。
+
+### Phase 8A — Backend Contract Sync & Missing Demo Features
+
+### 目标
+
+以 backend 分支 `docs/API.md` + 线上 OpenAPI 为事实来源，把 iOS 与最新后端契约对齐，
+并补齐 Demo 缺失的「扫描历史」与「unknown 标准答案人工确认」。
+
+### 内容
+
+- Analysis 契约同步：
+  - `progress.stages[].state` 新增 `retrying`；`progress.retrying` / `progress.retry_note`
+    直接用于进度卡片，`retrying` 不得显示成失败；
+  - 未知的 `status` / `state` 取值降级为 `.unknown` 而不是抛错（契约新增值不再炸解码）。
+- `correctness` 五值：`correct / wrong / partial / unanswered / unknown`；
+  `unanswered`（未作答）与 `unknown`（AI 无法确认）必须分开展示，且都不计入掌握度。
+- `possible_answer` / `possible_answer_source` 仅作提示，绝不参与算分或生成 Evidence。
+- `unanswered_count` 进入分析结果统计。
+- 练习 `tag_changes` v2：`tag_scores` / `tag_deltas` 取代已移除的 `delta`。
+- Tutor：`turn.remedial_exhausted` 布尔值取代 `turn_type == "remedial_exhausted"`。
+- 扫描历史：`GET /api/v1/homework/batches?limit=50`，列表最新在前；
+  仅当存在 `processing` 项时每 2–3 秒刷新，没有则停止轮询；
+  iOS 不自己维护上传历史。
+- 历史详情复用 `AnalysisResultView`（同一 Domain Model / 同一结果接口）。
+- unknown 人工确认：前端只提交「用户确认的标准答案是 X」，
+  correctness / Evidence / mastery 一律由后端计算。
+
+### 不做
+
+- 不实现 Offline Mode、Network→Mock 自动 fallback、Cached AI 兜底；
+- 不提前做 Phase 9 的动画 / Typography / Spacing 大规模优化；
+- 不新增 Multi-Agent 架构或商业功能。
+
+### Done
+
+- build 通过，`HaoXueTests` 全绿；
+- 线上 backend 真实走通：历史列表 → 打开历史分析结果；
+- 无 secret 进入 commit。
+
+### Commit
+
+```text
+phase-8: sync backend contract and add scan history
+phase-8: integrate manual answer confirmation
+```
+
+> `confirm-answer` 的 Contract 目前仍在与 Backend Agent 协商
+> （proposal 已通过协调服务发出）。后端写入 `docs/API.md` 并实现前，
+> iOS 不假定其结构，也不提交「伪完成」状态。
+
+### Phase 8B — Online Reliability QA
+
 ### 目标
 
 针对比赛现场的联网演示路径做稳定性检查，不额外实现离线模式。

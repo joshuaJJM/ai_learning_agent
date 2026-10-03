@@ -51,6 +51,11 @@ struct TutorTurnDTO: Decodable, Equatable {
     let questionId: String?
     let strategy: String?
     let remedialDepth: Int
+    /// True when this turn revealed the answer because remediation hit its cap.
+    /// It only ever *adds* an explanation card — `turnType` still decides the
+    /// main content, because the session has already moved on by then.
+    /// ("remedial_exhausted" was removed from the `turn_type` values.)
+    let remedialExhausted: Bool?
     let answerReveal: TutorAnswerRevealDTO?
     let createdAt: String
 }

@@ -86,6 +86,9 @@ enum GoldenDemoFixtures {
             progress: 1, completed: true, knowledgeChange: nil))
 
     private static let practiceTags = ["利用导数判断函数单调性与单调区间"]
+    // v2 tag statistics: one score change per tag, not a single ±1 delta.
+    private static let tagScores = Dictionary(uniqueKeysWithValues: practiceTags.map { ($0, 34) })
+    private static let tagDeltas = Dictionary(uniqueKeysWithValues: practiceTags.map { ($0, 2) })
     private static let practiceChoices = [
         PracticeChoice(key: "A", text: "函数在该区间单调递增"),
         PracticeChoice(key: "B", text: "函数在该区间单调递减"),
@@ -134,16 +137,16 @@ enum GoldenDemoFixtures {
     static let practiceAnswerOutcome = PracticeAnswerOutcome(sessionID: "practice-question",
         questionID: "practice-q1", correctness: "correct", isCorrect: true, correctAnswer: "A",
         explanation: "导数为正，函数在该区间单调递增。", knowledgeChanges: [masteryChange],
-        tagChange: PracticeTagChange(questionID: "practice-q1", isCorrect: true, delta: 1,
-                                     tags: practiceTags),
+        tagChange: PracticeTagChange(questionID: "practice-q1", isCorrect: true,
+                                     tags: practiceTags, scores: tagScores, deltas: tagDeltas),
         replayed: false, nextQuestion: practiceSecondQuestion, sessionCompleted: false,
         answered: 1, correct: 1, total: 2, nextAction: nil)
 
     static let practiceCompletedOutcome = PracticeAnswerOutcome(sessionID: "practice-question",
         questionID: "practice-q2", correctness: "correct", isCorrect: true, correctAnswer: "B",
         explanation: "导数为负，函数在该区间单调递减。", knowledgeChanges: [masteryChange],
-        tagChange: PracticeTagChange(questionID: "practice-q2", isCorrect: true, delta: 1,
-                                     tags: practiceTags),
+        tagChange: PracticeTagChange(questionID: "practice-q2", isCorrect: true,
+                                     tags: practiceTags, scores: tagScores, deltas: tagDeltas),
         replayed: false, nextQuestion: nil, sessionCompleted: true, answered: 2, correct: 2,
         total: 2, nextAction: NextLearningAction(kind: "all_good", title: "本次练习已完成",
                                                 reason: "这一组题都已作答", buttonTitle: "完成练习",

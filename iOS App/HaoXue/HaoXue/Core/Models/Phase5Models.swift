@@ -69,7 +69,11 @@ struct HomeworkAnalysisResult {
         let choices: [String: String]
         let studentAnswer: String?
         let correctAnswer: String?
-        let correctness: String
+        /// `possibleAnswer` is only present when `correctness == .unknown`; it is
+        /// a hint, never a grade — it must not drive scoring or Evidence.
+        let possibleAnswer: String?
+        let possibleAnswerSource: String?
+        let correctness: QuestionCorrectness
         let knowledgePoints: [(id: String, name: String, weight: Double)]
         let errorType: String?
         let errorLabel: String?
@@ -95,6 +99,7 @@ struct HomeworkAnalysisResult {
     let correctCount: Int
     let wrongCount: Int
     let partialCount: Int
+    let unansweredCount: Int
     let unknownCount: Int
     let knowledgeChanges: [KnowledgeChange]
     let newWrongQuestions: [WrongQuestionSummary]

@@ -45,7 +45,8 @@
       "diagnosis": "求导步骤正确。", "explanation": null, "confidence": 0.99, "difficulty": 0.2, "image_url": null
     }
   ],
-  "correct_count": 1, "wrong_count": 1, "partial_count": 1, "unknown_count": 1,
+  "correct_count": 1, "wrong_count": 1, "partial_count": 1, "unanswered_count": 0,
+  "unknown_count": 1,
   "knowledge_changes": [
     {"knowledge_point_id": "kp_monotonicity", "name": "利用导数判断函数单调性", "before": 0.618, "after": 0.5744, "delta": -0.0436, "evidence_count": 8},
     {"knowledge_point_id": "kp_derivative", "name": "导数基础", "before": 0.436, "after": 0.51, "delta": 0.074, "evidence_count": 6}

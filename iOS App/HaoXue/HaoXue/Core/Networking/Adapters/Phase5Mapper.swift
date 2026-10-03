@@ -70,14 +70,19 @@ struct Phase5Mapper {
                                    HomeworkAnalysisResult.Question(id: $0.questionId, number: $0.questionNumber,
                                        type: $0.questionType, content: $0.questionContent,
                                        choices: $0.choices, studentAnswer: $0.studentAnswer,
-                                       correctAnswer: $0.correctAnswer, correctness: $0.correctness,
+                                       correctAnswer: $0.correctAnswer,
+                                       possibleAnswer: $0.possibleAnswer,
+                                       possibleAnswerSource: $0.possibleAnswerSource,
+                                       correctness: QuestionCorrectness(rawValue: $0.correctness),
                                        knowledgePoints: $0.knowledgePoints.map { ($0.knowledgePointId, $0.name, $0.weight) },
                                        errorType: $0.errorType, errorLabel: $0.errorLabel,
                                        diagnosis: $0.diagnosis, explanation: $0.explanation,
                                        confidence: $0.confidence, difficulty: $0.difficulty,
                                        imageURL: $0.imageUrl)
                                }, correctCount: dto.correctCount, wrongCount: dto.wrongCount,
-                               partialCount: dto.partialCount, unknownCount: dto.unknownCount,
+                               partialCount: dto.partialCount,
+                               unansweredCount: dto.unansweredCount ?? 0,
+                               unknownCount: dto.unknownCount,
                                knowledgeChanges: dto.knowledgeChanges.map {
                                    KnowledgeChange(knowledgePointID: $0.knowledgePointId,
                                                    beforeMastery: $0.before, afterMastery: $0.after,
@@ -100,8 +105,8 @@ struct Phase5Mapper {
                                               return TutorChoice(id: id, text: $0.value)
                                           }, studentAnswer: $0.studentAnswer.flatMap(ChoiceID.init(rawValue:)),
                                           correctAnswer: $0.correctAnswer.flatMap(ChoiceID.init(rawValue:)),
-                                          isCorrect: $0.correctness == "correct" ? true :
-                                              $0.correctness == "wrong" ? false : nil,
+                                          isCorrect: $0.correctness == .correct ? true :
+                                              $0.correctness == .wrong ? false : nil,
                                           knowledgePointIDs: $0.knowledgePoints.map(\.id),
                                           diagnosis: $0.diagnosis)
                        }, knowledgeChanges: result.knowledgeChanges,

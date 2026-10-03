@@ -196,10 +196,23 @@ struct PracticeSessionView: View {
             if let tag = outcome.tagChange, !tag.tags.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("薄弱特征更新").font(.headline)
-                    Text("\(tag.tags.joined(separator: "、")) · \(tag.delta > 0 ? "+" : "")\(tag.delta)")
-                        .font(.subheadline)
-                        .foregroundStyle(DemoStyle.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    // v2: one score change per tag (no single ±1 delta any more).
+                    let changes = tag.tags.compactMap { name in
+                        tag.delta(for: name).map { (name: name, delta: $0) }
+                    }
+                    if changes.isEmpty {
+                        Text(tag.tags.joined(separator: "、"))
+                            .font(.subheadline)
+                            .foregroundStyle(DemoStyle.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        ForEach(Array(changes.enumerated()), id: \.offset) { _, change in
+                            Text("\(change.name) · \(change.delta > 0 ? "+" : "")\(change.delta)")
+                                .font(.subheadline)
+                                .foregroundStyle(DemoStyle.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }

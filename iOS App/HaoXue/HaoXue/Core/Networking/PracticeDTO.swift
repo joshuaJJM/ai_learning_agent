@@ -53,11 +53,38 @@ struct PracticeAnswerRequestDTO: Encodable {
     let clientRequestId: String
 }
 
+/// Tag statistics are derived from Evidence on the server (Beta posterior with a
+/// pessimistic lower bound) since contract v2, so there is no single ±1 `delta`
+/// any more: each tag gets its own "score after" and "change since before".
 struct PracticeTagChangeDTO: Decodable, Equatable {
     let questionId: String
     let isCorrect: Bool
-    let delta: Int
-    let tags: [String]?
+    let tags: [String]
+    let tagScores: [String: Int]
+    let tagDeltas: [String: Int]
+    enum CodingKeys: String, CodingKey {
+        case questionId, isCorrect, tags, tagScores, tagDeltas
+    }
+
+    init(questionId: String, isCorrect: Bool, tags: [String] = [],
+         tagScores: [String: Int] = [:], tagDeltas: [String: Int] = [:]) {
+        self.questionId = questionId
+        self.isCorrect = isCorrect
+        self.tags = tags
+        self.tagScores = tagScores
+        self.tagDeltas = tagDeltas
+    }
+
+    // Every optional collection may be omitted or empty; the v1 `delta` field is
+    // gone, and a missing key must never fail the whole answer response.
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        questionId = try values.decode(String.self, forKey: .questionId)
+        isCorrect = try values.decode(Bool.self, forKey: .isCorrect)
+        tags = try values.decodeIfPresent([String].self, forKey: .tags) ?? []
+        tagScores = try values.decodeIfPresent([String: Int].self, forKey: .tagScores) ?? [:]
+        tagDeltas = try values.decodeIfPresent([String: Int].self, forKey: .tagDeltas) ?? [:]
+    }
 }
 
 struct PracticeAnswerResponseDTO: Decodable {

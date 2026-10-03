@@ -196,3 +196,65 @@ Evidence 被重复写入
 ```
 
 比赛阶段如果来不及实现，至少需要确保关键提交不会轻易重复执行。
+
+---
+
+## 6. Phase 8A 已同步的稳定契约（backend `docs/API.md` + 线上 OpenAPI）
+
+> 这一节记录**已经落地到 iOS 代码并线上验证过**的部分。字段以 backend
+> `docs/API.md` 与 `GET /openapi.json` 为最终事实来源。
+
+### Analysis（异步）
+
+- `POST /api/v1/homework/analyses`（multipart，字段名 `images`，每个 part 必须有
+  `filename`）+ `Idempotency-Key`，立刻返回 202 `{analysis_id, status, created_at}`；
+- `GET /api/v1/homework/analyses/{analysis_id}` 轮询（约 1 秒一次），
+  `status` = `queued | processing | completed | failed`；
+- `progress.stages[].state` = `done | active | **retrying** | pending | failed`。
+  **`retrying` 不是失败**：后端正在切备用模型，UI 显示
+  `progress.retry_note`（服务端已给中文文案）+ 转圈；
+- 未知的 `status` / `state` 取值在 iOS 侧降级为 `.unknown` 并继续轮询，
+  不抛解码错误、不显示成「分析失败」。
+
+### correctness 五值与 possible_answer
+
+| 值 | 含义 | 计入掌握度 |
+|---|---|---|
+| `correct` / `wrong` / `partial` | 正常判定 | ✅ |
+| `unanswered` | 学生未作答 / 作答无法识别 | ❌ |
+| `unknown` | 复核未通过 | ❌ |
+
+- `unanswered` 与 `unknown` **不得合并展示**（「未作答」/「需要确认」）；
+- `unknown` 时 `correct_answer` 为 `null`，可带 `possible_answer` /
+  `possible_answer_source`，**仅供提示，绝不参与算分或生成 Evidence**；
+- 结果统计包含 `unanswered_count`。
+
+### 扫描历史
+
+- `GET /api/v1/homework/batches?limit=50`：服务端持久化历史并给出 `batch_number`、
+  `state`（`processing | success | failed`）、`state_label`、`created_at`、
+  `finished_at`、`duration_seconds`、`progress`、题目统计、`error`；
+- 列表最新在前，`limit` 上限 50；`total` 与三个计数对**全部**批次统计；
+- iOS 不自己维护上传历史；仅当存在 `processing` 项时每 2–3 秒刷新；
+- 历史详情与「刚扫完」共用同一个结果接口与 `AnalysisResultView`。
+
+### 标签统计 v2（练习）
+
+- `tag_changes` = `{question_id, is_correct, tags, tag_scores, tag_deltas}`；
+  **v1 的 `delta` 已移除**；
+- `tag_scores` 是变化后的分数（0–100），`tag_deltas` 是相对本次作答前的变化量，
+  一道题多个标签各自独立。
+
+### Tutor
+
+- `turn_type` **不含** `remedial_exhausted`；
+  是否揭示答案看布尔字段 `turn.remedial_exhausted`（配合 `answer_reveal`），
+  主内容仍按 `turn_type` 渲染。
+
+### 待后端确认（尚未接入）
+
+- `POST /api/v1/homework/analyses/{analysis_id}/questions/{question_id}/confirm-answer`：
+  学生按答案册确认 A/B/C/D，后端读服务器上的 `student_answer` 自行判定
+  correctness / 写 Evidence / 更新掌握度。前端只提交「确认的标准答案是 X」，
+  不提交 correctness。Contract 仍在协商，落地后本文件再定稿；
+- `app/schemas.py` 的 `StageState` Literal 仍缺 `retrying`，与运行时不一致（已提给后端）。

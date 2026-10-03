@@ -98,13 +98,34 @@ Tutor 会话 ID 按后端来源上下文保存在当前 App 进程内；重新�
 
 ## Phase 8 — Online Demo Reliability & QA
 
+> Phase 8 拆成 8A（契约同步 + 缺失 Demo 功能）与 8B（联网稳定性 QA）。
+
+### Phase 8A — Backend Contract Sync & Missing Demo Features ✅
+
+- [x] Analysis 契约同步：`stages[].state` 支持 `retrying`，`progress.retrying` /
+      `retry_note` 已接入进度卡片（`retrying` 不等于失败）
+- [x] `correctness` 五值（correct / wrong / partial / unanswered / unknown）
+      在 DTO → Domain → Presentation 全程区分，`unanswered` 不再与 `unknown` 合并
+- [x] `possible_answer` / `possible_answer_source` 接入（仅提示，不参与算分）
+- [x] `unanswered_count` 接入分析结果统计
+- [x] `tag_changes` v2（`tag_scores` / `tag_deltas`，已移除 `delta`）接入练习结果
+- [x] `turn.remedial_exhausted` 改为读布尔字段，不再比较 `turn_type`
+- [x] Scan 右上角「历史记录」入口 + `ScanHistoryView`，数据来自
+      `GET /api/v1/homework/batches?limit=50`
+- [x] 历史详情复用同一个 `AnalysisResultView` / Domain Model / 结果接口
+- [x] Commit（`phase-8: sync backend contract and add scan history`）
+- [ ] unknown 标准答案人工确认（等后端 `confirm-answer` 最终 Contract 落地后接入）
+
+### Phase 8B — Online Reliability QA
+
 - [ ] Fixed demo samples verified
 - [ ] Production demo backend endpoint verified
 - [ ] Network / AI timeout error UI
 - [ ] Retry path verified
 - [ ] Duplicate submission / Evidence safety
 - [ ] Consecutive live demo crash test
-- [ ] P0 / P1 bug cleanup
+- [ ] P0 / P1 bug cleanup（含 `HaoXueUITests` 仍断言 Settings 已移除的文案）
+- [ ] Confirm-answer 连续 3 次真实 E2E
 - [ ] Commit
 
 > 比赛不要求离线模式；不把 Cached / Mock 自动 fallback 作为 Phase 8 验收项。

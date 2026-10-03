@@ -74,8 +74,22 @@ struct PracticeSessionState: Equatable {
 struct PracticeTagChange: Equatable {
     let questionID: String
     let isCorrect: Bool
-    let delta: Int
     let tags: [String]
+    /// Score for each tag **after** this answer (0–100, server-computed).
+    let scores: [String: Int]
+    /// Change since before this answer, per tag (0–100 units).
+    let deltas: [String: Int]
+
+    init(questionID: String, isCorrect: Bool, tags: [String] = [],
+         scores: [String: Int] = [:], deltas: [String: Int] = [:]) {
+        self.questionID = questionID
+        self.isCorrect = isCorrect
+        self.tags = tags
+        self.scores = scores
+        self.deltas = deltas
+    }
+
+    func delta(for tag: String) -> Int? { deltas[tag] }
 }
 
 struct PracticeAnswerOutcome: Equatable {

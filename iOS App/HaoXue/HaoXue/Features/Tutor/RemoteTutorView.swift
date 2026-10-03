@@ -122,7 +122,7 @@ struct RemoteTutorView: View {
                 }
             }
             if model.pendingNextTurn != nil { feedbackContent }
-            if model.pendingNextTurn == nil, turn.turnType == "remedial_exhausted",
+            if model.pendingNextTurn == nil, turn.remedialExhausted == true,
                model.answerReveal != nil {
                 feedbackContent
                 Text("结合解析，再试一次")
@@ -233,7 +233,7 @@ struct RemoteTutorView: View {
         if model.isSubmitting { return "提交中" }
         if model.errorMessage != nil { return "重试" }
         if model.pendingNextTurn != nil {
-            if model.pendingNextTurn?.turnType == "remedial_exhausted" { return "查看解析" }
+            if model.pendingNextTurn?.remedialExhausted == true { return "查看解析" }
             return model.pendingNextTurn?.completed == true ? "查看总结" : "下一题"
         }
         return "提交答案"

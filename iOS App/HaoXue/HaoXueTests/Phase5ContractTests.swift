@@ -70,7 +70,7 @@ struct Phase5ContractTests {
         #expect(result.status == .completed)
         #expect(result.questionIDs == ["opaque.id"])
         #expect(result.questions.first?.number == "036")
-        #expect(result.questions.first?.correctness == "wrong")
+        #expect(result.questions.first?.correctness == .wrong)
         #expect(result.knowledgeChanges.first?.afterMastery == 0.4)
         #expect(result.warnings == ["需复核"])
     }

@@ -17,6 +17,7 @@ struct ScanView: View {
     @State private var showingCameraAlert = false
     @State private var importError = false
     @State private var showingResult = false
+    @State private var showingHistory = false
 
     var body: some View {
         ScrollView {
@@ -109,12 +110,25 @@ struct ScanView: View {
                 }
             }
         }
+        .navigationDestination(isPresented: $showingHistory) {
+            ScanHistoryView(onStartTutor: onStart, onStartPractice: onStartPractice,
+                            onOpenWrongQuestion: onOpenWrongQuestion,
+                            onOpenKnowledge: onOpenKnowledge,
+                            onReturnHome: onReturnHome)
+        }
     }
 
     private var header: some View {
         HStack(alignment: .top) {
             DemoPageHeader(title: "扫描", subtitle: "作业、试卷，或者一道你不会的题，都可以直接交给好学。")
             Spacer(minLength: 8)
+            Button { showingHistory = true } label: {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.title3)
+                    .frame(width: 44, height: 44)
+            }
+            .accessibilityLabel("历史记录")
+            .accessibilityIdentifier("scan-history-button")
             Menu {
                 Button(model.isMock ? "使用真实后端" : "切换演示模式") { model.setMock(!model.isMock) }
             } label: {
@@ -312,9 +326,20 @@ private struct AnalysisProgressView: View {
                         .animation(.easeInOut, value: progress.percent)
                     Text("\(Int((progress.percent * 100).rounded()))%")
                         .font(.subheadline.monospacedDigit())
+                    if progress.isRetrying {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            ProgressView().controlSize(.small)
+                            Text(progress.retryNote ?? "模型暂时不可用，正在使用备用模型重试")
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .font(.subheadline)
+                        .foregroundStyle(.orange)
+                        .accessibilityIdentifier("analysis-retrying-note")
+                    }
                     ForEach(progress.stages) { stage in
                         Label(stage.labelZH, systemImage: symbol(for: stage.state))
                             .foregroundStyle(stage.state == .failed || (stage.state == .active && model.state == .failed) ? .red :
+                                             stage.state == .retrying ? .orange :
                                              stage.state == .active ? .blue : DemoStyle.secondary)
                             .accessibilityLabel("\(stage.labelZH)，\(stateLabel(for: stage.state))")
                     }
@@ -364,8 +389,10 @@ private struct AnalysisProgressView: View {
         switch state {
         case .done: "checkmark.circle.fill"
         case .active: model.state == .failed ? "xmark.circle.fill" : "circle.dotted.circle"
+        case .retrying: "arrow.triangle.2.circlepath"
         case .pending: "circle"
         case .failed: "xmark.circle.fill"
+        case .unknown: "circle"
         }
     }
 
@@ -373,8 +400,10 @@ private struct AnalysisProgressView: View {
         switch state {
         case .done: "已完成"
         case .active: model.state == .failed ? "未完成" : "进行中"
+        case .retrying: "正在使用备用模型重试"
         case .pending: "等待中"
         case .failed: "未完成"
+        case .unknown: "进行中"
         }
     }
 }

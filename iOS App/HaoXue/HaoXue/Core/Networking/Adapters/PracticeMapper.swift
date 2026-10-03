@@ -41,7 +41,7 @@ struct PracticeMapper {
 
     func tagChange(_ dto: PracticeTagChangeDTO) -> PracticeTagChange {
         PracticeTagChange(questionID: dto.questionId, isCorrect: dto.isCorrect,
-                          delta: dto.delta, tags: dto.tags ?? [])
+                          tags: dto.tags, scores: dto.tagScores, deltas: dto.tagDeltas)
     }
 
     /// Copies the server-reported progress and the server-provided next question

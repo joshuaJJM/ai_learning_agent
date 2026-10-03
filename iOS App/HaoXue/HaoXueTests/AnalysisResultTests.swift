@@ -142,6 +142,89 @@ struct AnalysisResultTests {
         #expect(service.getCount == 2)
     }
 
+    private func mixedFixture() throws -> HomeworkAnalysisResult {
+        let data = Data("""
+        {"analysis_id":"ana_mixed","status":"completed","progress":{"percent":1,"current_stage":"Completed","stages":[]},
+         "user_id":"demo","subject":"mathematics","image_count":1,
+         "questions":["q_unknown","q_unanswered"],
+         "question_results":[
+           {"question_id":"q_unknown","question_number":"17","question_type":"single_choice",
+            "question_content":"题干一","choices":{"A":"甲","B":"乙","C":"丙","D":"丁"},
+            "student_answer":"D","correct_answer":null,"correctness":"unknown",
+            "possible_answer":"D","possible_answer_source":"deepseek-flash",
+            "knowledge_points":[],"diagnosis":"","confidence":0.4,"difficulty":0.5},
+           {"question_id":"q_unanswered","question_number":"18","question_type":"single_choice",
+            "question_content":"题干二","choices":{"A":"甲","B":"乙"},
+            "student_answer":null,"correct_answer":"B","correctness":"unanswered",
+            "possible_answer":null,"possible_answer_source":null,
+            "knowledge_points":[],"diagnosis":"","confidence":0.9,"difficulty":0.5}],
+         "correct_count":0,"wrong_count":0,"partial_count":0,"unanswered_count":1,"unknown_count":1,
+         "knowledge_changes":[],"new_wrong_questions":[],"warnings":[],"generated_by":"vlm",
+         "created_at":"2026-10-03T06:48:30Z","updated_at":"2026-10-03T06:49:00Z"}
+        """.utf8)
+        return try #require(AnalysisResponse.decodeBackend(data).result)
+    }
+
+    @Test func unansweredAndUnknownStayDistinctAndNeitherCountsTowardMastery() throws {
+        let result = try mixedFixture()
+        let model = AnalysisResultPresentation(result: result)
+
+        #expect(result.unansweredCount == 1 && result.unknownCount == 1)
+        #expect(model.totalCount == 2)
+        #expect(result.questions[0].correctness == .unknown)
+        #expect(result.questions[1].correctness == .unanswered)
+        #expect(result.questions[0].correctness.countsTowardMastery == false)
+        #expect(result.questions[1].correctness.countsTowardMastery == false)
+        #expect(model.label(for: result.questions[0]) == "需要确认")
+        #expect(model.label(for: result.questions[1]) == "未作答")
+        // Only the unknown question is eligible for manual answer confirmation.
+        #expect(model.confirmableQuestions.map(\.id) == ["q_unknown"])
+    }
+
+    @Test func possibleAnswerIsOnlyAHintAndNeverBecomesTheCorrectAnswer() throws {
+        let result = try mixedFixture()
+        let model = AnalysisResultPresentation(result: result)
+        let unknown = result.questions[0]
+
+        #expect(unknown.possibleAnswer == "D")
+        #expect(unknown.possibleAnswerSource == "deepseek-flash")
+        // The unverified question still has no authoritative answer.
+        #expect(unknown.correctAnswer == nil)
+        #expect(model.unverifiedHint(for: unknown) == "AI 无法确认本题答案（可能是 D），未计入统计")
+        #expect(model.studentAnswerLabel(for: unknown) == "D")
+        #expect(model.studentAnswerLabel(for: result.questions[1]) == "未作答")
+    }
+
+    @Test func retryingStageIsNotAFailure() throws {
+        let data = Data("""
+        {"analysis_id":"ana_retry","status":"processing","progress":{"percent":0.25,
+         "current_stage":"Image received","current_stage_key":"image_received",
+         "current_stage_label_zh":"已接收图片","retrying":true,
+         "retry_note":"第 1 张：deepseek-flash 未成功，正在用 Qwen/Qwen3-VL-32B-Instruct 重试（2/3）",
+         "stages":[{"key":"image_received","label_zh":"已接收图片","state":"retrying"},
+                   {"key":"questions_detected","label_zh":"已识别题目","state":"pending"}]}}
+        """.utf8)
+        let response = try AnalysisResponse.decodeBackend(data)
+
+        #expect(response.status == .processing)
+        #expect(response.progress?.isRetrying == true)
+        #expect(response.progress?.stages[0].state == .retrying)
+        // The note is display-ready server text; the client never rebuilds it.
+        #expect(response.progress?.retryNote?.contains("正在用 Qwen/Qwen3-VL-32B-Instruct 重试") == true)
+    }
+
+    @Test func unknownStatusAndStageDoNotBreakDecoding() throws {
+        let data = Data("""
+        {"analysis_id":"ana_future","status":"paused",
+         "progress":{"percent":0.1,"current_stage":"x","stages":[
+           {"key":"image_received","label_zh":"已接收图片","state":"sleeping"}]}}
+        """.utf8)
+        let response = try AnalysisResponse.decodeBackend(data)
+
+        #expect(response.status == .unknown("paused"))
+        #expect(response.progress?.stages[0].state == .unknown("sleeping"))
+    }
+
     private func sampleImage() -> UIImage {
         UIGraphicsImageRenderer(size: CGSize(width: 100, height: 100)).image { context in
             UIColor.white.setFill()

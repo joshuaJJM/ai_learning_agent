@@ -101,8 +101,10 @@ struct PracticeContractTests {
         #expect(outcome.knowledgeChanges.map(\.delta) == changes.map { $0.delta })
         let tag = try #require(dto.tagChanges)
         #expect(outcome.tagChange?.questionID == tag.questionId)
-        #expect(outcome.tagChange?.delta == tag.delta)
-        #expect(outcome.tagChange?.tags == (tag.tags ?? []))
+        #expect(outcome.tagChange?.tags == tag.tags)
+        #expect(outcome.tagChange?.scores == tag.tagScores)
+        #expect(outcome.tagChange?.deltas == tag.tagDeltas)
+        #expect(outcome.tagChange?.delta(for: tag.tags[0]) == tag.tagDeltas[tag.tags[0]])
     }
 
     @Test func liveCompletedSessionHasNoNextQuestion() throws {
