@@ -34,6 +34,9 @@ logging.basicConfig(
 
 STARTED_AT = time.time()
 
+#: 超过这个毫秒数就在耗时日志里标 SLOW，方便直接 grep 出来看。
+SLOW_REQUEST_MS = 3000
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -115,10 +118,30 @@ async def attach_request_id(request: Request, call_next: Any) -> Any:
     request.state.request_id = (
         request.headers.get("X-Request-ID") or uuid.uuid4().hex[:16]
     )
-    started = time.time()
+    started = time.perf_counter()
     response = await call_next(request)
+    elapsed_ms = int((time.perf_counter() - started) * 1000)
     response.headers["X-Request-ID"] = request.state.request_id
-    response.headers["X-Response-Time-Ms"] = str(int((time.time() - started) * 1000))
+    response.headers["X-Response-Time-Ms"] = str(elapsed_ms)
+
+    # 每次请求都记一条耗时日志。
+    #
+    # uvicorn 自带的 access log 只有方法/路径/状态码，**没有耗时** ——
+    # 排查"为什么这次上传这么久"时完全看不出时间花在哪，只能靠猜。
+    # 这里补上毫秒数，并标出慢请求，方便直接 grep。
+    #
+    # 注意：流式（SSE）响应下这个耗时是**首字节时间**，不是整条流的总时长
+    # （响应体在 call_next 返回之后才继续推）。
+    slow = " SLOW" if elapsed_ms >= SLOW_REQUEST_MS else ""
+    logger.info(
+        "%s %s -> %s %dms%s rid=%s",
+        request.method,
+        request.url.path,
+        response.status_code,
+        elapsed_ms,
+        slow,
+        request.state.request_id,
+    )
     return response
 
 

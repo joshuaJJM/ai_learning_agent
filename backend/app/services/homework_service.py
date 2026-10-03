@@ -70,18 +70,29 @@ def sniff_image_mime(data: bytes) -> str | None:
     return None
 
 
-def _stages(active: int, failed: bool = False) -> list[dict[str, str]]:
+def _stages(
+    active: int, failed: bool = False, retrying: bool = False
+) -> list[dict[str, str]]:
     """active = 正在进行的阶段下标；之前的算 done，之后的算 pending。
 
     `failed=True` 时把当前阶段标成 `failed` —— 分析失败时，
     前端要能在进度卡片上明确指出「就是这一步失败的」，而不是让它看起来还在跑。
+
+    `retrying=True` 时把当前阶段标成 `retrying` —— 这是**第三种**状态，
+    和 failed 完全不同：模型降级重试时任务仍在推进，只是换了个模型，
+    前端应当显示「主模型不可用，正在用备用模型重试」，而不是看起来失败了。
     """
     result: list[dict[str, str]] = []
     for index, (key, label, label_zh) in enumerate(ANALYSIS_STAGES):
         if index < active:
             state = "done"
         elif index == active:
-            state = "failed" if failed else "active"
+            if failed:
+                state = "failed"
+            elif retrying:
+                state = "retrying"
+            else:
+                state = "active"
         else:
             state = "pending"
         result.append(
@@ -90,19 +101,31 @@ def _stages(active: int, failed: bool = False) -> list[dict[str, str]]:
     return result
 
 
-def _progress(active: int, percent: float, *, failed: bool = False) -> dict[str, Any]:
-    stages = _stages(active, failed=failed)
+def _progress(
+    active: int,
+    percent: float,
+    *,
+    failed: bool = False,
+    retrying: bool = False,
+    retry_note: str | None = None,
+) -> dict[str, Any]:
+    stages = _stages(active, failed=failed, retrying=retrying)
     if active < len(ANALYSIS_STAGES):
         key, label, label_zh = ANALYSIS_STAGES[active]
     else:
         key, label, label_zh = "completed", "Completed", "分析完成"
-    return {
+    payload: dict[str, Any] = {
         "percent": round(percent, 3),
         "current_stage": label,
         "current_stage_key": key,
         "current_stage_label_zh": label_zh,
         "stages": stages,
     }
+    # 正在降级重试时给一句人话，前端可以直接显示
+    if retrying:
+        payload["retrying"] = True
+        payload["retry_note"] = retry_note or "模型暂不可用，正在用备用模型重试"
+    return payload
 
 
 # ---------------------------------------------------------------------------
@@ -220,7 +243,13 @@ def create_analysis(
         "homework_id": None,
         "questions": [],
         "question_results": [],
-        "counts": {"correct": 0, "wrong": 0, "partial": 0, "unknown": 0},
+        "counts": {
+            "correct": 0,
+            "wrong": 0,
+            "partial": 0,
+            "unanswered": 0,
+            "unknown": 0,
+        },
         "knowledge_changes": [],
         "new_wrong_questions": [],
         "next_action": None,
@@ -280,9 +309,30 @@ async def run_analysis(analysis_id: str) -> None:
         outcome: VlmOutcome | None = None
         vlm_error: str | None = None
         images = [(Path(i["path"]).read_bytes(), i["mime_type"]) for i in doc["images"]]
+
+        def _on_retry(info: dict[str, Any]) -> None:
+            """降级到下一个模型时把阶段标成 `retrying`。
+
+            这一步很关键：不标的话，模型降级期间任务看起来只是"卡在 25%"，
+            用户不知道是在重试还是已经死了。标了之后前端能显示
+            「主模型不可用，正在用备用模型重试（2/3）」。
+            """
+            note = (
+                f"第 {info['image_index'] + 1} 张：{info['failed_model']} 未成功，"
+                f"正在用 {info['next_model']} 重试"
+                f"（{info['attempt'] + 1}/{info['total_models']}）"
+            )
+            _update(
+                doc,
+                progress=_progress(1, 0.25, retrying=True, retry_note=note),
+            )
+
         try:
             outcome = await vlm_service.analyze_images(
-                images, subject=doc.get("subject") or "mathematics", topic=doc.get("topic")
+                images,
+                subject=doc.get("subject") or "mathematics",
+                topic=doc.get("topic"),
+                on_retry=_on_retry,
             )
         except LlmUnavailable as exc:
             vlm_error = str(exc)
@@ -332,7 +382,7 @@ async def run_analysis(analysis_id: str) -> None:
         question_results: list[dict[str, Any]] = []
         new_wrong: list[dict[str, Any]] = []
         evidence_entries: list[EvidenceInput] = []
-        counts = {"correct": 0, "wrong": 0, "partial": 0, "unknown": 0}
+        counts = {"correct": 0, "wrong": 0, "partial": 0, "unanswered": 0, "unknown": 0}
 
         for raw in outcome.questions:
             result = _build_question_result(raw, doc, homework_id, now)
@@ -340,9 +390,10 @@ async def run_analysis(analysis_id: str) -> None:
             repositories.save_question(result)
             counts[result["correctness"]] = counts.get(result["correctness"], 0) + 1
 
-            # 判定为 unknown 的题（模型之间有分歧）不进 Knowledge Engine——
-            # 判不出来就不该影响掌握度。
-            if result["correctness"] != "unknown":
+            # `unknown`（复核没通过）与 `unanswered`（学生没作答）都不进
+            # Knowledge Engine —— 前者是判不出来，后者是没得判，
+            # 两种情况都不该影响掌握度。
+            if result["correctness"] not in NO_MASTERY_IMPACT:
                 for ref in result["knowledge_points"]:
                     evidence_entries.append(
                         EvidenceInput(
@@ -370,14 +421,14 @@ async def run_analysis(analysis_id: str) -> None:
         changes = knowledge_service.apply_evidence(doc["user_id"], evidence_entries)
 
         # --- 标签计分：答对则该题所有标签 +1，否则 -1 ---
-        # correctness=unknown（两个模型对答案有分歧）时不动标签：
-        # 我们并不知道学生到底对不对，不该瞎扣分。
+        # `unknown` / `unanswered` 都不动标签：前者是"我们不知道学生对不对"，
+        # 后者是"学生根本没作答"，两种都不该瞎扣分。
         tag_updates = [
             tag_service.apply_answer(
                 doc["user_id"], result["question_id"], result["correctness"] == "correct"
             )
             for result in question_results
-            if result["correctness"] != "unknown" and result.get("tags")
+            if result["correctness"] not in NO_MASTERY_IMPACT and result.get("tags")
         ]
 
         homework_doc = {
@@ -478,6 +529,9 @@ def _build_question_result(
         "student_answer": raw.student_answer,
         "correct_answer": raw.correct_answer,
         "correctness": raw.correctness,
+        # 判成 unknown 时保留下来的「可能答案」。**仅供参考，绝不参与算分**。
+        "possible_answer": raw.possible_answer,
+        "possible_answer_source": raw.possible_answer_source,
         "knowledge_points": refs,
         # 标签：练习推荐与标签计分用。命中题库时就是题库的标签。
         "tags": list(raw.tags),
@@ -550,6 +604,9 @@ def build_detail(doc: dict[str, Any]) -> dict[str, Any]:
         "correct_count": doc.get("counts", {}).get("correct", 0),
         "wrong_count": doc.get("counts", {}).get("wrong", 0),
         "partial_count": doc.get("counts", {}).get("partial", 0),
+        # 学生没作答（**不计入掌握度**，但要让前端能单独提示"这题你没做"）
+        "unanswered_count": doc.get("counts", {}).get("unanswered", 0),
+        # 复核没通过 / 判定不可信（同样不计入掌握度）
         "unknown_count": doc.get("counts", {}).get("unknown", 0),
         "knowledge_changes": doc.get("knowledge_changes", []),
         "new_wrong_questions": [
@@ -568,6 +625,15 @@ def build_detail(doc: dict[str, Any]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # 上传批次列表（前端的「近 50 批」）
 # ---------------------------------------------------------------------------
+
+#: 这些判定结果**不进入 Knowledge Engine、不动标签** —— 两种都"没法算分"：
+#:
+#:   unknown     复核没通过，判定不可信
+#:   unanswered  学生没作答，没有可判定的对象
+#:
+#: 它们的区别在于**对用户的含义**：前者是"我没算准"，后者是"你没做"。
+#: 分开之后前端能给出不同的提示，而不是一律「本题不计入统计」。
+NO_MASTERY_IMPACT = frozenset({"unknown", "unanswered"})
 
 # 内部状态 -> 对外的三态。前端只关心「正在 / 成功 / 失败」。
 BATCH_STATE = {

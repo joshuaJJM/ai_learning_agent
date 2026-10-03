@@ -130,28 +130,71 @@ def _chain(settings: Settings) -> list[str]:
     return vlm_service.recognition_models(settings, LlmClient(settings))
 
 
-def test_vlm_chain_puts_deepseek_before_the_weaker_fallback() -> None:
-    """★ 质量优先：DeepSeek 识别质量最高（只是慢），必须排在 8B 之前。"""
-    assert _chain(_settings()) == [PRIMARY, BACKUP, FALLBACK]
+def test_vlm_chain_is_quality_first() -> None:
+    """★ 质量优先：DeepSeek（质量最高）→ Qwen3-VL-32B → Qwen3-VL-8B。"""
+    assert _chain(_settings()) == [BACKUP, PRIMARY, FALLBACK]
 
 
-def test_vlm_chain_starts_with_the_primary_model() -> None:
-    assert _chain(_settings())[0] == PRIMARY
+def test_vlm_chain_starts_with_deepseek() -> None:
+    assert _chain(_settings())[0] == BACKUP
 
 
-def test_vlm_chain_has_no_backup_when_unconfigured() -> None:
+def test_vlm_chain_without_backup_key_starts_with_qwen32b() -> None:
     assert _chain(_settings(backup_llm_api_key="")) == [PRIMARY, FALLBACK]
 
 
 def test_backup_model_is_not_duplicated_in_the_chain() -> None:
-    """万一有人把备用模型配成了和主模型同一个名字。"""
+    """万一有人把备用模型配成了和某个 Qwen 模型同一个名字。"""
     assert _chain(_settings(backup_llm_model=PRIMARY, vlm_fallback_model=PRIMARY)) == [
         PRIMARY
     ]
 
 
 def test_fallback_is_dropped_when_it_equals_the_primary() -> None:
-    assert _chain(_settings(vlm_fallback_model=PRIMARY)) == [PRIMARY, BACKUP]
+    assert _chain(_settings(vlm_fallback_model=PRIMARY)) == [BACKUP, PRIMARY]
+
+
+# ---------------------------------------------------------------------------
+# ★ 校验模型不能是识别模型本身
+# ---------------------------------------------------------------------------
+
+def test_verifier_is_never_the_recognizer() -> None:
+    """这是「二次确认被跳过」的根因修复。
+
+    识别降级到 DeepSeek 之后，如果校验还用 DeepSeek，那等于让同一个模型
+    把同一件事再做一遍 —— 它要么复述自己（等于没校验），要么在同一次故障里
+    一起失败，题目全被记成 unknown 而正确答案其实就在手边。
+    """
+    settings = _settings()
+    llm = LlmClient(settings)
+
+    # 正常情况下优先用 DeepSeek 做校验
+    assert vlm_service.verification_model(settings, llm) == BACKUP
+    # 但如果 DeepSeek 就是识别模型，就必须换一个
+    assert (
+        vlm_service.verification_model(settings, llm, exclude={BACKUP})
+        == settings.llm_model
+    )
+    assert (
+        vlm_service.verification_model(settings, llm, exclude={BACKUP, PRIMARY})
+        == settings.llm_model
+    )
+
+
+def test_verifier_falls_back_to_primary_text_model() -> None:
+    settings = _settings(backup_llm_api_key="")
+    assert (
+        vlm_service.verification_model(settings, LlmClient(settings))
+        == settings.llm_model
+    )
+
+
+def test_verifier_can_be_pinned_to_the_primary_model() -> None:
+    settings = _settings(verify_with_backup_model=False)
+    assert (
+        vlm_service.verification_model(settings, LlmClient(settings))
+        == settings.llm_model
+    )
 
 
 def test_health_reports_the_backup_provider(client) -> None:

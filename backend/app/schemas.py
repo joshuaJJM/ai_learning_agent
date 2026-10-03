@@ -21,7 +21,7 @@ from .errors import ErrorCode
 # 字面量类型（= 契约里的枚举）
 # ---------------------------------------------------------------------------
 
-Correctness = Literal["correct", "wrong", "partial", "unknown"]
+Correctness = Literal["correct", "wrong", "partial", "unanswered", "unknown"]
 SourceType = Literal["homework", "tutor", "practice", "exam"]
 AnalysisStatus = Literal["queued", "processing", "completed", "failed"]
 Trend = Literal["improving", "stable", "declining", "unknown"]
@@ -278,9 +278,21 @@ class HomeResponse(BaseModel):
 class QuestionResult(BaseModel):
     """单题的识别与判定结果。
 
-    注意 `correctness == "unknown"` 时 `correct_answer` 为 null：
-    这说明两个模型对答案有分歧，服务端拒绝采信，该题也未计入掌握度统计。
-    详见 warnings。
+    `correctness` 取值与含义：
+
+    | 值 | 含义 | 计入掌握度 |
+    |---|---|---|
+    | `correct` | 答对 | ✅ |
+    | `wrong` | 答错 | ✅ |
+    | `partial` | 部分正确 | ✅ |
+    | `unanswered` | **学生没作答**（或字迹读不出来） | ❌ |
+    | `unknown` | **复核没通过**（两个模型分歧 / 独立求解失败） | ❌ |
+
+    `unanswered` 与 `unknown` 的区别是**对用户的含义不同**：
+    前者是「你没做」，后者是「我没算准」。两者都不计分。
+
+    `unknown` 时 `correct_answer` 为 null（服务端拒绝采信未复核的答案），
+    但会给出 `possible_answer` 作为**参考**——它绝不参与算分。
     """
 
     question_id: str
@@ -291,6 +303,17 @@ class QuestionResult(BaseModel):
     student_answer: str | None = None
     correct_answer: str | None = None
     correctness: Correctness = "unknown"
+    possible_answer: str | None = Field(
+        default=None,
+        description=(
+            "仅当 correctness=unknown 时有值：复核没通过时保留的「可能答案」，"
+            "**仅供参考，不计入掌握度**。优先取独立求解模型的答案"
+            "（它没参与识别，不受视觉误读影响）。"
+        ),
+    )
+    possible_answer_source: str | None = Field(
+        default=None, description="可能答案来自哪个模型，用于排查"
+    )
     knowledge_points: list[KnowledgePointRef] = Field(default_factory=list)
     error_type: str | None = None
     error_label: str | None = None
@@ -353,6 +376,9 @@ class AnalysisDetailResponse(BaseModel):
     correct_count: int = 0
     wrong_count: int = 0
     partial_count: int = 0
+    #: 学生没作答的题数。**不计入掌握度**，但要能单独提示"这题你没做"。
+    unanswered_count: int = 0
+    #: 复核没通过的题数（判定不可信）。同样不计入掌握度。
     unknown_count: int = 0
 
     knowledge_changes: list[KnowledgeChange] = Field(default_factory=list)

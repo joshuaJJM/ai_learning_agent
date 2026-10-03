@@ -19,7 +19,7 @@ import re
 import unicodedata
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 
 from .. import knowledge
 from ..config import get_settings
@@ -77,6 +77,16 @@ class RawQuestion:
     difficulty: float
     image_index: int = 0
     bank_question_id: str | None = None
+    #: 判成 `unknown` 时保留下来的「可能答案」。
+    #:
+    #: 二次确认没通过（失败或分歧）时，`correct_answer` 会被清空 ——
+    #: 这是对的（不能拿一个没复核过的答案去算分），但**不该把信息也丢掉**。
+    #: 实测有题目置信度 0.95–0.98、正确答案就在手里，却因为没复核成功
+    #: 只留下一句 unknown。前端可以用它显示「可能是 C」，但后端
+    #: **绝不**拿它计入掌握度。
+    possible_answer: str | None = None
+    #: 可能答案是谁给的（`deepseek-flash` 之类），便于排查
+    possible_answer_source: str | None = None
 
 
 @dataclass
@@ -149,9 +159,19 @@ def _clean_answer(value: Any, options: dict[str, str]) -> str | None:
 
 
 def _clean_correctness(value: Any, student: str | None, correct: str | None) -> str:
-    """correctness 以两个答案的直接比较为准，不完全信任模型自报。"""
+    """correctness 以两个答案的直接比较为准，不完全信任模型自报。
+
+    `student is None`（模型读不到学生选了什么）返回 **`unanswered`**，
+    这是一个与 `unknown` **不同**的状态：
+
+      - `unanswered` —— 学生没作答（或字迹读不出来），**不是**判定失败
+      - `unknown`    —— 识别/复核没能确认，判定不可信
+
+    两者都**不计入掌握度**，但对用户的意义完全不同：
+    前者是"你没做"，后者是"我没算准"。混成一个值会让前端没法好好展示。
+    """
     if student is None:
-        return "unknown"
+        return "unanswered"
     if correct is None:
         raw = str(value or "").strip().lower()
         return raw if raw in ("correct", "wrong", "partial", "unknown") else "unknown"
@@ -329,7 +349,7 @@ def build_prompt(subject: str = "mathematics", topic: str | None = None) -> str:
 3. options 的键固定为 "A"/"B"/"C"/"D"，值是选项文字。
 4. student_answer 填学生在卷面上**实际选择**的选项字母；若学生未作答或字迹无法辨认，填 null。
 5. answer 填**你自己重新计算**出的正确选项字母。请务必自己解一遍，不要假设学生是对的。
-6. correctness：学生答案与正确答案一致填 "correct"，不一致填 "wrong"，学生未作答填 "unknown"。
+6. correctness：学生答案与正确答案一致填 "correct"，不一致填 "wrong"，学生未作答填 "unanswered"（**不要**填 unknown）。
 7. knowledge_point_ids 只能从下面这份清单里选（可多选，最多 3 个）：
 {kp_lines}
 8. tags 填这道题涉及的**标签**，必须**逐字**从下面这份清单里选（1 到 4 个，不要自己造词）：
@@ -408,19 +428,39 @@ async def _solve_independently(
     return _clean_answer(payload.get("answer"), options)
 
 
-def verification_model(settings: Any, llm: LlmClient) -> str:
+def verification_model(
+    settings: Any, llm: LlmClient, *, exclude: set[str] | None = None
+) -> str:
     """二次求解校验用哪个模型。
 
-    优先用**另一个厂商**的模型：识别用的是视觉模型，校验用文本模型，
-    两边异构，独立性更好 —— 同一家的模型容易犯同样的错。
+    **硬性要求：校验模型不能是刚做识别的那个模型。**
+
+    否则「二次确认」就是让同一个模型把同一件事再做一遍 —— 它要么复述
+    自己的答案（等于没校验），要么在同一次故障里一起失败。之前就踩过：
+    识别降级到 deepseek-flash 后，校验也用 deepseek-flash，于是校验
+    整批失败，题目全被记成 unknown 而正确答案其实就在手边。
+
+    优先级：备用厂商模型（若与识别模型不同）→ 主文本模型。
     """
-    if settings.verify_with_backup_model and llm.backup_configured:
+    exclude = exclude or set()
+    if (
+        settings.verify_with_backup_model
+        and llm.backup_configured
+        and settings.backup_llm_model not in exclude
+    ):
         return settings.backup_llm_model
+    if settings.llm_model not in exclude:
+        return settings.llm_model
+    # 两个都排除掉了（例如识别模型恰好就是这两个）：只能退回主模型，
+    # 但至少不是"识别用的那个"这种情况已经排除了。
     return settings.llm_model
 
 
 async def verify_answers(
-    questions: Sequence[RawQuestion], *, client: LlmClient | None = None
+    questions: Sequence[RawQuestion],
+    *,
+    client: LlmClient | None = None,
+    exclude_models: set[str] | None = None,
 ) -> list[str]:
     """对没有题库背书的题目做二次求解校验，返回告警列表。
 
@@ -440,7 +480,6 @@ async def verify_answers(
         if question.bank_question_id is None  # 题库已背书，可信
         and question.options
         and question.correct_answer
-        and question.student_answer is not None  # 没作答就不需要判定对错
     ]
     if len(pending) > MAX_VERIFY_PER_ANALYSIS:
         warnings.append("题目较多，部分题目未做二次校验，结果仅供参考")
@@ -449,7 +488,8 @@ async def verify_answers(
         return warnings
 
     semaphore = asyncio.Semaphore(VERIFY_CONCURRENCY)
-    model = verification_model(settings, llm)
+    # 关键：校验模型必须**不是**刚做识别的那个（见 verification_model 的说明）
+    model = verification_model(settings, llm, exclude=exclude_models or set())
 
     async def solve(question: RawQuestion) -> str | None:
         async with semaphore:
@@ -462,27 +502,37 @@ async def verify_answers(
     )
 
     for question, solver_answer in zip(pending, solved):
+        recognizer_answer = question.correct_answer
+
         if isinstance(solver_answer, BaseException) or solver_answer is None:
+            # 没能复核 → 不计分，但把识别模型的答案留作「可能答案」
             warnings.append(
-                f"第 {question.question_number} 题的答案未能二次确认，本题不计入掌握度统计"
+                f"第 {question.question_number} 题的答案未能二次确认"
+                f"（独立求解模型 {model} 未给出结果），本题不计入掌握度统计"
             )
             question.correctness = "unknown"
             question.correct_answer = None
             question.error_type = None
+            question.possible_answer = recognizer_answer
+            question.possible_answer_source = "recognition"
             continue
 
-        if solver_answer == question.correct_answer:
+        if solver_answer == recognizer_answer:
             question.confidence = min(1.0, round(question.confidence + 0.05, 4))
             continue
 
         warnings.append(
             f"第 {question.question_number} 题的正确答案存在分歧"
-            f"（识别模型认为 {question.correct_answer}，独立求解认为 {solver_answer}），"
+            f"（识别模型认为 {recognizer_answer}，独立求解认为 {solver_answer}），"
             f"本题不计入掌握度统计"
         )
         question.correctness = "unknown"
         question.correct_answer = None
         question.error_type = None
+        # 两个模型各执一词时，**以独立求解（DeepSeek）的答案为准** ——
+        # 它没有参与识别，不受视觉误读影响。
+        question.possible_answer = solver_answer
+        question.possible_answer_source = model
 
     return warnings
 
@@ -490,16 +540,19 @@ async def verify_answers(
 def recognition_models(settings: Any, llm: LlmClient) -> list[str]:
     """图片识别的降级链，按**质量优先**排序。
 
-        主（Qwen3-VL-32B）→ DeepSeek（质量最高，只是慢）→ 备（Qwen3-VL-8B）
+        DeepSeek（质量最高）→ Qwen3-VL-32B → Qwen3-VL-8B
 
-    逐级降级，全都失败才算失败。抽成函数是为了让测试直接用它 ——
-    测试里再抄一份的话，两份迟早长歪。
+    注意：**不要求某个模型必须成功**，只要有一个能出结果就算成功；
+    但顺序决定了代价 —— 排在前面的优先被使用。
+
+    抽成函数是为了让测试直接用它 —— 测试里再抄一份的话，两份迟早长歪。
     """
-    models: list[str] = [settings.vlm_model]
-    if llm.backup_configured and settings.backup_llm_model not in models:
+    models: list[str] = []
+    if llm.backup_configured:
         models.append(settings.backup_llm_model)
-    if settings.vlm_fallback_model and settings.vlm_fallback_model not in models:
-        models.append(settings.vlm_fallback_model)
+    for candidate in (settings.vlm_model, settings.vlm_fallback_model):
+        if candidate and candidate not in models:
+            models.append(candidate)
     return models
 
 
@@ -513,17 +566,23 @@ async def analyze_images(
     subject: str = "mathematics",
     topic: str | None = None,
     client: LlmClient | None = None,
+    on_retry: Callable[[dict[str, Any]], None] | None = None,
 ) -> VlmOutcome:
     """对每张图片做一次 VLM 识别，合并结果。
 
-    主模型失败会自动退到 fallback 模型；都失败则抛 LlmUnavailable，
+    识别链按质量降级；全都失败则抛 LlmUnavailable，
     由 homework_service 决定用哪种离线兜底。
+
+    `on_retry` 在**降级到下一个模型之前**被调用，参数形如
+    `{"image_index": 0, "failed_model": "…", "next_model": "…", "attempt": 1}`。
+    homework_service 用它把阶段标成 `retrying`，这样前端能显示
+    「主模型不可用，正在用备用模型重试」，而不是看起来卡住或直接失败。
     """
     settings = get_settings()
     llm = client or get_llm()
     prompt = build_prompt(subject, topic)
 
-    # 识别链：主 → DeepSeek → 备（8B），**质量优先**
+    # 识别链：DeepSeek → Qwen3-VL-32B → Qwen3-VL-8B，**质量优先**
     models = recognition_models(settings, llm)
 
     semaphore = asyncio.Semaphore(VLM_CONCURRENCY)
@@ -531,14 +590,24 @@ async def analyze_images(
     async def analyze_one(
         image_index: int, raw: bytes, mime: str
     ) -> tuple[list[RawQuestion], str, list[str]]:
-        """单张图片：主模型先试，JSON 不合法就重试，用尽次数再换备选模型。"""
+        """单张图片：按质量顺序逐个模型试，JSON 不合法就重试，用尽次数再换下一个。"""
         async with semaphore:
             payload: dict[str, Any] | None = None
             last_error: Exception | None = None
             used_model = models[0]
             notes: list[str] = []
 
-            for model in models:
+            for position, model in enumerate(models):
+                if position > 0 and on_retry is not None:
+                    on_retry(
+                        {
+                            "image_index": image_index,
+                            "failed_model": models[position - 1],
+                            "next_model": model,
+                            "attempt": position,
+                            "total_models": len(models),
+                        }
+                    )
                 try:
                     payload, reply = await llm.complete_json(
                         [build_user_message(prompt, [(raw, mime)])],
@@ -556,9 +625,9 @@ async def analyze_images(
                     continue
 
                 used_model = reply.model
-                if model != models[0]:
+                if position > 0:
                     notes.append(
-                        f"第 {image_index + 1} 张：主 VLM 未成功，已降级到 {model}"
+                        f"第 {image_index + 1} 张：{models[0]} 未成功，已降级到 {model}"
                     )
                 break
 
@@ -584,6 +653,7 @@ async def analyze_images(
 
     outcome = VlmOutcome(generated_by="vlm")
     failed = 0
+    used_models: set[str] = set()
     for index, result in enumerate(results):
         if isinstance(result, BaseException):
             failed += 1
@@ -593,6 +663,7 @@ async def analyze_images(
         outcome.questions.extend(parsed)
         outcome.warnings.extend(notes)
         if used_model:
+            used_models.add(used_model)
             outcome.model = used_model
 
     total = len(results)
@@ -603,9 +674,14 @@ async def analyze_images(
     if failed:
         outcome.warnings.append(f"共 {total} 张图片，其中 {failed} 张识别失败，已跳过")
 
-    # 二次求解校验：没有题库背书的答案必须能被独立复现
+    # 二次求解校验：没有题库背书的答案必须能被**另一个模型**独立复现。
+    # 把识别时用过的模型排除掉，否则等于让同一个模型自己复核自己。
     if outcome.questions:
-        outcome.warnings.extend(await verify_answers(outcome.questions, client=llm))
+        outcome.warnings.extend(
+            await verify_answers(
+                outcome.questions, client=llm, exclude_models=used_models
+            )
+        )
 
     return outcome
 

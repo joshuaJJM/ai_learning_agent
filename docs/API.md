@@ -81,28 +81,46 @@ GET /api/v1/health       # 同上（等价别名）
 
 | 顺序 | 角色 | 模型 | 厂商 |
 |---|---|---|---|
-| 1 | 图片识别（主） | `Qwen/Qwen3-VL-32B-Instruct` | SiliconFlow |
-| 2 | 图片识别（**质量兜底**） | `deepseek-flash` | DeepSeek |
-| 3 | 图片识别（最后备选） | `Qwen/Qwen3-VL-8B-Instruct` | SiliconFlow |
-| — | 二次求解校验 | `deepseek-flash` | DeepSeek |
+| 1 | 图片识别 | `deepseek-flash` | DeepSeek |
+| 2 | 图片识别 | `Qwen/Qwen3-VL-32B-Instruct` | SiliconFlow |
+| 3 | 图片识别 | `Qwen/Qwen3-VL-8B-Instruct` | SiliconFlow |
+| — | 二次求解校验 | 与识别模型**不同**的那个（优先 DeepSeek） | — |
 
-- **识别按质量优先降级**：主 → DeepSeek → 8B。
-  DeepSeek 的识别质量其实最高（只是慢一些），所以排在 8B 之前 ——
-  宁可多等一会儿，也不要一个较差的识别结果。全部失败才算失败。
-- **二次求解校验用另一个厂商的模型**：识别是视觉模型、校验是文本模型，
-  两边异构，独立性更好 —— 同一家的模型容易犯同样的错。
-  校验结果与识别不一致时，该题判为 `unknown`（**不计入掌握度**）。
+- **识别按质量优先降级**：DeepSeek → Qwen3-VL-32B → Qwen3-VL-8B。
+  DeepSeek 的识别质量最高（只是慢一些），所以排在最前。
+  全部失败才算失败，降级过程会在 `progress` 里以 `retrying` 状态暴露出来。
+- **校验模型绝不会是刚做识别的那个**（见 §2.3）。识别是视觉模型、
+  校验是文本模型，两边异构，独立性更好；识别降级后校验会自动换一个模型，
+  避免"自己复核自己"。
 - `deepseek-flash` 是**推理模型**（思维链放在 `reasoning_content`，
   且思考 token 计入 `max_tokens`）。开启 JSON 模式后它的推理量会大幅下降，
   实测同一张图从 10.2s 降到 1.9s。
 
 > 降级到后面几个模型时会明显变慢（每个模型最多试 5 次）。
 > 如果某个分析任务耗时异常长，先看 `warnings` 里有没有
-> 「主 VLM 未成功，已降级到 …」。
+> 「…未成功，已降级到 …」。
 
 > 上传大图时若一次要识别十几道题，模型输出可能很长。
 > 后端会检查 `finish_reason`：一旦是被 `max_tokens` 截断，
 > 会**自动放大预算重发**，而不是原样重试（原样重试只会得到同样被截断的结果）。
+
+### 请求耗时
+
+每个响应都带这两个头，**不用额外请求**：
+
+```http
+X-Request-ID: 3f9a1c2b4d5e6f70
+X-Response-Time-Ms: 42
+```
+
+服务端日志里每次请求也会记一行带耗时的记录，超过 3 秒标 `SLOW`：
+
+```
+INFO haoxue: POST /api/v1/homework/analyses -> 202 156ms rid=3f9a1c2b4d5e6f70
+INFO haoxue: GET /api/v1/knowledge/mastery-overview -> 200 4213ms SLOW rid=…
+```
+
+排查"这次为什么这么慢"时，直接 `grep SLOW` 或按 `rid` 串起同一次请求的所有日志。
 
 ### 契约常量（请从这里拉，不要手抄文档）
 
@@ -389,18 +407,27 @@ GET /api/v1/homework/analyses/{analysis_id}
 }
 ```
 
-- `state`: `done` | `active` | `pending` | `failed`
+- `state`: `done` | `active` | `retrying` | `pending` | `failed`
   - 分析失败时，**出错的那一步是 `failed`（不是 `active`）**，前端可以据此在卡片上
     标出「就是这一步失败的」。例如图里识别不出题目时：
     `image_received: done` / `questions_detected: failed` / 其余 `pending`，
     同时 `error.error_code = "QUESTION_NOT_RECOGNIZED"`。
   - 模型不可用（`VLM_TIMEOUT`）失败点同样落在 `questions_detected`。
+  - **`retrying` 是第三种状态，不是失败。** 识别模型降级重试时当前阶段标成
+    `retrying`，同时 `progress` 里多出两个字段：
+    ```json
+    "retrying": true,
+    "retry_note": "第 1 张：deepseek-flash 未成功，正在用 Qwen/Qwen3-VL-32B-Instruct 重试（2/3）"
+    ```
+    前端应当显示成「正在用备用模型重试」而不是看起来卡住或失败。
+    重试成功后状态会回到正常流程。
 - **多张图片是并行识别的**，所以耗时取决于最慢的那一张，不是页数之和。
   实测 1 张约 21 秒、3 张同样约 21 秒。并发上限 4（打满模型配额反而会被限流）。
 - 建议轮询间隔 1 秒；`status` 变为 `completed` / `failed` 即停止
 - 模型偶尔会返回不合法的 JSON（最常见的是在中文正文里把引号打成了 ASCII 的 `"`，
   导致字符串提前闭合）。服务端会自动修复，修不好就重试，
-  **主模型 5 次、备选模型 5 次**，所以偶发的坏输出不会让整单失败。
+  **识别链上每个模型各 5 次**。若输出是被 `max_tokens` 截断，服务端会**放大预算**
+  重发而不是原样重试（原样重试必然得到同样被截断的结果）。
 
 **完成后**（同结构，追加结果字段）：
 
@@ -409,7 +436,8 @@ GET /api/v1/homework/analyses/{analysis_id}
   "status": "completed",
   "progress": { "percent": 1.0, "current_stage": "Completed", "stages": [ "…全部 done…" ] },
   "homework_id": "hw_7c1d",
-  "correct_count": 0, "wrong_count": 1, "partial_count": 0, "unknown_count": 0,
+  "correct_count": 0, "wrong_count": 1, "partial_count": 0,
+  "unanswered_count": 0, "unknown_count": 0,
 
   "questions": ["q_6942b7319a1249579f5b"],
   "question_results": [
@@ -422,6 +450,8 @@ GET /api/v1/homework/analyses/{analysis_id}
       "student_answer": "A",
       "correct_answer": "C",
       "correctness": "wrong",
+      "possible_answer": null,
+      "possible_answer_source": null,
       "knowledge_points": [
         { "knowledge_point_id": "math.derivative.monotonicity", "name": "利用导数判断函数单调性与单调区间", "weight": 1.0 },
         { "knowledge_point_id": "math.derivative.monotonicity_parameter",  "name": "利用单调性或导数恒成立求参数", "weight": 0.75 }
@@ -456,17 +486,61 @@ GET /api/v1/homework/analyses/{analysis_id}
 { "status": "failed", "error": { "error_code": "VLM_TIMEOUT", "message": "视觉模型不可用" } }
 ```
 
+### 2.2.1 `correctness` 的五个取值
+
+| 值 | 含义 | 计入掌握度 |
+|---|---|---|
+| `correct` | 答对 | ✅ |
+| `wrong` | 答错 | ✅ |
+| `partial` | 部分正确 | ✅ |
+| **`unanswered`** | **学生没作答**（或字迹读不出来） | ❌ |
+| **`unknown`** | **复核没通过**（两个模型分歧 / 独立求解失败） | ❌ |
+
+`unanswered` 与 `unknown` **都对掌握度零影响**，但**对用户的含义完全不同**：
+
+- `unanswered` → 「这题你没做」
+- `unknown` → 「这题我没算准」
+
+**请不要把它们合并显示**，否则学生会以为 AI 出了故障，其实是他自己没写。
+
+### 2.2.2 `possible_answer`：判不准的时候也别把信息丢掉
+
+`correctness == "unknown"` 时 `correct_answer` 是 `null`（服务端**拒绝拿一个
+没复核过的答案去算分**），但会额外给一个 `possible_answer` 作参考：
+
+```json
+{
+  "correctness": "unknown",
+  "correct_answer": null,
+  "possible_answer": "D",
+  "possible_answer_source": "deepseek-flash"
+}
+```
+
+- 两个模型**分歧**时 → 取**独立求解模型**的答案（它没参与识别，不受视觉误读影响）
+- **独立求解失败**时 → 取识别模型读到的答案
+
+⚠️ **`possible_answer` 绝不参与算分**，只是一个「可能是 X」的提示。
+UI 建议显示成「AI 无法确认本题答案（可能是 D），未计入统计」。
+
 ### 2.3 关于「AI 会不会教错」
 
 服务端有一套**二次校验**机制，你可以放心展示：
 
 - 题干能匹配到题库 → 直接采用**题库里经过人工验算的答案**；
-- 匹配不到 → 再用另一个模型独立求解一遍，**两次答案一致才采信**；
-- 两次不一致 → 该题 `correctness` 返回 `"unknown"`，`correct_answer` 为 `null`，
+- 匹配不到 → 再用**另一个模型**独立求解一遍，**两次答案一致才采信**；
+- 两次不一致或复核失败 → 该题 `correctness` 返回 `"unknown"`、
+  `correct_answer` 为 `null`，给出 `possible_answer` 作参考，
   并在 `warnings` 里说明，**且不计入掌握度统计**。
 
-所以学生可能看到极少数 `unknown` 的题，UI 建议显示成「AI 无法确认本题答案，未计入统计」。
-这是刻意设计的保守行为，不是 bug。
+> **「另一个模型」是硬性要求。** 校验模型绝不会是刚做识别的那个 ——
+> 否则等于让同一个模型自己复核自己：它要么复述自己的答案（等于没校验），
+> 要么在同一次故障里一起失败。之前踩过这个坑：识别降级到某个模型后，
+> 校验也用同一个模型，于是校验整批失败、题目全被记成 `unknown`，
+> 而正确答案其实就在手里。
+
+所以学生可能看到极少数 `unknown` 的题，UI 建议显示成
+「AI 无法确认本题答案（可能是 X），未计入统计」。这是刻意设计的保守行为，不是 bug。
 
 ### 2.4 历史分析列表
 
