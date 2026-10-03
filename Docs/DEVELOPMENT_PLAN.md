@@ -221,7 +221,9 @@ phase-5: integrate core learning data into ios
 
 ---
 
-## Phase 6 — Practice & Closed Learning Loop
+## Phase 6 — Practice & Closed Learning Loop ✅
+
+**Status: ✅ Complete — live verified（3 次连续 E2E，隔离 guest）**
 
 ### 目标
 

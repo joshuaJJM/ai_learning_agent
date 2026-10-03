@@ -71,16 +71,16 @@
 
 Tutor 会话 ID 按后端来源上下文保存在当前 App 进程内；重新进入同一来源时通过 `GET /api/v1/tutor/sessions/{id}` 恢复当前结构化回合。跨 App 冷启动恢复不属于当前实现范围。
 
-## Phase 6 — Practice & Closed Learning Loop
+## Phase 6 — Practice & Closed Learning Loop ✅
 
-- [ ] Practice DTO / API Client
-- [ ] Practice Session UI
-- [ ] Answer / Explanation
-- [ ] Knowledge / Tag Changes
-- [ ] Next Question / Completion
-- [ ] Refresh Home after learning
-- [ ] 3 consecutive successful end-to-end runs
-- [ ] Commit
+- [x] Practice DTO / API Client（phase-6a）
+- [x] Practice Session UI（phase-6b）
+- [x] Answer / Explanation（phase-6c）
+- [x] Knowledge / Tag Changes（phase-6c）
+- [x] Next Question / Completion（phase-6c）
+- [x] Refresh Home after learning（phase-6d）
+- [x] 3 consecutive successful end-to-end runs（phase-6e，隔离 guest）
+- [x] Commit
 
 ## Phase 7 — Product Surface & Commercial Demo
 
