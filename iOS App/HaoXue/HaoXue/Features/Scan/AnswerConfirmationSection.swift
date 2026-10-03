@@ -5,14 +5,11 @@ import SwiftUI
 /// Only ever shown for `correctness == .unknown` — `unanswered` means the
 /// student left the page blank, which is a different conversation.
 ///
-/// This view is deliberately **not** attached to the live analysis result yet:
-/// the backend contract for the confirmation endpoint is still being agreed, so
-/// wiring it now would either guess the wire format or show a button that
-/// cannot work. It becomes a one-line addition once the server side lands.
+/// The question's own rows (「你的答案 / 参考答案 / AI 无法确认…」) already sit
+/// directly above this section, so it only carries the action: a short
+/// instruction, the choices and the confirm button.
 struct AnswerConfirmationSection: View {
     let model: AnswerConfirmationModel
-    let studentAnswer: String?
-    let possibleAnswer: String?
     /// Called after the server accepted the confirmation so the screen can
     /// reload the authoritative result.
     var onConfirmed: () async -> Void = {}
@@ -21,12 +18,7 @@ struct AnswerConfirmationSection: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("确认标准答案").font(.headline)
 
-            VStack(alignment: .leading, spacing: 7) {
-                row("你的答案", studentAnswer ?? "未提供")
-                row("参考答案", "尚未确认")
-            }
-
-            Text(hint)
+            Text("请根据答案册选择本题的标准答案。")
                 .font(.subheadline)
                 .foregroundStyle(DemoStyle.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -60,14 +52,6 @@ struct AnswerConfirmationSection: View {
         .padding(.top, 4)
     }
 
-    private var hint: String {
-        var text = "AI 未能可靠确认本题答案，请选择答案册中的标准答案。"
-        if let possibleAnswer, !possibleAnswer.isEmpty {
-            text += "（AI 推测可能是 \(possibleAnswer)，仅供参考）"
-        }
-        return text
-    }
-
     private func choiceButton(_ choice: String) -> some View {
         let selected = model.selected == choice
         return Button {
@@ -84,15 +68,6 @@ struct AnswerConfirmationSection: View {
         .accessibilityIdentifier("confirm-answer-choice-\(choice)")
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
-
-    private func row(_ title: String, _ value: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 14) {
-            Text(title).foregroundStyle(DemoStyle.secondary)
-                .frame(width: 72, alignment: .leading)
-            Text(value).frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .font(.subheadline)
-    }
 }
 
 /// Preview-only host: lets the section be inspected without a backend.
@@ -106,9 +81,7 @@ private struct AnswerConfirmationPreviewSubmitter: AnswerConfirming {
             model: AnswerConfirmationModel(
                 questionID: "q_preview",
                 choices: ["A", "B", "C", "D"],
-                submitter: AnswerConfirmationPreviewSubmitter()),
-            studentAnswer: "D",
-            possibleAnswer: "D")
+                submitter: AnswerConfirmationPreviewSubmitter()))
     }
     .padding()
     .background(DemoStyle.background)

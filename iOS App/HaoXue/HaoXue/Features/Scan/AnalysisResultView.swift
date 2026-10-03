@@ -196,9 +196,7 @@ struct AnalysisResultView: View {
 
                 if let confirmation = model.confirmation(for: question) {
                     Divider()
-                    AnswerConfirmationSection(model: confirmation,
-                                              studentAnswer: question.studentAnswer,
-                                              possibleAnswer: question.possibleAnswer) {
+                    AnswerConfirmationSection(model: confirmation) {
                         await model.refreshAfterConfirmation()
                     }
                 }
