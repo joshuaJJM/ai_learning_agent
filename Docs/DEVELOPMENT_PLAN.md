@@ -425,9 +425,16 @@ phase-8: harden online demo reliability
 
 ---
 
-## Phase 9 — Final UI Polish & Motion
+## Phase 9 — Final UI Polish & Motion ✅
 
 > 最终 Phase，仅在功能和联网 Demo 稳定后进行。
+>
+> **Status: ✅ Complete — Demo 封板（2026-10-03）**
+>
+> Phase 9 拆成 9A（Visual Consistency & Layout QA）与 Final（Motion & Stage Polish）。
+> 两者均已提交：`phase-9a: unify visual language and layout`、
+> `phase-9: polish final ui and motion`。
+> Haptics 等 P2 项目按时间预算主动跳过，闭环与 Demo 稳定性优先。
 
 ### 目标
 

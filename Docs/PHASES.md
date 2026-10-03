@@ -146,15 +146,29 @@ Tutor 会话 ID 按后端来源上下文保存在当前 App 进程内；重新�
 
 > 比赛不要求离线模式；不把 Cached / Mock 自动 fallback 作为 Phase 8 验收项。
 
-## Phase 9 — Final UI Polish & Motion
+## Phase 9 — Final UI Polish & Motion ✅
 
-- [ ] Figma QA
-- [ ] Typography / Spacing
-- [ ] Scan motion
-- [ ] Tutor / Practice motion
-- [ ] Mastery animation
-- [ ] Scratchpad transition
-- [ ] Haptics if time
-- [ ] Accessibility / Dynamic Type basic check
-- [ ] Demo device crash test
-- [ ] Final Commit
+### Phase 9A — Visual Consistency & Layout QA ✅
+
+- [x] Figma QA（Figma 无法直接读取，按 DESIGN.md + 现有视觉语言完成）
+- [x] Typography / Spacing（`DemoType` / `DemoMetrics` 统一语义字号与间距节奏）
+- [x] Tutor / Practice 共用同一 A-D 组件
+- [x] Buttons / Cards / SF Symbols 统一
+- [x] Existing unit / UI tests 全绿（163 swift-testing + 14 XCTest）
+- [x] Demo Path 37 张截图（`iOS App/UI图片`）
+- [x] Commit（`phase-9a: unify visual language and layout`）
+
+### Phase 9 Final — Motion & Stage Polish ✅
+
+- [x] Tutor turn transition（回合切换轻 spring + 选中态降权）
+- [x] Mastery animation（原生 numericText 数字滚动 + MasteryBar 同步）
+- [x] Analysis progress transition（stage symbolEffect + 百分比过渡）
+- [x] Scan paging motion（轻量 scale / opacity / ±2.5° rotation）
+- [x] Scratchpad transition（内容层 settle-in，PencilKit 行为不变）
+- [x] Reduce Motion 基础支持（保留淡入、取消位移与旋转）
+- [ ] Haptics（按时间预算跳过，属 P2）
+- [x] Accessibility / Dynamic Type 基础检查
+- [x] Demo device / simulator 关键路径 smoke test，无 crash
+- [x] Final Commit（`phase-9: polish final ui and motion`）
+
+> **Demo 已完成（2026-10-03）。** App 封板，后续工作交给 PPT / 演示视频 / 舞台材料。
