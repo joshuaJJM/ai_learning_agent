@@ -177,6 +177,7 @@ struct AppShellView: View {
             case .mock:
                 PracticeSessionView(provider: MockDataProvider(),
                                     onSessionReady: { practiceSessionID = $0 },
+                                    onFinish: { _ in closePractice() },
                                     onClose: closePractice)
             case .live:
                 PracticeSessionView(
@@ -185,8 +186,13 @@ struct AppShellView: View {
                     existingSessionID: practiceSessionID,
                     createKey: practiceCreateKey ?? IdempotencyKey.generate(),
                     onSessionReady: { practiceSessionID = $0 },
-                    // Phase 6C: hand the draft to PracticeService.submitAnswer(...).
-                    onSubmit: { _ in },
+                    // Phase 6D: use the completed outcome to refresh Home / Knowledge
+                    // and to run `next_action`. Phase 6C only leaves the session.
+                    onFinish: { _ in
+                        practiceSessionID = nil
+                        practiceCreateKey = nil
+                        closePractice()
+                    },
                     onClose: closePractice)
             }
         }

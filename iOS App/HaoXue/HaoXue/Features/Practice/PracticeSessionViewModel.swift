@@ -2,13 +2,26 @@ import Foundation
 import Observation
 import PencilKit
 
-enum PracticeLoadPhase: Equatable { case idle, loading, loaded, failed }
+enum PracticeSessionPhase: Equatable {
+    case idle
+    case loading
+    case answering
+    case submitting
+    case result(PracticeAnswerOutcome)
+    case submitFailed(String)
+    case failed(String)
+}
 
-/// What Phase 6C will hand to `PracticeService.submitAnswer(...)`.
-/// Phase 6B only produces it locally; it is never sent.
+/// What Phase 6C hands to `PracticeService.submitAnswer(...)`.
 struct PracticeAnswerDraft: Equatable {
     let questionID: String
     let selectedKey: String
+}
+
+/// One logical write: the draft is frozen and the key never changes across retries.
+struct PracticeSubmission: Equatable {
+    let draft: PracticeAnswerDraft
+    let key: IdempotencyKey
 }
 
 @MainActor @Observable
@@ -21,9 +34,9 @@ final class PracticeSessionViewModel {
     private var requestGeneration = 0
     private var sessionID: String?
 
-    private(set) var phase: PracticeLoadPhase = .idle
+    private(set) var phase: PracticeSessionPhase = .idle
     private(set) var session: PracticeSessionState?
-    private(set) var errorMessage: String?
+    private(set) var submission: PracticeSubmission?
     /// Presentation-only selection. Never an authoritative verdict.
     var selectedChoiceKey: String?
     var drawing = PKDrawing()
@@ -53,11 +66,34 @@ final class PracticeSessionViewModel {
         return "\(question.index) / \(question.total)"
     }
 
+    var outcome: PracticeAnswerOutcome? {
+        if case .result(let outcome) = phase { return outcome }
+        return nil
+    }
+
+    var submitErrorMessage: String? {
+        if case .submitFailed(let message) = phase { return message }
+        return nil
+    }
+
+    var loadErrorMessage: String? {
+        if case .failed(let message) = phase { return message }
+        return nil
+    }
+
+    var completedOutcome: PracticeAnswerOutcome? {
+        guard let outcome, outcome.sessionCompleted else { return nil }
+        return outcome
+    }
+
     var canSubmit: Bool {
-        guard phase == .loaded, errorMessage == nil, let question, let selectedChoiceKey else {
-            return false
-        }
+        guard phase == .answering, let question, let selectedChoiceKey else { return false }
         return question.choices.contains { $0.key == selectedChoiceKey }
+    }
+
+    var canContinue: Bool {
+        guard let outcome else { return false }
+        return !outcome.sessionCompleted && outcome.nextQuestion != nil
     }
 
     func loadIfNeeded() async {
@@ -68,11 +104,10 @@ final class PracticeSessionViewModel {
     /// Creates a session, or restores the one the app already owns. A retry keeps
     /// the same logical request identity, so a slow first attempt cannot double-score.
     func load() async {
-        guard phase != .loading else { return }
+        guard phase != .loading, phase != .submitting else { return }
         requestGeneration += 1
         let generation = requestGeneration
         phase = .loading
-        errorMessage = nil
         do {
             let loaded: PracticeSessionState
             if let sessionID {
@@ -86,20 +121,21 @@ final class PracticeSessionViewModel {
             sessionID = loaded.id
             session = loaded
             selectedChoiceKey = nil
-            phase = .loaded
+            submission = nil
+            phase = .answering
         } catch is CancellationError {
             guard generation == requestGeneration else { return }
-            phase = session == nil ? .idle : .loaded
+            phase = session == nil ? .idle : .answering
         } catch {
             guard generation == requestGeneration, !Task.isCancelled else { return }
-            errorMessage = PracticeError.message(for: error)
             // A refresh failure never discards the question already on screen.
-            phase = session == nil ? .failed : .loaded
+            phase = session == nil ? .failed(PracticeError.message(for: error)) : .answering
         }
     }
 
     func select(_ key: String) {
-        guard phase == .loaded, let question,
+        // Selection stays mutable only until the first submit freezes the draft.
+        guard phase == .answering, submission == nil, let question,
               question.choices.contains(where: { $0.key == key }) else { return }
         selectedChoiceKey = key
     }
@@ -109,13 +145,60 @@ final class PracticeSessionViewModel {
         return PracticeAnswerDraft(questionID: question.id, selectedKey: selectedChoiceKey)
     }
 
+    /// Freezes the draft on the first tap; every later retry reuses the same
+    /// answer and the same idempotency key.
+    func submit() async {
+        guard phase == .answering, submission == nil else { return }
+        guard let draft = makeSubmission() else { return }
+        submission = PracticeSubmission(draft: draft, key: IdempotencyKey.generate())
+        await send()
+    }
+
+    func retrySubmit() async {
+        guard case .submitFailed = phase, submission != nil else { return }
+        await send()
+    }
+
+    private func send() async {
+        guard let submission, let sessionID else { return }
+        requestGeneration += 1
+        let generation = requestGeneration
+        phase = .submitting
+        do {
+            let outcome = try await provider.submitPracticeAnswer(
+                sessionID: sessionID, questionID: submission.draft.questionID,
+                selectedKey: submission.draft.selectedKey, key: submission.key)
+            guard generation == requestGeneration, !Task.isCancelled else { return }
+            phase = .result(outcome)
+        } catch is CancellationError {
+            guard generation == requestGeneration else { return }
+            phase = .submitFailed("提交已暂停，请重试")
+        } catch {
+            guard generation == requestGeneration, !Task.isCancelled else { return }
+            phase = .submitFailed(PracticeError.submitMessage(for: error))
+        }
+    }
+
+    /// The next question is the server-provided one; counters come straight from
+    /// the response, never from local arithmetic.
+    func continueToNext() {
+        guard let outcome, let next = outcome.nextQuestion, !outcome.sessionCompleted,
+              let session else { return }
+        self.session = PracticeMapper().session(session, applying: outcome, nextQuestion: next)
+        selectedChoiceKey = nil
+        submission = nil
+        phase = .answering
+    }
+
     func retry() async {
         await load()
     }
 
     func cancel() {
         requestGeneration += 1
-        if phase == .loading { phase = session == nil ? .idle : .loaded }
+        if phase == .loading || phase == .submitting {
+            phase = session == nil ? .idle : .answering
+        }
     }
 }
 
@@ -130,6 +213,37 @@ enum PracticeError {
             return message(for: network)
         default:
             return "练习暂时无法加载，请重试"
+        }
+    }
+
+    /// Submit errors keep the frozen answer; the copy stays recoverable.
+    static func submitMessage(for error: Error) -> String {
+        switch error {
+        case PracticeServiceError.backend(let code):
+            switch code {
+            case .questionNotInSession: return "这道题的状态已变化，请退出后重新开始练习"
+            case .sessionNotFound: return "练习记录不存在，请退出后重新开始"
+            case .sessionCompleted: return "这次练习已经结束了"
+            case .idempotencyConflict: return "上一次请求仍在处理中，请稍后重试"
+            case .validationError: return "答案未能提交，请重试"
+            case .unauthorized: return "登录状态已失效，请稍后重试"
+            case .serviceUnavailable, .internalError: return "练习服务暂时不可用，请稍后重试"
+            default: return "答案暂时无法提交，请重试"
+            }
+        case PracticeServiceError.network(let network):
+            return networkMessage(for: network)
+        case let network as NetworkError:
+            return networkMessage(for: network)
+        default:
+            return "答案暂时无法提交，请重试"
+        }
+    }
+
+    private static func networkMessage(for error: NetworkError) -> String {
+        switch error {
+        case .timeout, .transport: "网络连接中断，请重试"
+        case .decoding: "提交结果暂时无法显示，请重试"
+        default: "答案暂时无法提交，请重试"
         }
     }
 

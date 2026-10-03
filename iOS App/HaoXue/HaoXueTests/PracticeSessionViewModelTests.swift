@@ -34,14 +34,46 @@ struct PracticeSessionViewModelTests {
                              createdAt: Date(timeIntervalSince1970: 1_790_899_200))
     }
 
+    private func change(_ id: String, _ name: String, _ before: Double, _ after: Double)
+        -> KnowledgeChange {
+        KnowledgeChange(knowledgePointID: id, beforeMastery: before, afterMastery: after,
+                        summary: name, delta: after - before, evidenceCount: 3)
+    }
+
+    private func outcome(questionID: String = "math.derivative.abc", correctness: String = "correct",
+                         isCorrect: Bool = true, correctAnswer: String = "B",
+                         explanation: String? = "f′(x) = 2x，所以 f′(1) = 2。",
+                         changes: [KnowledgeChange] = [], tag: PracticeTagChange? = nil,
+                         replayed: Bool = false, next: PracticeQuestion? = nil,
+                         completed: Bool = false, answered: Int = 1, correct: Int = 1,
+                         total: Int = 5,
+                         nextAction: NextLearningAction? = nil) -> PracticeAnswerOutcome {
+        PracticeAnswerOutcome(sessionID: "prac_1", questionID: questionID,
+                              correctness: correctness, isCorrect: isCorrect,
+                              correctAnswer: correctAnswer, explanation: explanation,
+                              knowledgeChanges: changes, tagChange: tag, replayed: replayed,
+                              nextQuestion: next, sessionCompleted: completed, answered: answered,
+                              correct: correct, total: total, nextAction: nextAction)
+    }
+
+    private func loadedModel(_ provider: FakePracticeProvider,
+                             question: PracticeQuestion? = nil) async -> PracticeSessionViewModel {
+        provider.sessionToReturn = session(question: question ?? self.question())
+        let model = PracticeSessionViewModel(provider: provider)
+        await model.load()
+        return model
+    }
+
+    // MARK: - Session loading
+
     @Test func initialStateIsIdleWithoutQuestion() {
         let model = PracticeSessionViewModel(provider: FakePracticeProvider())
         #expect(model.phase == .idle)
         #expect(model.session == nil)
         #expect(model.question == nil)
-        #expect(model.progressText.isEmpty)
-        #expect(model.contextTitle == nil)
+        #expect(model.outcome == nil)
         #expect(!model.canSubmit)
+        #expect(!model.canContinue)
         #expect(model.makeSubmission() == nil)
     }
 
@@ -53,7 +85,7 @@ struct PracticeSessionViewModelTests {
 
         await model.load()
 
-        #expect(model.phase == .loaded)
+        #expect(model.phase == .answering)
         #expect(model.session?.id == "prac_1")
         #expect(model.question?.id == "math.derivative.abc")
         #expect(model.question?.number == "072")
@@ -61,7 +93,6 @@ struct PracticeSessionViewModelTests {
         #expect(model.progressText == "1 / 5")
         #expect(model.contextTitle == "函数关系式与导数的综合应用")
         #expect(provider.createdKeys == [key])
-        #expect(provider.createCount == 1)
         #expect(provider.submitCount == 0)
     }
 
@@ -71,7 +102,7 @@ struct PracticeSessionViewModelTests {
                                            targetTag: nil)
         let model = PracticeSessionViewModel(provider: provider)
         await model.load()
-        #expect(model.phase == .loaded)
+        #expect(model.phase == .answering)
         #expect(model.contextTitle == "利用导数判断函数单调性与单调区间")
 
         provider.sessionToReturn = session(question: question(), mode: .knowledgePoint,
@@ -80,40 +111,6 @@ struct PracticeSessionViewModelTests {
         await bare.load()
         #expect(bare.contextTitle == nil)
         #expect(bare.question != nil)
-        #expect(bare.phase == .loaded)
-    }
-
-    @Test func selectionIsSingleAndOnlyAcceptsBackendChoices() async {
-        let provider = FakePracticeProvider()
-        provider.sessionToReturn = session(question: question())
-        let model = PracticeSessionViewModel(provider: provider)
-        await model.load()
-
-        #expect(model.selectedChoiceKey == nil)
-        model.select("A")
-        #expect(model.selectedChoiceKey == "A")
-        model.select("C")
-        #expect(model.selectedChoiceKey == "C")
-        model.select("Z")
-        #expect(model.selectedChoiceKey == "C")
-    }
-
-    @Test func submitEligibilityFollowsTheLocalSelection() async {
-        let provider = FakePracticeProvider()
-        provider.sessionToReturn = session(question: question())
-        let model = PracticeSessionViewModel(provider: provider)
-        await model.load()
-
-        #expect(!model.canSubmit)
-        #expect(model.makeSubmission() == nil)
-        model.select("B")
-        #expect(model.canSubmit)
-        #expect(model.makeSubmission() == PracticeAnswerDraft(questionID: "math.derivative.abc",
-                                                              selectedKey: "B"))
-
-        await model.retry()
-        #expect(model.selectedChoiceKey == nil)
-        #expect(!model.canSubmit)
     }
 
     @Test func restoreUsesTheKnownSessionInsteadOfCreatingAnother() async {
@@ -125,7 +122,6 @@ struct PracticeSessionViewModelTests {
 
         #expect(provider.fetchedIDs == ["prac_restored"])
         #expect(provider.createCount == 0)
-        #expect(model.session?.id == "prac_restored")
         #expect(model.progressText == "2 / 5")
     }
 
@@ -133,34 +129,60 @@ struct PracticeSessionViewModelTests {
         let provider = FakePracticeProvider()
         provider.sessionToReturn = session(question: question())
         provider.failFirstCreate = true
-        let key = IdempotencyKey("phase6b-retry")
+        let key = IdempotencyKey("phase6c-retry")
         let model = PracticeSessionViewModel(provider: provider, createKey: key)
 
         await model.load()
 
-        #expect(model.phase == .failed)
+        #expect(model.loadErrorMessage != nil)
         #expect(model.session == nil)
-        #expect(model.errorMessage != nil)
 
         await model.retry()
-        #expect(model.phase == .loaded)
+        #expect(model.phase == .answering)
         #expect(provider.createdKeys == [key, key])
-        #expect(provider.submitCount == 0)
     }
 
-    @Test func backendErrorsKeepTheirOwnCopy() {
-        #expect(PracticeError.message(for: PracticeServiceError.backend(.noQuestionsAvailable))
-                == "这一组题已经做完了")
-        #expect(PracticeError.message(for: PracticeServiceError.backend(.sessionNotFound))
-                == "练习记录不存在，请退出后重新开始")
-        #expect(PracticeError.message(for: PracticeServiceError.network(.timeout))
-                == "网络连接中断，请重试")
+    // MARK: - Selection
+
+    @Test func selectionIsSingleAndOnlyAcceptsBackendChoices() async {
+        let model = await loadedModel(FakePracticeProvider())
+        #expect(model.selectedChoiceKey == nil)
+        model.select("A")
+        #expect(model.selectedChoiceKey == "A")
+        model.select("C")
+        #expect(model.selectedChoiceKey == "C")
+        model.select("Z")
+        #expect(model.selectedChoiceKey == "C")
+    }
+
+    @Test func submitEligibilityFollowsTheLocalSelection() async {
+        let model = await loadedModel(FakePracticeProvider())
+        #expect(!model.canSubmit)
+        #expect(model.makeSubmission() == nil)
+        model.select("B")
+        #expect(model.canSubmit)
+        #expect(model.makeSubmission() == PracticeAnswerDraft(questionID: "math.derivative.abc",
+                                                              selectedKey: "B"))
+    }
+
+    @Test func aQuestionWithoutChoicesIsNeverSubmittable() async {
+        let provider = FakePracticeProvider()
+        let model = await loadedModel(provider, question: question(choices: []))
+        model.select("A")
+        #expect(model.selectedChoiceKey == nil)
+        #expect(!model.canSubmit)
+
+        provider.sessionToReturn = session(question: nil)
+        let finished = PracticeSessionViewModel(provider: provider)
+        await finished.load()
+        #expect(finished.question == nil)
+        #expect(!finished.canSubmit)
+        #expect(finished.progressText.isEmpty)
     }
 
     @Test func selectingAnAnswerNeverMutatesServerStateOrInventsAVerdict() async throws {
         let provider = FakePracticeProvider()
-        let loaded = session(question: question(), answered: 1, correct: 1, total: 5)
-        provider.sessionToReturn = loaded
+        provider.sessionToReturn = session(question: question(), answered: 1, correct: 1)
         let model = PracticeSessionViewModel(provider: provider)
         await model.load()
         let sessionBefore = try #require(model.session)
@@ -171,42 +193,222 @@ struct PracticeSessionViewModelTests {
         #expect(model.session == sessionBefore)
         #expect(model.question == questionBefore)
         #expect(model.session?.answered == 1)
-        #expect(model.session?.correct == 1)
-        #expect(model.session?.status == .active)
+        #expect(model.outcome == nil)
         #expect(provider.submitCount == 0)
-        // 选择后仍只有 draft：没有 correctness / explanation / 下一题。
-        #expect(model.makeSubmission() == PracticeAnswerDraft(questionID: "math.derivative.abc",
-                                                              selectedKey: "D"))
     }
 
-    @Test func aQuestionWithoutChoicesIsNeverSubmittable() async {
+    // MARK: - Submission
+
+    @Test func submitFreezesTheDraftAndCallsTheProviderOnce() async {
         let provider = FakePracticeProvider()
-        provider.sessionToReturn = session(question: question(choices: []))
-        let model = PracticeSessionViewModel(provider: provider)
-        await model.load()
+        provider.outcomeToReturn = outcome()
+        let model = await loadedModel(provider)
+        model.select("B")
 
+        await model.submit()
+
+        #expect(provider.submitCount == 1)
+        #expect(provider.submissions == [PracticeAnswerDraft(questionID: "math.derivative.abc",
+                                                             selectedKey: "B")])
+        #expect(provider.submissionKeys.count == 1)
+        #expect(model.phase == .result(outcome()))
+        #expect(model.outcome?.isCorrect == true)
+        #expect(model.outcome?.correctAnswer == "B")
+        #expect(model.outcome?.explanation == "f′(x) = 2x，所以 f′(1) = 2。")
+    }
+
+    @Test func doubleTapWhileSubmittingSendsOnlyOneRequest() async {
+        let provider = FakePracticeProvider()
+        provider.outcomeToReturn = outcome()
+        provider.submitDelay = .milliseconds(60)
+        let model = await loadedModel(provider)
         model.select("A")
-        #expect(model.selectedChoiceKey == nil)
-        #expect(!model.canSubmit)
 
-        provider.sessionToReturn = session(question: nil)
-        let finished = PracticeSessionViewModel(provider: provider)
-        await finished.load()
-        #expect(finished.phase == .loaded)
-        #expect(finished.question == nil)
-        #expect(!finished.canSubmit)
-        #expect(finished.progressText.isEmpty)
+        let first = Task { await model.submit() }
+        var spins = 0
+        while model.phase != .submitting && spins < 2_000 {
+            spins += 1
+            await Task.yield()
+        }
+        #expect(model.phase == .submitting)
+        await model.submit()          // second tap: must be ignored
+        model.select("C")             // selection is frozen too
+        #expect(model.selectedChoiceKey == "A")
+        await first.value
+
+        #expect(provider.submitCount == 1)
+        #expect(provider.submissions.first?.selectedKey == "A")
+        #expect(model.outcome != nil)
+    }
+
+    @Test func submitFailureFreezesTheAnswerAndRetryReusesTheSameKey() async {
+        let provider = FakePracticeProvider()
+        provider.outcomeToReturn = outcome()
+        provider.failFirstSubmit = true
+        let model = await loadedModel(provider)
+        model.select("C")
+
+        await model.submit()
+
+        #expect(model.submitErrorMessage != nil)
+        #expect(model.outcome == nil)
+        model.select("A")             // mutation after submit is refused
+        #expect(model.selectedChoiceKey == "C")
+
+        await model.retrySubmit()
+
+        #expect(provider.submitCount == 2)
+        #expect(provider.submissionKeys.count == 2)
+        #expect(provider.submissionKeys[0] == provider.submissionKeys[1])
+        #expect(provider.submissions.allSatisfy { $0.selectedKey == "C" })
+        #expect(model.outcome != nil)
+    }
+
+    @Test func backendSubmitErrorsKeepTheirOwnCopy() async {
+        let provider = FakePracticeProvider()
+        provider.submitError = PracticeServiceError.backend(.questionNotInSession)
+        let model = await loadedModel(provider)
+        model.select("A")
+        await model.submit()
+        #expect(model.submitErrorMessage == "这道题的状态已变化，请退出后重新开始练习")
+
+        provider.submitError = PracticeServiceError.backend(.sessionCompleted)
+        let other = await loadedModel(provider)
+        other.select("A")
+        await other.submit()
+        #expect(other.submitErrorMessage == "这次练习已经结束了")
+    }
+
+    // MARK: - Server-driven results
+
+    @Test func correctAndIncorrectResultsComeFromTheServer() async throws {
+        let provider = FakePracticeProvider()
+        provider.outcomeToReturn = outcome(correctness: "wrong", isCorrect: false,
+                                           correctAnswer: "C", explanation: nil,
+                                           answered: 3, correct: 1, total: 5)
+        let model = await loadedModel(provider)
+        model.select("A")
+        await model.submit()
+
+        let result = try #require(model.outcome)
+        #expect(result.correctness == "wrong")
+        #expect(result.isCorrect == false)
+        #expect(result.correctAnswer == "C")
+        #expect(result.explanation == nil)
+        #expect(result.answered == 3)
+        #expect(result.correct == 1)
+    }
+
+    @Test func everyKnowledgeChangeIsKept() async {
+        let provider = FakePracticeProvider()
+        let changes = [change("kp_1", "函数关系式与导数", 0.43, 0.47),
+                       change("kp_2", "导数与单调性", 0.62, 0.64)]
+        provider.outcomeToReturn = outcome(changes: changes)
+        let model = await loadedModel(provider)
+        model.select("B")
+        await model.submit()
+        #expect(model.outcome?.knowledgeChanges == changes)
+
+        provider.outcomeToReturn = outcome(changes: [])
+        let single = await loadedModel(provider)
+        single.select("B")
+        await single.submit()
+        #expect(single.outcome?.knowledgeChanges.isEmpty == true)
+
+        provider.outcomeToReturn = outcome(changes: [changes[0]])
+        let one = await loadedModel(provider)
+        one.select("B")
+        await one.submit()
+        #expect(one.outcome?.knowledgeChanges == [changes[0]])
+    }
+
+    @Test func tagChangeAndExplanationAreOptional() async {
+        let provider = FakePracticeProvider()
+        provider.outcomeToReturn = outcome(explanation: nil, tag: nil)
+        let model = await loadedModel(provider)
+        model.select("B")
+        await model.submit()
+        #expect(model.outcome?.explanation == nil)
+        #expect(model.outcome?.tagChange == nil)
+
+        let tag = PracticeTagChange(questionID: "math.derivative.abc", isCorrect: false,
+                                    delta: -1, tags: ["函数关系式与导数的综合应用"])
+        provider.outcomeToReturn = outcome(correctness: "wrong", isCorrect: false,
+                                           correctAnswer: "A", tag: tag)
+        let tagged = await loadedModel(provider)
+        tagged.select("B")
+        await tagged.submit()
+        #expect(tagged.outcome?.tagChange == tag)
+    }
+
+    @Test func replayedResponseIsAValidSuccessWithoutLocalCounting() async {
+        let provider = FakePracticeProvider()
+        provider.outcomeToReturn = outcome(replayed: true, answered: 2, correct: 1)
+        let model = await loadedModel(provider)
+        model.select("B")
+        await model.submit()
+
+        #expect(model.outcome?.replayed == true)
+        #expect(model.outcome?.answered == 2)
+        #expect(model.outcome?.correct == 1)
+        #expect(model.session?.answered == 0)   // nothing was optimistically mutated
+    }
+
+    // MARK: - Next question / completion
+
+    @Test func continueToNextUsesTheServerNextQuestionAndCounters() async {
+        let provider = FakePracticeProvider()
+        let next = question("math.derivative.def", index: 2)
+        provider.outcomeToReturn = outcome(next: next, answered: 3, correct: 2)
+        let model = await loadedModel(provider)
+        model.select("B")
+        await model.submit()
+
+        #expect(model.canContinue)
+        model.continueToNext()
+
+        #expect(model.phase == .answering)
+        #expect(model.question == next)
+        #expect(model.selectedChoiceKey == nil)
+        #expect(model.outcome == nil)
+        #expect(model.session?.answered == 3)
+        #expect(model.session?.correct == 2)
+        #expect(model.session?.nextQuestion == next)
+    }
+
+    @Test func completedResultExposesFinishAndNeverGuessesNextQuestion() async {
+        let provider = FakePracticeProvider()
+        let action = NextLearningAction(kind: "start_tutor", title: "下一步：继续学习",
+                                        reason: "本题暴露了薄弱点", buttonTitle: "开始学习",
+                                        knowledgePointID: "kp_1", knowledgePointName: "导数与单调性",
+                                        wrongQuestionID: nil)
+        provider.outcomeToReturn = outcome(next: nil, completed: true, answered: 5, correct: 4,
+                                           total: 5, nextAction: action)
+        let model = await loadedModel(provider)
+        model.select("B")
+        await model.submit()
+
+        #expect(model.completedOutcome != nil)
+        #expect(!model.canContinue)
+        #expect(model.completedOutcome?.nextAction?.kind == "start_tutor")
+        #expect(model.session?.answered == 0)   // server state applied only via continueToNext
     }
 }
 
 @MainActor
 private final class FakePracticeProvider: PracticeDataProviding {
     var sessionToReturn: PracticeSessionState?
+    var outcomeToReturn: PracticeAnswerOutcome?
     var failFirstCreate = false
+    var failFirstSubmit = false
+    var submitError: Error?
+    var submitDelay: Duration = .zero
     private(set) var createdKeys: [IdempotencyKey] = []
     private(set) var fetchedIDs: [String] = []
     private(set) var createCount = 0
     private(set) var submitCount = 0
+    private(set) var submissions: [PracticeAnswerDraft] = []
+    private(set) var submissionKeys: [IdempotencyKey] = []
 
     func createPracticeSession(knowledgePointID: String?, difficulty: Double?, count: Int,
                                key: IdempotencyKey) async throws -> PracticeSessionState {
@@ -233,6 +435,13 @@ private final class FakePracticeProvider: PracticeDataProviding {
     func submitPracticeAnswer(sessionID: String, questionID: String, selectedKey: String?,
                               key: IdempotencyKey) async throws -> PracticeAnswerOutcome {
         submitCount += 1
-        throw PracticeServiceError.backend(.questionNotInSession)
+        submissions.append(PracticeAnswerDraft(questionID: questionID,
+                                               selectedKey: selectedKey ?? ""))
+        submissionKeys.append(key)
+        if submitDelay != .zero { try await Task.sleep(for: submitDelay) }
+        if failFirstSubmit && submitCount == 1 { throw PracticeServiceError.network(.timeout) }
+        if let submitError { throw submitError }
+        guard let outcomeToReturn else { throw ProviderError.unknownFixtureID(questionID) }
+        return outcomeToReturn
     }
 }

@@ -180,6 +180,23 @@ final class HaoXueUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["回答正确"].exists)
         XCTAssertFalse(app.staticTexts["回答错误"].exists)
 
+        // 提交走 provider（mock fixture），结果与解析全部来自 server-shaped response。
+        submit.tap()
+        XCTAssertTrue(app.staticTexts["回答正确"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["正确答案"].exists)
+        XCTAssertTrue(app.staticTexts["导数为正，函数在该区间单调递增。"].exists)
+        XCTAssertTrue(app.staticTexts["practice-result-progress"]
+            .label.contains("已完成 1 / 2"))
+        // 结果页不自动跳题，学生主动点下一题。
+        let next = app.buttons["practice-next-question"]
+        XCTAssertTrue(next.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["f′(x) < 0 时，函数在该区间的变化是什么？"].exists)
+        next.tap()
+        XCTAssertTrue(app.staticTexts["f′(x) < 0 时，函数在该区间的变化是什么？"]
+            .waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["practice-progress"].label, "第 2 / 2 题")
+        XCTAssertFalse(app.buttons["practice-submit-answer"].isEnabled)
+
         app.buttons["草稿本"].tap()
         XCTAssertTrue(app.navigationBars["草稿本"].waitForExistence(timeout: 5))
         app.buttons["完成"].tap()

@@ -44,6 +44,21 @@ struct PracticeMapper {
                           delta: dto.delta, tags: dto.tags ?? [])
     }
 
+    /// Copies the server-reported progress and the server-provided next question
+    /// back into the session state. Pure value transform — nothing is computed here.
+    func session(_ session: PracticeSessionState, applying outcome: PracticeAnswerOutcome,
+                 nextQuestion: PracticeQuestion?) -> PracticeSessionState {
+        PracticeSessionState(id: session.id, userID: session.userID,
+                             knowledgePointID: session.knowledgePointID,
+                             knowledgePointName: session.knowledgePointName,
+                             status: outcome.sessionCompleted ? .completed : session.status,
+                             total: outcome.total, answered: outcome.answered,
+                             correct: outcome.correct, nextQuestion: nextQuestion,
+                             selectionMode: session.selectionMode,
+                             targetTag: session.targetTag, targetTagScore: session.targetTagScore,
+                             pickedTags: session.pickedTags, createdAt: session.createdAt)
+    }
+
     private func change(_ dto: KnowledgeChangeDTO) -> KnowledgeChange {
         KnowledgeChange(knowledgePointID: dto.knowledgePointId,
                         beforeMastery: dto.before, afterMastery: dto.after,

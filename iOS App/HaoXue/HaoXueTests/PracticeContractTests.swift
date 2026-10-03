@@ -179,6 +179,8 @@ struct PracticeContractTests {
         #expect(body["question_id"] as? String == "q_1")
         #expect(body["selected_key"] as? String == "C")
         #expect(body["client_request_id"] as? String == key.value)
+        // 选择题作答不带自由文本。
+        #expect(body["answer_text"] == nil || body["answer_text"] is NSNull)
     }
 
     @Test func liveProviderUsesPracticeEndpointsInsteadOfMockFallback() async throws {

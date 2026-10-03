@@ -60,9 +60,12 @@ struct MockDataProvider: HomeDataProviding, AnalysisDataProviding, TutorDataProv
     // Mock never judges an answer: the outcome is a fixed server-shaped snapshot.
     func submitPracticeAnswer(sessionID: String, questionID: String, selectedKey: String?,
                               key: IdempotencyKey) async throws -> PracticeAnswerOutcome {
-        guard questionID == GoldenDemoFixtures.practiceAnswerOutcome.questionID else {
-            throw ProviderError.unknownFixtureID(questionID)
+        if questionID == GoldenDemoFixtures.practiceAnswerOutcome.questionID {
+            return GoldenDemoFixtures.practiceAnswerOutcome
         }
-        return GoldenDemoFixtures.practiceAnswerOutcome
+        if questionID == GoldenDemoFixtures.practiceCompletedOutcome.questionID {
+            return GoldenDemoFixtures.practiceCompletedOutcome
+        }
+        throw ProviderError.unknownFixtureID(questionID)
     }
 }

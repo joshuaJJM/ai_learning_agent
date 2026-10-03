@@ -98,6 +98,17 @@ enum GoldenDemoFixtures {
         knowledgePoints: [PracticeQuestion.KnowledgePoint(id: knowledgeID, name: "导数与单调性",
                                                           weight: 1)],
         tags: practiceTags, index: 1, total: 2)
+    private static let practiceSecondQuestion = PracticeQuestion(id: "practice-q2",
+        number: "018", stem: "f′(x) < 0 时，函数在该区间的变化是什么？",
+        choices: [
+            PracticeChoice(key: "A", text: "单调递增"),
+            PracticeChoice(key: "B", text: "单调递减"),
+            PracticeChoice(key: "C", text: "取得极大值"),
+            PracticeChoice(key: "D", text: "保持不变")
+        ], difficulty: 0.4,
+        knowledgePoints: [PracticeQuestion.KnowledgePoint(id: knowledgeID, name: "导数与单调性",
+                                                          weight: 1)],
+        tags: practiceTags, index: 2, total: 2)
 
     static let practiceTagSession = PracticeSessionState(id: "practice-question",
         userID: "golden-demo-user", knowledgePointID: knowledgeID,
@@ -125,6 +136,18 @@ enum GoldenDemoFixtures {
         explanation: "导数为正，函数在该区间单调递增。", knowledgeChanges: [masteryChange],
         tagChange: PracticeTagChange(questionID: "practice-q1", isCorrect: true, delta: 1,
                                      tags: practiceTags),
+        replayed: false, nextQuestion: practiceSecondQuestion, sessionCompleted: false,
+        answered: 1, correct: 1, total: 2, nextAction: nil)
+
+    static let practiceCompletedOutcome = PracticeAnswerOutcome(sessionID: "practice-question",
+        questionID: "practice-q2", correctness: "correct", isCorrect: true, correctAnswer: "B",
+        explanation: "导数为负，函数在该区间单调递减。", knowledgeChanges: [masteryChange],
+        tagChange: PracticeTagChange(questionID: "practice-q2", isCorrect: true, delta: 1,
+                                     tags: practiceTags),
         replayed: false, nextQuestion: nil, sessionCompleted: true, answered: 2, correct: 2,
-        total: 2, nextAction: nil)
+        total: 2, nextAction: NextLearningAction(kind: "all_good", title: "本次练习已完成",
+                                                reason: "这一组题都已作答", buttonTitle: "完成练习",
+                                                knowledgePointID: knowledgeID,
+                                                knowledgePointName: "导数与单调性",
+                                                wrongQuestionID: nil))
 }
