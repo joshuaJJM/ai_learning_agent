@@ -552,6 +552,12 @@ VLM_CONCURRENCY = 4
 VERIFY_CONCURRENCY = 4
 # JSON 非法时，**每个模型**最多尝试这么多次；主模型用完才轮到备选模型
 JSON_ATTEMPTS_PER_MODEL = 5
+#: 视觉识别单次调用很贵（一次整页识别 60~240 秒），所以重试次数要少。
+#:
+#: 5 次 × 240 秒 = 20 分钟，光一个模型就能把整场 demo 耗光；
+#: 而且如果模型是在**超时**，重试大概率还是超时 —— 那不是偶发失败，
+#: 是这张图对这个模型就是太慢了。给 2 次，不行就换下一个。
+VLM_JSON_ATTEMPTS = 2
 #: 备用（推理）模型单独的次数。它单次带图就要 31 秒，5 次等于 155 秒、
 #: 必然超过 llm_timeout_seconds，所以只给 2 次 —— 见 attempts_for_model()。
 BACKUP_JSON_ATTEMPTS = 2
@@ -586,13 +592,32 @@ async def _solve_independently(
             messages,
             model=model,
             temperature=0.0,
-            # 备用模型是推理模型，思维链占用 completion_tokens，要留余量
-            max_tokens=1500,
+            # **给推理模型留够预算。** 答案本身只是一个字母，但
+            # deepseek-flash 的思维链要吃掉 98.5% 的 completion token ——
+            # 1500 时它写到一半就被截断，线上表现为"独立求解模型未给出结果"，
+            # 而其实是**根本还没写完**。放大到 6000 仍然不够，给 4000 起步
+            # 让它有台阶可上（complete_json 遇到截断会自动翻倍）。
+            max_tokens=4000,
             retries=0,
+            # **至少给 2 次**。以前没传，默认 1 次 —— 模型偶尔吐一段
+            # 不合法 JSON 就直接放弃整题，线上表现为"独立求解模型未给出结果"，
+            # 而其实是解析失败。多试一次的成本远低于把一道题判成 unknown。
+            attempts=2,
         )
-    except LlmUnavailable:
+    except LlmUnavailable as exc:
+        # 以前这里是裸的 `return None`，失败原因完全丢失 ——
+        # 线上只看到"未能二次确认"，查不出是超时、限流还是 JSON 坏了。
+        logger.warning("独立求解失败（%s 未给出结果）: %s", model, str(exc)[:160])
         return None
-    return _clean_answer(payload.get("answer"), options)
+
+    answer = _clean_answer(payload.get("answer"), options)
+    if answer is None:
+        logger.warning(
+            "独立求解返回的 answer 无法解析: %r（模型 %s）",
+            payload.get("answer"),
+            model,
+        )
+    return answer
 
 
 def verification_model(
@@ -798,20 +823,18 @@ def recognition_models(settings: Any, llm: LlmClient) -> list[str]:
 # ---------------------------------------------------------------------------
 
 def attempts_for_model(model: str, settings: Any) -> int:
-    """每个模型在一张图上最多重试几次。
+    """视觉识别里，每个模型在一张图上最多试几次。
 
-    **推理模型要少给几次。** `deepseek-flash` 带图调用实测单次 31 秒
-    （思维链吃掉 98.5% 的 completion token），按默认的 5 次算就是 155 秒，
-    必然撞上 `llm_timeout_seconds`（线上配的是 120 秒）——
-    等于"重试到超时为止"，白等两分半还得不到结果。
+    `deepseek-flash` 带图调用实测单次 31 秒（思维链吃掉 98.5% 的
+    completion token），给 2 次就够 —— 它是链上最后一道防线。
 
-    它是链上**最后一道防线**：给 2 次机会就够，失败说明这张图它确实处理不了。
-
-    非推理的视觉模型单次 1~2 秒，5 次也才十几秒，保持原样。
+    两个 Qwen 视觉模型同理给 `VLM_JSON_ATTEMPTS`：一次整页识别要
+    60~240 秒，重试次数多了会把整场 demo 耗光，而超时类的失败
+    重试大概率还是超时。
     """
     if model == getattr(settings, "backup_llm_model", None):
         return BACKUP_JSON_ATTEMPTS
-    return JSON_ATTEMPTS_PER_MODEL
+    return VLM_JSON_ATTEMPTS
 
 
 async def explain_questions(
@@ -935,6 +958,10 @@ async def analyze_images(
             last_error: Exception | None = None
             used_model = models[0]
             notes: list[str] = []
+            #: 每个模型失败的**原因**。以前只写"未成功"，导致线上反复降级时
+            #: 谁都看不出为什么（超时的请求不会留下 httpx 日志行，
+            #: 所以日志里只有一段莫名其妙的空白）。
+            model_errors: dict[str, str] = {}
 
             for position, model in enumerate(models):
                 # **每次尝试都回调**，包括第一个模型 —— 否则第一个模型
@@ -962,17 +989,35 @@ async def analyze_images(
                         # 一页 9 题实测远远够用。
                         max_tokens=8000,
                         vision=True,
-                        retries=0,
+                        # **给一次 HTTP 级重试。** 以前这里是 0，于是
+                        # 429 / 500 / 502 / 503 / 504 这类**偶发**的模型端错误
+                        # 会直接把整个模型判死、立刻降级到更弱的备选。
+                        # 线上实测：SiliconFlow 偶发 HTTP 500（code 50507），
+                        # Qwen3-VL-32B 当场被换掉，识别质量掉一档，
+                        # 8 道题里 6 道与独立求解分歧 → 全判 unknown。
+                        # 5xx 返回很快，重试一次几乎不花时间；
+                        # 就算碰上超时，最坏情况也被看门狗兜住（15 分钟）。
+                        retries=1,
                         attempts=attempts_for_model(model, settings),
                     )
                 except LlmUnavailable as exc:
                     last_error = exc
+                    model_errors[model] = str(exc)[:160]
+                    logger.warning(
+                        "第 %d 张：%s 识别失败（%s），换下一个模型",
+                        image_index + 1,
+                        model,
+                        str(exc)[:160],
+                    )
                     continue
 
                 used_model = reply.model
                 if position > 0:
+                    failed = models[position - 1]
                     notes.append(
-                        f"第 {image_index + 1} 张：{models[0]} 未成功，已降级到 {model}"
+                        f"第 {image_index + 1} 张：{failed} 未成功"
+                        f"（{model_errors.get(failed, '未知原因')}），"
+                        f"已降级到 {model}"
                     )
                 break
 

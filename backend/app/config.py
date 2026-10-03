@@ -30,7 +30,17 @@ class Settings(BaseSettings):
     # 主力模型不可用时的备选（实测 8B 版本识别这道题同样正确且更省）
     vlm_fallback_model: str = "Qwen/Qwen3-VL-8B-Instruct"
     llm_fallback_model: str = "Qwen/Qwen2.5-72B-Instruct"
-    llm_timeout_seconds: float = 60.0
+    #: 单次模型调用的超时（秒）。**非流式请求下这基本等于总耗时上限** ——
+    #: httpx 的 read timeout 算的是"两次读到数据之间"的间隔，而模型在写完
+    #: 之前一个字都不发，所以整段等待就是一次 read。
+    #:
+    #: 120 秒对整页视觉识别**太紧**：实测 Qwen3-VL-32B 在 1309x2000 的
+    #: 一页试卷上要 60~160 秒，于是随机超时 → 降级到更弱的 8B。
+    #: 线上就是这么反复"降级"的（日志里看不到超时行，因为超时的请求
+    #: 不会留下 httpx 的 200 日志，中间那段空白就是它）。
+    #:
+    #: 240 秒 = 观测到的最坏值（~160s）再留一半余量。
+    llm_timeout_seconds: float = 240.0
     # 部分自建端点不支持 response_format={"type":"json_object"}，可关掉。
     llm_json_mode: bool = True
     # 置 true 则完全不走网络，全部使用本地 Mock Provider（断网演示保险）。

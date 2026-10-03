@@ -1,4 +1,4 @@
-"""备用 provider（另一个厂商）的路由与使用。
+﻿"""备用 provider（另一个厂商）的路由与使用。
 
 主厂商整体挂掉时（实测遇到过 SiliconFlow 返 500），同一家的备选模型会一起哑，
 只有换厂商才救得回来。所以备用 provider 走自己的 base_url 和 key，
@@ -167,18 +167,31 @@ def test_fallback_is_dropped_when_it_equals_the_primary() -> None:
     assert _chain(_settings(vlm_fallback_model=PRIMARY)) == [PRIMARY, BACKUP]
 
 
-def test_reasoning_backup_gets_fewer_attempts() -> None:
-    """★ 推理模型单次 31 秒，给 5 次就是 155 秒 —— 必然超过 120 秒超时。
+def test_vision_attempts_are_kept_low() -> None:
+    """★ 视觉识别一次整页要 60~240 秒，重试次数必须压住。
 
-    "重试到超时为止"毫无意义：白等两分半还拿不到结果。
-    它是链上最后一道防线，给 2 次就够。
+    5 次 × 240 秒 = 20 分钟，光一个模型就能把整场 demo 耗光；
+    而且超时类的失败重试大概率还是超时 —— 那不是偶发，是这图对这模型太慢。
+    线上实测就是这么反复"降级"的。
     """
     settings = _settings()
+    assert vlm_service.attempts_for_model(PRIMARY, settings) == (
+        vlm_service.VLM_JSON_ATTEMPTS
+    )
+    assert vlm_service.attempts_for_model(FALLBACK, settings) == (
+        vlm_service.VLM_JSON_ATTEMPTS
+    )
+    # 推理模型（带图 31 秒/次）给得更少
     assert vlm_service.attempts_for_model(BACKUP, settings) == 2
-    assert vlm_service.attempts_for_model(PRIMARY, settings) == 5
-    assert vlm_service.attempts_for_model(FALLBACK, settings) == 5
-    # 2 次 × 31 秒 = 62 秒，仍在 120 秒超时之内
-    assert vlm_service.attempts_for_model(BACKUP, settings) * 31 < 120
+    assert vlm_service.VLM_JSON_ATTEMPTS <= 3, "视觉重试次数不能多"
+
+    # 最坏情况：3 个模型各试满，总时长要能算得出来且不发散
+    worst = (
+        vlm_service.attempts_for_model(PRIMARY, settings)
+        + vlm_service.attempts_for_model(FALLBACK, settings)
+        + vlm_service.attempts_for_model(BACKUP, settings)
+    ) * settings.llm_timeout_seconds
+    assert worst <= 30 * 60, f"最坏 {worst/60:.0f} 分钟太久了"
 
 
 # ---------------------------------------------------------------------------
