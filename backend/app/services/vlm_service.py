@@ -113,23 +113,88 @@ def normalize_stem(text: str) -> str:
     return _PUNCT.sub("", normalized)
 
 
-def match_bank_question(stem: str) -> tuple[BankQuestion | None, float]:
-    """在题库里找这道题。返回 (题目, 相似度)。"""
+#: 选项相似度达到这个值就认为「是同一道题」。
+#: 不要求逐字相等 —— 模型转写选项时经常有空格/标点差异。
+OPTIONS_MATCH_THRESHOLD = 0.85
+
+
+def options_similarity(left: Any, right: Any) -> float:
+    """两组选项的相似度（0..1）。只看选项**文字**，不看键。"""
+    def flatten(value: Any) -> str:
+        if not isinstance(value, dict) or not value:
+            return ""
+        return normalize_stem(" ".join(sorted(str(v) for v in value.values())))
+
+    a, b = flatten(left), flatten(right)
+    if not a or not b:
+        return 0.0
+    return SequenceMatcher(None, a, b).ratio()
+
+
+def _pick_by_options(
+    candidates: Sequence[BankQuestion], options: Any
+) -> BankQuestion | None:
+    """同题干多道题时，靠选项判断是哪一道。判不出来返回 None。"""
+    if not isinstance(options, dict) or not options:
+        return None
+    matched = [
+        question
+        for question in candidates
+        if options_similarity(question.options, options) >= OPTIONS_MATCH_THRESHOLD
+    ]
+    return matched[0] if len(matched) == 1 else None
+
+
+def match_bank_question(
+    stem: str, options: Any = None
+) -> tuple[BankQuestion | None, float]:
+    """在题库里找这道题。返回 (题目, 相似度)。
+
+    **必须同时核对选项。** 题干相同的题在题库里可能不止一道
+    （比如同一情境换了选项），只比题干会挑错那一道，
+    然后直接采用它的答案 —— 学生会看到"我明明选对了却判我错"。
+
+    判不出是哪一道时**不给题库背书**（返回 None），
+    让这道题走独立求解复核。宁可多花一次模型调用，也不能拿错答案去判分。
+    """
     target = normalize_stem(stem)
     if len(target) < 6:
         return None, 0.0
+
+    exact = [
+        question
+        for question in get_bank().all()
+        if normalize_stem(question.stem) == target
+    ]
+    if exact:
+        if len(exact) == 1:
+            return exact[0], 1.0
+        # 题干相同、不止一道 —— 只能靠选项区分
+        picked = _pick_by_options(exact, options)
+        if picked is not None:
+            return picked, 1.0
+        # 分不清是哪一道 → 不背书（置信度仍是 1.0，但要明确不采信）
+        return None, 1.0
+
     best: BankQuestion | None = None
     best_score = 0.0
     for question in get_bank().all():
         candidate = normalize_stem(question.stem)
         if not candidate:
             continue
-        if target == candidate:
-            return question, 1.0
         score = SequenceMatcher(None, target, candidate).ratio()
         if score > best_score:
             best, best_score = question, score
     if best_score >= BANK_MATCH_THRESHOLD:
+        # 模糊命中也要核对选项：题干像但选项明显不是同一道题时，
+        # 同样不该采用题库的答案。
+        if (
+            isinstance(options, dict)
+            and options
+            and best is not None
+            and options_similarity(best.options, options) < OPTIONS_MATCH_THRESHOLD
+        ):
+            return None, best_score
         return best, best_score
     return None, best_score
 
@@ -268,7 +333,7 @@ def raw_questions_from_payload(payload: dict[str, Any]) -> list[RawQuestion]:
             continue
         options = _clean_options(item.get("options"))
 
-        bank_question, score = match_bank_question(stem)
+        bank_question, score = match_bank_question(stem, options)
         if bank_question is not None:
             # 题库命中：正确答案、知识点、难度都以题库为准
             correct = bank_question.answer
@@ -463,6 +528,29 @@ def verification_model(
     return settings.llm_model
 
 
+def _mark_not_scored(
+    question: RawQuestion, *, possible: str | None, source: str
+) -> None:
+    """把一道题标成「不计分」，但**保留学生未作答的状态**。
+
+    复核流程有三条路径会走到这里（超出上限、独立求解失败、两个模型分歧），
+    它们都把 `correctness` 改成 `unknown`。但如果学生**根本没作答**，
+    那就该保持 `unanswered` ——
+
+        unanswered  「你没做」
+        unknown     「我没算准」
+
+    复核只是在判断"参考答案可不可信"，跟"学生做没做"是两件事。
+    把前者覆盖到后者上，前端就没法给出正确的提示了。
+    """
+    if question.correctness != "unanswered":
+        question.correctness = "unknown"
+    question.correct_answer = None
+    question.error_type = None
+    question.possible_answer = possible
+    question.possible_answer_source = source
+
+
 async def verify_answers(
     questions: Sequence[RawQuestion],
     *,
@@ -502,11 +590,11 @@ async def verify_answers(
             f"其余 {len(skipped)} 道未复核，不计入掌握度统计"
         )
         for question in skipped:
-            question.possible_answer = question.correct_answer
-            question.possible_answer_source = "recognition"
-            question.correctness = "unknown"
-            question.correct_answer = None
-            question.error_type = None
+            _mark_not_scored(
+                question,
+                possible=question.correct_answer,
+                source="recognition",
+            )
     if not pending:
         return warnings
 
@@ -533,11 +621,11 @@ async def verify_answers(
                 f"第 {question.question_number} 题的答案未能二次确认"
                 f"（独立求解模型 {model} 未给出结果），本题不计入掌握度统计"
             )
-            question.correctness = "unknown"
-            question.correct_answer = None
-            question.error_type = None
-            question.possible_answer = recognizer_answer
-            question.possible_answer_source = "recognition"
+            _mark_not_scored(
+                question,
+                possible=recognizer_answer,
+                source="recognition",
+            )
             continue
 
         if solver_answer == recognizer_answer:
@@ -549,13 +637,9 @@ async def verify_answers(
             f"（识别模型认为 {recognizer_answer}，独立求解认为 {solver_answer}），"
             f"本题不计入掌握度统计"
         )
-        question.correctness = "unknown"
-        question.correct_answer = None
-        question.error_type = None
         # 两个模型各执一词时，**以独立求解（DeepSeek）的答案为准** ——
         # 它没有参与识别，不受视觉误读影响。
-        question.possible_answer = solver_answer
-        question.possible_answer_source = model
+        _mark_not_scored(question, possible=solver_answer, source=model)
 
     return warnings
 
