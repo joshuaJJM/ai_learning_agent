@@ -24,6 +24,32 @@ struct PracticeContractTests {
 
     // MARK: - DTO decoding (captured from the live backend)
 
+    /// Captured from the live backend after the v2 tag change: the answer
+    /// response carries `tag_scores` / `tag_deltas` and no `delta` at all.
+    /// Before this fix the whole practice submission failed to decode, because
+    /// `delta` was a required field.
+    @Test func liveV2AnswerDecodesWithoutTheRemovedDeltaField() throws {
+        let payload = try fixture("PracticeAnswerLiveCapture")
+        let object = try object(payload)
+        let rawTagChange = try #require(object["tag_changes"] as? [String: Any])
+        #expect(rawTagChange["delta"] == nil)
+        #expect(rawTagChange["tag_scores"] != nil && rawTagChange["tag_deltas"] != nil)
+
+        let dto = try BackendJSON.decoder.decode(PracticeAnswerResponseDTO.self, from: payload)
+        let outcome = PracticeMapper().answer(dto)
+        let tag = try #require(outcome.tagChange)
+
+        #expect(outcome.correctness == "wrong")
+        #expect(outcome.correctAnswer == "C")
+        #expect(tag.questionID == dto.questionId)
+        #expect(tag.isCorrect == false)
+        #expect(tag.tags.count == 2)
+        #expect(tag.scores["函数关系式与导数的综合应用"] == 5)
+        #expect(tag.delta(for: "函数关系式与导数的综合应用") == -4)
+        #expect(tag.delta(for: "题库里没有的标签") == nil)
+        #expect(dto.replayed == false)
+    }
+
     @Test func liveTagSessionKeepsServerSelectionMetadata() throws {
         let dto = try BackendJSON.decoder.decode(PracticeSessionDTO.self,
                                                  from: fixture("PracticeSessionTag"))
