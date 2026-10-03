@@ -114,7 +114,8 @@ Tutor 会话 ID 按后端来源上下文保存在当前 App 进程内；重新�
       `GET /api/v1/homework/batches?limit=50`
 - [x] 历史详情复用同一个 `AnalysisResultView` / Domain Model / 结果接口
 - [x] Commit（`phase-8: sync backend contract and add scan history`）
-- [ ] unknown 标准答案人工确认（等后端 `confirm-answer` 最终 Contract 落地后接入）
+- [ ] unknown 标准答案人工确认：前端选择/提交状态机与 UI 组件已就绪并有单测，
+      但**未接线、也未假定接口结构**；等后端 `confirm-answer` 最终 Contract 落地后接入
 
 ### Phase 8B — Online Reliability QA
 
