@@ -1,60 +1,107 @@
 {
-  "identifier": "F7A7B001",
-  "nonRenewingSubscriptions": [],
-  "products": [
+  "appPolicies" : {
+    "eula" : "",
+    "policies" : [
+      {
+        "locale" : "en_US",
+        "policyText" : "",
+        "policyURL" : ""
+      }
+    ]
+  },
+  "identifier" : "F7A7B001",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
     {
-      "displayPrice": "5.00",
-      "familyShareable": false,
-      "internalID": "F7A7B002",
-      "localizations": [
+      "displayPrice" : "5.00",
+      "familyShareable" : false,
+      "internalID" : "F7A7B002",
+      "localizations" : [
         {
-          "description": "增加 1,000,000 演示学习额度",
-          "displayName": "1,000,000 学习额度",
-          "locale": "zh_CN"
+          "description" : "增加 1,000,000 演示学习额度",
+          "displayName" : "1,000,000 学习额度",
+          "locale" : "zh_Hans"
         }
       ],
-      "productID": "haoxue.demo.credits.1000000",
-      "referenceName": "学习额度 Demo",
-      "type": "Consumable"
+      "productID" : "haoxue.demo.credits.1000000",
+      "referenceName" : "学习额度 Demo",
+      "type" : "Consumable"
     }
   ],
-  "settings": {
-    "_failTransactionsEnabled": false,
-    "_locale": "zh_CN",
-    "_storefront": "CHN",
-    "_storeKitErrors": []
+  "settings" : {
+    "_askToBuyEnabled" : false,
+    "_billingGracePeriodEnabled" : false,
+    "_billingIssuesEnabled" : false,
+    "_disableDialogs" : false,
+    "_failTransactionsEnabled" : false,
+    "_locale" : "zh_Hans",
+    "_renewalBillingIssuesEnabled" : false,
+    "_storefront" : "CHN",
+    "_storeKitErrors" : [
+
+    ],
+    "_timeRate" : 0
   },
-  "subscriptionGroups": [
+  "subscriptionBundleGroups" : [
+
+  ],
+  "subscriptionGroups" : [
     {
-      "id": "F7A7B003",
-      "localizations": [],
-      "name": "好学计划",
-      "subscriptions": [
+      "id" : "F7A7B003",
+      "localizations" : [
+
+      ],
+      "name" : "好学计划",
+      "subscriptions" : [
         {
-          "adHocOffers": [],
-          "codeOffers": [],
-          "displayPrice": "20.00",
-          "familyShareable": false,
-          "groupNumber": 1,
-          "internalID": "F7A7B004",
-          "localizations": [
+          "adHocOffers" : [
+
+          ],
+          "billingPlans" : [
             {
-              "description": "每月学习额度与演示题库访问",
-              "displayName": "好学计划",
-              "locale": "zh_CN"
+              "billingPlanType" : "BILLED_UPFRONT",
+              "commitmentDisplayPrice" : "20.00",
+              "displayPrice" : "20.00",
+              "internalID" : "0C3F78D5",
+              "isEnabled" : true
             }
           ],
-          "productID": "haoxue.demo.plan.monthly",
-          "recurringSubscriptionPeriod": "P1M",
-          "referenceName": "好学计划 Demo",
-          "subscriptionGroupID": "F7A7B003",
-          "type": "RecurringSubscription"
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "20.00",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "F7A7B004",
+          "introductoryOffers" : [
+
+          ],
+          "localizations" : [
+            {
+              "description" : "每月学习额度与演示题库访问",
+              "displayName" : "好学计划",
+              "locale" : "zh_Hans"
+            }
+          ],
+          "productID" : "haoxue.demo.plan.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "好学计划 Demo",
+          "subscriptionGroupID" : "F7A7B003",
+          "type" : "RecurringSubscription",
+          "winbackOffers" : [
+
+          ]
         }
       ]
     }
   ],
-  "version": {
-    "major": 3,
-    "minor": 0
+  "subscriptionSuiteGroups" : [
+
+  ],
+  "version" : {
+    "major" : 6,
+    "minor" : 3
   }
 }
