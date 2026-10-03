@@ -32,11 +32,37 @@ struct MockDataProvider: HomeDataProviding, AnalysisDataProviding, TutorDataProv
         return result
     }
 
-    func fetchPracticeSession(id: String) async throws -> PracticeSession {
-        let snapshots = [GoldenDemoFixtures.practiceQuestion, GoldenDemoFixtures.practiceCompleted]
+    func createPracticeSession(knowledgePointID: String?, difficulty: Double?, count: Int,
+                               key: IdempotencyKey) async throws -> PracticeSessionState {
+        knowledgePointID == nil ? GoldenDemoFixtures.practiceTagSession
+                                : GoldenDemoFixtures.practiceKnowledgePointSession
+    }
+
+    func fetchPracticeSession(id: String) async throws -> PracticeSessionState {
+        let snapshots = [GoldenDemoFixtures.practiceTagSession,
+                         GoldenDemoFixtures.practiceKnowledgePointSession,
+                         GoldenDemoFixtures.practiceCompletedSession]
         guard let result = snapshots.first(where: { $0.id == id }) else {
             throw ProviderError.unknownFixtureID(id)
         }
         return result
+    }
+
+    func fetchNextPracticeQuestion(sessionID: String) async throws -> PracticeQuestion {
+        let session = try await fetchPracticeSession(id: sessionID)
+        guard let question = session.nextQuestion else {
+            // 与后端一致：题做完了返回 NO_QUESTIONS_AVAILABLE。
+            throw PracticeServiceError.backend(.noQuestionsAvailable)
+        }
+        return question
+    }
+
+    // Mock never judges an answer: the outcome is a fixed server-shaped snapshot.
+    func submitPracticeAnswer(sessionID: String, questionID: String, selectedKey: String?,
+                              key: IdempotencyKey) async throws -> PracticeAnswerOutcome {
+        guard questionID == GoldenDemoFixtures.practiceAnswerOutcome.questionID else {
+            throw ProviderError.unknownFixtureID(questionID)
+        }
+        return GoldenDemoFixtures.practiceAnswerOutcome
     }
 }

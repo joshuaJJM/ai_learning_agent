@@ -37,13 +37,17 @@ struct GoldenDemoProviderTests {
         #expect(teach.currentTurn.text.contains("换一种解释"))
         #expect(done.currentTurn.completed)
         let practice = try await provider.fetchPracticeSession(id: "practice-question")
-        #expect(practice.currentQuestion?.choices.map(\.id) == [.A, .B, .C, .D])
-        #expect(practice.result == nil)
+        #expect(practice.nextQuestion?.choices.map(\.key) == ["A", "B", "C", "D"])
+        #expect(practice.selectionMode == .tag)
+        #expect(practice.status == .active)
         let result = try await provider.fetchPracticeSession(id: "practice-completed")
-        #expect(result.completed)
-        #expect(result.result?.isCorrect == true)
-        #expect(result.result?.knowledgeChange?.beforeMastery == 0.43)
-        #expect(result.result?.knowledgeChange?.afterMastery == 0.51)
+        #expect(result.status == .completed)
+        #expect(result.nextQuestion == nil)
+        let outcome = try await provider.submitPracticeAnswer(sessionID: "practice-question",
+            questionID: "practice-q1", selectedKey: "A", key: IdempotencyKey("golden-demo"))
+        #expect(outcome.isCorrect)
+        #expect(outcome.knowledgeChanges.first?.beforeMastery == 0.43)
+        #expect(outcome.knowledgeChanges.first?.afterMastery == 0.51)
         #expect(try await provider.fetchHome().knowledgePoints.first?.mastery == 0.43)
     }
 
@@ -57,6 +61,16 @@ struct GoldenDemoProviderTests {
         }
         await #expect(throws: ProviderError.unknownFixtureID("missing")) {
             try await provider.fetchPracticeSession(id: "missing")
+        }
+        await #expect(throws: ProviderError.unknownFixtureID("missing")) {
+            try await provider.fetchNextPracticeQuestion(sessionID: "missing")
+        }
+        await #expect(throws: PracticeServiceError.backend(.noQuestionsAvailable)) {
+            try await provider.fetchNextPracticeQuestion(sessionID: "practice-completed")
+        }
+        await #expect(throws: ProviderError.unknownFixtureID("missing")) {
+            try await provider.submitPracticeAnswer(sessionID: "practice-question",
+                questionID: "missing", selectedKey: "A", key: IdempotencyKey("golden-demo"))
         }
     }
 }

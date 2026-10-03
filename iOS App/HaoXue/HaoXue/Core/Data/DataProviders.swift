@@ -13,7 +13,12 @@ import Foundation
     func fetchTutorSession(id: String) async throws -> TutorSession
 }
 @MainActor protocol PracticeDataProviding {
-    func fetchPracticeSession(id: String) async throws -> PracticeSession
+    func createPracticeSession(knowledgePointID: String?, difficulty: Double?,
+                               count: Int, key: IdempotencyKey) async throws -> PracticeSessionState
+    func fetchPracticeSession(id: String) async throws -> PracticeSessionState
+    func fetchNextPracticeQuestion(sessionID: String) async throws -> PracticeQuestion
+    func submitPracticeAnswer(sessionID: String, questionID: String, selectedKey: String?,
+                              key: IdempotencyKey) async throws -> PracticeAnswerOutcome
 }
 @MainActor protocol WrongQuestionDataProviding {
     func fetchWrongQuestions() async throws -> [WrongQuestionSummary]

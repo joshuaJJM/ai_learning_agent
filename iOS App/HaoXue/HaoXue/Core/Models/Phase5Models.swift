@@ -1,6 +1,6 @@
 import Foundation
 
-struct NextLearningAction {
+struct NextLearningAction: Equatable {
     let kind: String
     let title: String
     let reason: String

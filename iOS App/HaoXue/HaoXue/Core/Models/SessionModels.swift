@@ -50,25 +50,3 @@ struct TutorTurn: Equatable {
     let completed: Bool
     let knowledgeChange: KnowledgeChange?
 }
-
-struct PracticeSession: Equatable {
-    let id: String
-    let currentQuestion: PracticeQuestion?
-    let progress: Double?
-    let completed: Bool
-    let result: PracticeResult?
-}
-
-struct PracticeQuestion: Equatable {
-    let id: String
-    let content: String
-    var choices: [TutorChoice] = []
-    var knowledgePointIDs: [String] = []
-}
-
-struct PracticeResult: Equatable {
-    let isCorrect: Bool
-    let explanation: String
-    let knowledgeChange: KnowledgeChange?
-    let nextAction: String?
-}

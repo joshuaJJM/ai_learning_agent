@@ -99,13 +99,6 @@ struct NetworkingBoundaryTests {
         await #expect(throws: NetworkError.cancelled) { try await task.value }
     }
 
-    @Test func livePracticeRemainsOutsidePhase5A() async {
-        let session = session(ForbiddenRequestStub.self)
-        defer { session.invalidateAndCancel() }
-        let live = LiveDataProvider(client: APIClient(session: session), configuration: AppConfiguration(mode: .live))
-        await #expect(throws: ProviderError.contractNotConfigured) { try await live.fetchPracticeSession(id: "any") }
-    }
-
     @Test func machineErrorsPreserveUnknownCodes() {
         #expect(ServiceErrorCode(rawValue: "NEW_ERROR") == .unknown("NEW_ERROR"))
         #expect(ServiceErrorCode(rawValue: "VLM_TIMEOUT") == .vlmTimeout)

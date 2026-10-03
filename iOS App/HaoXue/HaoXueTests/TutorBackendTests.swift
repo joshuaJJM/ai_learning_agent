@@ -3,6 +3,8 @@ import PencilKit
 import Testing
 @testable import HaoXue
 
+// The transport stub keeps shared static state, so these tests must not interleave.
+@Suite(.serialized)
 struct TutorBackendTests {
     @Test func parserHandlesFragmentedChineseAndMultipleEvents() throws {
         var parser = TutorSSEParser()

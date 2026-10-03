@@ -85,13 +85,46 @@ enum GoldenDemoFixtures {
             text: "已完成引导，接下来独立练习。", choices: nil, phase: .completed,
             progress: 1, completed: true, knowledgeChange: nil))
 
-    private static let independentQuestion = PracticeQuestion(id: "practice-q1",
-        content: "在一个区间内 f′(x) > 0，函数有什么性质？",
-        choices: choices, knowledgePointIDs: [knowledgeID])
-    static let practiceQuestion = PracticeSession(id: "practice-question",
-        currentQuestion: independentQuestion, progress: 0, completed: false, result: nil)
-    static let practiceCompleted = PracticeSession(id: "practice-completed",
-        currentQuestion: independentQuestion, progress: 1, completed: true,
-        result: PracticeResult(isCorrect: true, explanation: "导数为正，函数在该区间单调递增。",
-            knowledgeChange: masteryChange, nextAction: "继续巩固导数与单调性"))
+    private static let practiceTags = ["利用导数判断函数单调性与单调区间"]
+    private static let practiceChoices = [
+        PracticeChoice(key: "A", text: "函数在该区间单调递增"),
+        PracticeChoice(key: "B", text: "函数在该区间单调递减"),
+        PracticeChoice(key: "C", text: "函数值恒为正"),
+        PracticeChoice(key: "D", text: "函数存在极大值")
+    ]
+    private static let practiceIndependentQuestion = PracticeQuestion(id: "practice-q1",
+        number: "017", stem: "在一个区间内 f′(x) > 0，函数有什么性质？",
+        choices: practiceChoices, difficulty: 0.35,
+        knowledgePoints: [PracticeQuestion.KnowledgePoint(id: knowledgeID, name: "导数与单调性",
+                                                          weight: 1)],
+        tags: practiceTags, index: 1, total: 2)
+
+    static let practiceTagSession = PracticeSessionState(id: "practice-question",
+        userID: "golden-demo-user", knowledgePointID: knowledgeID,
+        knowledgePointName: "导数与单调性", status: .active, total: 2, answered: 0, correct: 0,
+        nextQuestion: practiceIndependentQuestion, selectionMode: .tag,
+        targetTag: "函数关系式与导数的综合应用", targetTagScore: -3,
+        pickedTags: ["函数关系式与导数的综合应用"], createdAt: Date(timeIntervalSince1970: 1_790_899_200))
+
+    static let practiceKnowledgePointSession = PracticeSessionState(id: "practice-knowledge-point",
+        userID: "golden-demo-user", knowledgePointID: knowledgeID,
+        knowledgePointName: "导数与单调性", status: .active, total: 2, answered: 1, correct: 1,
+        nextQuestion: practiceIndependentQuestion, selectionMode: .knowledgePoint,
+        targetTag: nil, targetTagScore: nil, pickedTags: [],
+        createdAt: Date(timeIntervalSince1970: 1_790_899_200))
+
+    static let practiceCompletedSession = PracticeSessionState(id: "practice-completed",
+        userID: "golden-demo-user", knowledgePointID: knowledgeID,
+        knowledgePointName: "导数与单调性", status: .completed, total: 2, answered: 2, correct: 1,
+        nextQuestion: nil, selectionMode: .tag, targetTag: "函数关系式与导数的综合应用",
+        targetTagScore: -3, pickedTags: ["函数关系式与导数的综合应用"],
+        createdAt: Date(timeIntervalSince1970: 1_790_899_200))
+
+    static let practiceAnswerOutcome = PracticeAnswerOutcome(sessionID: "practice-question",
+        questionID: "practice-q1", correctness: "correct", isCorrect: true, correctAnswer: "A",
+        explanation: "导数为正，函数在该区间单调递增。", knowledgeChanges: [masteryChange],
+        tagChange: PracticeTagChange(questionID: "practice-q1", isCorrect: true, delta: 1,
+                                     tags: practiceTags),
+        replayed: false, nextQuestion: nil, sessionCompleted: true, answered: 2, correct: 2,
+        total: 2, nextAction: nil)
 }

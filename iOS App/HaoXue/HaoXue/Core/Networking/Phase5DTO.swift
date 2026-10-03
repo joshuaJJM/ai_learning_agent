@@ -17,6 +17,12 @@ enum BackendJSON {
         }
         return decoder
     }
+
+    static var encoder: JSONEncoder {
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        return encoder
+    }
 }
 
 struct BackendErrorDTO: Decodable, Error {

@@ -39,8 +39,24 @@ struct LiveDataProvider: HomeDataProviding, HomeSnapshotProviding, AnalysisDataP
                                     summary: $0.name)
                 }))
     }
-    func fetchPracticeSession(id: String) async throws -> PracticeSession {
-        throw ProviderError.contractNotConfigured
+    func fetchPracticeSession(id: String) async throws -> PracticeSessionState {
+        try await practice.fetchSession(id: id)
+    }
+
+    func createPracticeSession(knowledgePointID: String?, difficulty: Double?, count: Int,
+                               key: IdempotencyKey) async throws -> PracticeSessionState {
+        try await practice.createSession(knowledgePointID: knowledgePointID,
+                                         difficulty: difficulty, count: count, key: key)
+    }
+
+    func fetchNextPracticeQuestion(sessionID: String) async throws -> PracticeQuestion {
+        try await practice.fetchNextQuestion(sessionID: sessionID)
+    }
+
+    func submitPracticeAnswer(sessionID: String, questionID: String, selectedKey: String?,
+                              key: IdempotencyKey) async throws -> PracticeAnswerOutcome {
+        try await practice.submitAnswer(sessionID: sessionID, questionID: questionID,
+                                        selectedKey: selectedKey, key: key)
     }
 
     func fetchHomeSnapshot() async throws -> HomeSnapshot {
@@ -124,6 +140,11 @@ struct LiveDataProvider: HomeDataProviding, HomeSnapshotProviding, AnalysisDataP
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         return try await client.send(request, as: DTO.self)
+    }
+
+    private var practice: PracticeService {
+        PracticeService(baseURL: configuration.baseURL ?? AppConfiguration.demoBackendURL,
+                        client: client)
     }
 
     private func url(_ path: String) -> URL {

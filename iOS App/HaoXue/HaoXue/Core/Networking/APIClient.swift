@@ -10,26 +10,36 @@ enum NetworkError: Error, Equatable {
     case backend(code: String, message: String, requestID: String?, status: Int)
 }
 
-// Semantic error codes; a future Backend DTO mapper owns envelope parsing.
+// Semantic error codes. This mirrors the live backend catalog
+// (`GET /api/v1/meta/error-codes`); `unknown` preserves any code added later.
 enum ServiceErrorCode: Equatable {
-    case invalidImage, analysisFailed, vlmTimeout, questionNotRecognized
-    case idempotencyConflict, sessionNotFound, sessionCompleted, internalError
-    case serviceUnavailable, unauthorized, validationError
+    case unauthorized, notFound, analysisNotFound, sessionNotFound
+    case knowledgePointNotFound, wrongQuestionNotFound, bookNotFound, noQuestionsAvailable
+    case invalidImage, invalidSerialNumber, questionNotInSession, questionNotRecognized
+    case validationError, sessionCompleted, idempotencyConflict, vlmTimeout
+    case serviceUnavailable, internalError
     case unknown(String)
 
     init(rawValue: String) {
         switch rawValue {
-        case "INVALID_IMAGE": self = .invalidImage
-        case "ANALYSIS_FAILED": self = .analysisFailed
-        case "VLM_TIMEOUT": self = .vlmTimeout
-        case "QUESTION_NOT_RECOGNIZED": self = .questionNotRecognized
-        case "IDEMPOTENCY_CONFLICT": self = .idempotencyConflict
-        case "SESSION_NOT_FOUND": self = .sessionNotFound
-        case "SESSION_COMPLETED": self = .sessionCompleted
-        case "INTERNAL_ERROR": self = .internalError
-        case "SERVICE_UNAVAILABLE": self = .serviceUnavailable
         case "UNAUTHORIZED": self = .unauthorized
+        case "NOT_FOUND": self = .notFound
+        case "ANALYSIS_NOT_FOUND": self = .analysisNotFound
+        case "SESSION_NOT_FOUND": self = .sessionNotFound
+        case "KNOWLEDGE_POINT_NOT_FOUND": self = .knowledgePointNotFound
+        case "WRONG_QUESTION_NOT_FOUND": self = .wrongQuestionNotFound
+        case "BOOK_NOT_FOUND": self = .bookNotFound
+        case "NO_QUESTIONS_AVAILABLE": self = .noQuestionsAvailable
+        case "INVALID_IMAGE": self = .invalidImage
+        case "INVALID_SERIAL_NUMBER": self = .invalidSerialNumber
+        case "QUESTION_NOT_IN_SESSION": self = .questionNotInSession
+        case "QUESTION_NOT_RECOGNIZED": self = .questionNotRecognized
         case "VALIDATION_ERROR": self = .validationError
+        case "SESSION_COMPLETED": self = .sessionCompleted
+        case "IDEMPOTENCY_CONFLICT": self = .idempotencyConflict
+        case "VLM_TIMEOUT": self = .vlmTimeout
+        case "SERVICE_UNAVAILABLE": self = .serviceUnavailable
+        case "INTERNAL_ERROR": self = .internalError
         default: self = .unknown(rawValue)
         }
     }
