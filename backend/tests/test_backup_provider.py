@@ -130,20 +130,23 @@ def _chain(settings: Settings) -> list[str]:
     return vlm_service.recognition_models(settings, LlmClient(settings))
 
 
-def test_vlm_chain_puts_qwen32b_first_and_deepseek_second() -> None:
-    """★ 链首必须是 Qwen3-VL-32B。
+def test_vlm_chain_puts_the_qwens_first() -> None:
+    """★ 链首必须是 Qwen3-VL-32B，DeepSeek 排在最后。
 
     曾经把 DeepSeek 放第一位（"质量优先"），实测被推翻：带图片时它是
     推理模型，思维链吃掉 98.5% 的 completion token（同一张图 6015/6106），
     耗时 31.1 秒（Qwen32B 是 1.7 秒），一张多题试卷必然撑爆 max_tokens、
     触发翻倍重试 ×5，单张图 150+ 秒后撞上 120 秒超时。
+
+    放最后而不是第二位：Qwen32B 失败时先用 1~2 秒的 8B 顶一下。
     """
-    assert _chain(_settings()) == [PRIMARY, BACKUP, FALLBACK]
+    assert _chain(_settings()) == [PRIMARY, FALLBACK, BACKUP]
     assert _chain(_settings())[0] == PRIMARY
+    assert _chain(_settings())[-1] == BACKUP
 
 
 def test_vlm_chain_keeps_deepseek_off_the_first_slot() -> None:
-    """第一层和第二层对换 —— DeepSeek 不再打头。"""
+    """DeepSeek 是最后一道防线，不是常规降级档。"""
     chain = _chain(_settings())
     assert chain[0] == PRIMARY
     assert chain.index(BACKUP) > 0
@@ -162,6 +165,20 @@ def test_backup_model_is_not_duplicated_in_the_chain() -> None:
 
 def test_fallback_is_dropped_when_it_equals_the_primary() -> None:
     assert _chain(_settings(vlm_fallback_model=PRIMARY)) == [PRIMARY, BACKUP]
+
+
+def test_reasoning_backup_gets_fewer_attempts() -> None:
+    """★ 推理模型单次 31 秒，给 5 次就是 155 秒 —— 必然超过 120 秒超时。
+
+    "重试到超时为止"毫无意义：白等两分半还拿不到结果。
+    它是链上最后一道防线，给 2 次就够。
+    """
+    settings = _settings()
+    assert vlm_service.attempts_for_model(BACKUP, settings) == 2
+    assert vlm_service.attempts_for_model(PRIMARY, settings) == 5
+    assert vlm_service.attempts_for_model(FALLBACK, settings) == 5
+    # 2 次 × 31 秒 = 62 秒，仍在 120 秒超时之内
+    assert vlm_service.attempts_for_model(BACKUP, settings) * 31 < 120
 
 
 # ---------------------------------------------------------------------------

@@ -7,10 +7,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 import uuid
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from typing import Any, AsyncIterator
 
 from fastapi import FastAPI, Request
@@ -24,7 +25,7 @@ from .question_bank import get_bank
 from .routers import ALL_ROUTERS
 from .routers import demo as demo_router
 from .schemas import HealthResponse
-from .services import book_service, tag_service
+from .services import book_service, homework_service, tag_service
 from .services.llm import get_llm, shutdown_llm
 
 logger = logging.getLogger("haoxue")
@@ -85,8 +86,47 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             else "未配置"
         ),
     )
-    yield
-    await shutdown_llm()
+
+    # 终止态对账：进程刚起来，不可能有分析在跑，所以遗留的非终态记录
+    # 一定是上一次进程死掉时留下的孤儿。不清理的话它们会永久停在
+    # processing，前端一直转圈（线上 batch 5 就是这样）。
+    homework_service.recover_interrupted_analyses()
+
+    # 看门狗：进程活着但任务卡死时兜底，保证不会永久 processing
+    reaper = asyncio.create_task(_watchdog())
+    logger.info(
+        "看门狗已启动：每 %d 秒检查一次，超过 %d 分钟无进展的分析判为失败",
+        WATCHDOG_INTERVAL_SECONDS,
+        homework_service.STALE_ANALYSIS_SECONDS // 60,
+    )
+
+    try:
+        yield
+    finally:
+        reaper.cancel()
+        with suppress(asyncio.CancelledError):
+            await reaper
+        await shutdown_llm()
+
+
+#: 看门狗扫描间隔。分析要几分钟才可能真的卡住，没必要查太勤。
+WATCHDOG_INTERVAL_SECONDS = 60
+
+
+async def _watchdog() -> None:
+    """周期性把"太久没动静"的分析判为失败。
+
+    只保证**一定进终态**，不尝试续跑 —— 分析无法从中途恢复，
+    让学生对着转圈等，远不如给一个明确的 failed + 重试按钮。
+    """
+    while True:
+        try:
+            await asyncio.sleep(WATCHDOG_INTERVAL_SECONDS)
+            await asyncio.to_thread(homework_service.reap_stale_analyses)
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 - 看门狗自己不能死
+            logger.exception("看门狗扫描出错")
 
 
 app = FastAPI(

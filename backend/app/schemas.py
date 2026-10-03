@@ -412,9 +412,11 @@ class AnalysisProgress(BaseModel):
     > ⚠️ `retrying` 必须当成"进行中"渲染。把它当成 `failed`，学生就会在
     > 模型降级的那几十秒里看到"分析失败"，而其实任务还在正常推进。
 
-    模型降级时 `retrying` 为 true，`retry_note` 给出可直接显示的中文说明
-    （例如「第 1 张：deepseek-flash 未成功，正在用 Qwen/Qwen3-VL-32B-Instruct 重试（2/3）」）。
-    两个字段只在降级期间出现，其余时候**不在响应里**（不是 null）。
+    模型降级时 `retrying` 为 true，`retry_note` 给出可直接显示的中文说明。
+    **识别期间 `retry_note` 一直都有**（即使还在用第一个模型），例如
+    「第 1 张：正在用 Qwen/Qwen3-VL-32B-Instruct 识别（模型 1/3）」——
+    一页大试卷识别要几分钟，没有这句话进度卡片会看起来卡死。
+    `retrying` 只在**真的换过模型**之后才为 true。
     """
 
     percent: float
@@ -427,7 +429,11 @@ class AnalysisProgress(BaseModel):
         description="是否正在换模型重试（true 时按「进行中」渲染，不要当成失败）",
     )
     retry_note: str | None = Field(
-        default=None, description="可直接显示的中文说明；不在重试时为 null"
+        default=None,
+        description=(
+            "可直接显示的中文说明。**识别期间一直有**，不只是重试时 —— "
+            "例如「正在用 Qwen3-VL-32B 识别（模型 1/3）」。"
+        ),
     )
 
 

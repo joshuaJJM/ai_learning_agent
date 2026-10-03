@@ -85,6 +85,14 @@ _CODES: dict[str, tuple[int, str]] = {
     ),
     # 服务端
     "VLM_TIMEOUT": (status.HTTP_504_GATEWAY_TIMEOUT, "视觉模型超时或不可用"),
+    "ANALYSIS_INTERRUPTED": (
+        status.HTTP_503_SERVICE_UNAVAILABLE,
+        "服务在分析过程中重启，任务已中断，请重新上传",
+    ),
+    "ANALYSIS_TIMEOUT": (
+        status.HTTP_504_GATEWAY_TIMEOUT,
+        "分析超过最长处理时间仍未完成，已终止，请重试",
+    ),
     "SERVICE_UNAVAILABLE": (
         status.HTTP_503_SERVICE_UNAVAILABLE,
         "依赖的服务暂时不可用",

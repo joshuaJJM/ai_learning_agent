@@ -71,6 +71,8 @@ class FakeVlm(LlmClient):
         self.max_active = 0
         self.models_called: list[str] = []
         self.attempts_passed: list[int | None] = []
+        #: 每次调用是不是带图的（识别带图，复核与解析不带）
+        self.vision_flags: list[bool] = []
 
     @property
     def configured(self) -> bool:  # type: ignore[override]
@@ -80,6 +82,7 @@ class FakeVlm(LlmClient):
         model = kwargs.get("model")
         self.models_called.append(model)
         self.attempts_passed.append(kwargs.get("attempts"))
+        self.vision_flags.append(bool(kwargs.get("vision")))
 
         self.active += 1
         self.max_active = max(self.max_active, self.active)
@@ -256,6 +259,9 @@ def test_second_opinion_runs_in_parallel() -> None:
         await analyze_images(_images(1), client=client)
 
     asyncio.run(run())
-    # 1 次认图 + 4 次求解；若串行 max_active 会一直是 1
-    assert len(client.models_called) == 5
+    # 1 次认图（带图）+ 4 次求解复核 + 4 次解析补写（都是纯文本）
+    vision_calls = sum(1 for flag in client.vision_flags if flag)
+    text_calls = sum(1 for flag in client.vision_flags if not flag)
+    assert vision_calls == 1, "识别只该有一次视觉调用"
+    assert text_calls == 8, f"4 次复核 + 4 次解析 = 8，实际 {text_calls}"
     assert client.max_active >= 2, "二次求解应当并发"

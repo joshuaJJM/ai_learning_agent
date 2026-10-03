@@ -554,6 +554,12 @@ class LlmClient:
                 if budget < MAX_OUTPUT_TOKENS:
                     budget = min(budget * 2, MAX_OUTPUT_TOKENS)
                     continue
+                # 已经顶到最大预算还是被截断 → 这个模型这次就是写不完，
+                # 再试 4 次、每次同样被切断，只是把 30 秒变成 150 秒。
+                # **立刻放弃**，把机会留给链上的下一个模型。
+                # （线上实测：一张 9 题的试卷，3 个模型各重试到底，
+                #   白等 369 秒才失败，而结果从一开始就注定了。）
+                break
 
             if attempt + 1 < attempts:
                 request_messages = [

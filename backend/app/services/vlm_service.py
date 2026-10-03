@@ -15,7 +15,9 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import re
+import time
 import unicodedata
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
@@ -111,6 +113,73 @@ def normalize_stem(text: str) -> str:
     normalized = unicodedata.normalize("NFKC", text).lower()
     normalized = normalized.replace("（", "(").replace("）", ")")
     return _PUNCT.sub("", normalized)
+
+
+logger = logging.getLogger("haoxue")
+
+#: 送给模型前把图片长边压到这个像素数以内。
+#:
+#: **这是耗时的大头。** 线上实测一张 4548×7067 / 6.4 MB 的试卷照片，
+#: 原图直接送进视觉模型：识别一段就吃掉 **162.6 秒**（占整次分析 78%）。
+#: 视觉编码的代价随像素数增长，而印在纸上的题目根本不需要 4500 px 宽。
+#:
+#: 2000 px 对一页 A4 试卷足够（题目文字仍有 20+ px 高），
+#: 视觉 token 数能降一个数量级。
+MAX_IMAGE_EDGE = 2000
+
+#: 压缩后的 JPEG 质量。85 对文字识别足够，肉眼几乎看不出差别。
+IMAGE_JPEG_QUALITY = 85
+
+
+def prepare_image(raw: bytes, mime: str) -> tuple[bytes, str]:
+    """把图片压到 `MAX_IMAGE_EDGE` 以内再送给模型。
+
+    Pillow 是**可选依赖**：装不上就原样返回并打一条警告 ——
+    宁可慢一点，也不能因为少一个库就整条链路不可用。
+
+    返回 (bytes, mime)。已经在限制内的图不会被重新编码（避免无谓的质量损失）。
+    """
+    try:
+        from io import BytesIO
+
+        from PIL import Image
+    except ImportError:  # pragma: no cover - 取决于部署环境
+        logger.warning(
+            "Pillow 未安装，图片不会被压缩 —— 大图识别会明显变慢。"
+            "建议 `pip install Pillow`。"
+        )
+        return raw, mime
+
+    try:
+        with Image.open(BytesIO(raw)) as image:
+            image.load()
+            width, height = image.size
+            longest = max(width, height)
+            if longest <= MAX_IMAGE_EDGE:
+                return raw, mime
+
+            scale = MAX_IMAGE_EDGE / float(longest)
+            target = (max(1, int(width * scale)), max(1, int(height * scale)))
+            # 用 LANCZOS：缩小时对文字边缘最好，别的滤镜会把细笔画糊掉
+            resized = image.convert("RGB").resize(target, Image.LANCZOS)
+
+            buffer = BytesIO()
+            resized.save(buffer, format="JPEG", quality=IMAGE_JPEG_QUALITY, optimize=True)
+            prepared = buffer.getvalue()
+
+        logger.info(
+            "图片压缩：%dx%d %.1fMB -> %dx%d %.1fMB",
+            width,
+            height,
+            len(raw) / 1e6,
+            target[0],
+            target[1],
+            len(prepared) / 1e6,
+        )
+        return prepared, "image/jpeg"
+    except Exception as exc:  # noqa: BLE001 - 压缩失败不该让识别失败
+        logger.warning("图片压缩失败（按原图发送）: %s", exc)
+        return raw, mime
 
 
 #: 选项相似度达到这个值就认为「是同一道题」。
@@ -428,15 +497,38 @@ def build_prompt(subject: str = "mathematics", topic: str | None = None) -> str:
 {tag_lines}
 9. error_type 只能取以下之一（做对了就填 null）：
 {error_lines}
-10. diagnosis：用一两句中文说清学生**错在哪一步**（例如"能正确求出导数，但把 f'(x)>0 对应的区间写反了"）。做对了就说明他掌握得好在哪。
-11. explanation：写出完整的关键解题步骤。
-12. confidence：0 到 1 之间，表示你对本题识别与判定的把握。
-13. difficulty：1-5 的整数，1 最简单、5 最难。
+10. diagnosis：**一句话**说清学生错在哪一步（例如"把 f'(x)>0 对应的区间写反了"）。做对了填 null。
+11. confidence：0 到 1 之间，表示你对本题识别与判定的把握。
+12. difficulty：1-5 的整数，1 最简单、5 最难。
+
+**不要输出解析。** 完整解题步骤由后续单独一步生成 —— 一页试卷十几道题，
+一次全写完会超出模型的输出上限，整页都会失败。
 
 输出格式必须严格如下：
-{{"questions":[{{"question_number":"17","stem":"已知函数 f(x) = x^3 - 3x^2 + 2，求 f(x) 的单调递增区间。","options":{{"A":"(-inf, 0)","B":"(0, 2)","C":"(-inf, 0) 和 (2, +inf)","D":"(2, +inf)"}},"student_answer":"A","answer":"C","correctness":"wrong","knowledge_point_ids":["math.derivative.monotonicity"],"tags":["利用导数判断函数单调性与单调区间"],"error_type":"transformation","diagnosis":"学生能够正确求出导数，但把导数符号与函数单调性的对应关系弄反了。","explanation":"f'(x) = 3x^2 - 6x = 3x(x-2)，令 f'(x) > 0 得 x<0 或 x>2，故单调递增区间为 (-inf,0) 和 (2,+inf)。","confidence":0.92,"difficulty":3}}]}}
+{{"questions":[{{"question_number":"17","stem":"已知函数 f(x) = x^3 - 3x^2 + 2，求 f(x) 的单调递增区间。","options":{{"A":"(-inf, 0)","B":"(0, 2)","C":"(-inf, 0) 和 (2, +inf)","D":"(2, +inf)"}},"student_answer":"A","answer":"C","correctness":"wrong","knowledge_point_ids":["math.derivative.monotonicity"],"tags":["利用导数判断函数单调性与单调区间"],"error_type":"transformation","diagnosis":"把导数符号与函数单调性的对应关系弄反了。","confidence":0.92,"difficulty":3}}]}}
 
 如果照片里没有任何题目，返回 {{"questions":[]}}。"""
+
+
+#: 解析是**单独一步**生成的（纯文本、每题一个请求、并行）。
+#:
+#: 为什么不让视觉模型一次写完：一页 9 道题的中文解题步骤实测超过 16000 token，
+#: 整页识别直接失败（线上 batch#1/#2 连续两条都挂在这上面，白等 6 分钟）。
+#: 拆开之后，**单个请求的输出长度只由一道题决定**，与页面上有几道题无关。
+#:
+#: 纯文本调用还便宜得多（不用重传图片），而且它已经过了复核，
+#: 写出来的解析是建立在**已确认的答案**上的。
+EXPLAIN_PROMPT = """你是一位中国高中数学老师。下面这道单选题的正确答案已经确认。
+
+题目：{stem}
+选项：{options}
+正确答案：{answer}
+学生的作答：{student}（{verdict}）
+
+请输出严格 JSON：
+{{"diagnosis":"一句话说清学生错在哪一步（学生没作答就说这题的关键考点）","explanation":"完整的关键解题步骤，用纯文本表达，不要 LaTeX，不要 markdown 围栏"}}
+
+只输出 JSON 对象本身。"""
 
 
 # ---------------------------------------------------------------------------
@@ -460,6 +552,9 @@ VLM_CONCURRENCY = 4
 VERIFY_CONCURRENCY = 4
 # JSON 非法时，**每个模型**最多尝试这么多次；主模型用完才轮到备选模型
 JSON_ATTEMPTS_PER_MODEL = 5
+#: 备用（推理）模型单独的次数。它单次带图就要 31 秒，5 次等于 155 秒、
+#: 必然超过 llm_timeout_seconds，所以只给 2 次 —— 见 attempts_for_model()。
+BACKUP_JSON_ATTEMPTS = 2
 
 SOLVER_PROMPT = """你是一位中国高中数学老师。请**独立**解答下面这道单选题——
 只根据题目本身推导，不要猜测"标准答案"或"学生可能选什么"。
@@ -637,8 +732,19 @@ async def verify_answers(
             f"（识别模型认为 {recognizer_answer}，独立求解认为 {solver_answer}），"
             f"本题不计入掌握度统计"
         )
-        # 两个模型各执一词时，**以独立求解（DeepSeek）的答案为准** ——
-        # 它没有参与识别，不受视觉误读影响。
+        # 两个模型给出不同答案 → **这道题不判分**，判 unknown。
+        #
+        # ⚠️ 不要把这里的 `possible=solver_answer` 读成"以独立求解的答案为准"。
+        # 那条注释以前就是这么写的，是**错的**，而且会误导人以为分歧题
+        # 会按求解模型的答案计分。实际行为：`_mark_not_scored` 把
+        # correctness 置成 unknown、correct_answer 清空，**不进 Knowledge Engine**。
+        # 求解模型的答案只作为 `possible_answer` 这个「可能是 X」的提示下发。
+        #
+        # 为什么两个都不能信：识别模型看过图，但可能**读错了题**；
+        # 独立求解只看到 OCR 出来的文字，**题干错它就解错题**。
+        # 实测一例：正确答案 C，识别模型答 D、求解模型答 A，两个都错。
+        # 分歧本身就是"我们也拿不准"的信号，正确的处理就是交给学生确认
+        # （见 POST …/questions/{id}/confirm-answer）。
         _mark_not_scored(question, possible=solver_answer, source=model)
 
     return warnings
@@ -647,9 +753,9 @@ async def verify_answers(
 def recognition_models(settings: Any, llm: LlmClient) -> list[str]:
     """图片识别的降级链。
 
-        Qwen3-VL-32B → deepseek-flash → Qwen3-VL-8B
+        Qwen3-VL-32B → Qwen3-VL-8B → deepseek-flash
 
-    **为什么把 DeepSeek 从第一位挪开**（2026-10-03 实测后对换）：
+    **为什么 DeepSeek 排到最后**（2026-10-03 实测后调整）：
 
     `deepseek-flash` 是推理模型，思维链也占 `max_tokens`。带图片调用时
     它的推理 token 会吃掉绝大部分预算 —— 同一张图实测：
@@ -663,13 +769,11 @@ def recognition_models(settings: Any, llm: LlmClient) -> list[str]:
     单张图就要 150+ 秒，直接撞上 120 秒超时。
     线上 batch#2 就是这样整个失败的（553 秒后 VLM_TIMEOUT）。
 
-    纯文本调用它是正常的（2.2 秒、合法 JSON、231 个推理 token），
-    所以它更适合留在**文本校验**的位置。
+    放在最后而不是第二位：Qwen32B 失败时先用 1~2 秒的 8B 顶一下，
+    而不是先等 31 秒的推理模型。它是"最后一道防线"，不是常规降级档。
 
-    ⚠️ 它现在排在**第二位**（按"第一层与第二层对换"实现）。
-    更省时间的做法是把它放到**最后**：Qwen32B → Qwen8B → DeepSeek ——
-    这样 Qwen32B 失败时先用 1~2 秒的 8B 顶一下，而不是先等 31 秒的推理模型。
-    需要的话改这一处即可。
+    纯文本调用它是正常的（2.2 秒、合法 JSON、231 个推理 token），
+    所以它在**文本校验**位置仍然可用。
 
     注意：**不要求某个模型必须成功**，只要有一个能出结果就算成功；
     但顺序决定了代价 —— 排在前面的优先被使用。
@@ -683,15 +787,106 @@ def recognition_models(settings: Any, llm: LlmClient) -> list[str]:
             models.append(candidate)
 
     add(settings.vlm_model)
+    add(settings.vlm_fallback_model)
     if llm.backup_configured:
         add(settings.backup_llm_model)
-    add(settings.vlm_fallback_model)
     return models
 
 
 # ---------------------------------------------------------------------------
 # 调用
 # ---------------------------------------------------------------------------
+
+def attempts_for_model(model: str, settings: Any) -> int:
+    """每个模型在一张图上最多重试几次。
+
+    **推理模型要少给几次。** `deepseek-flash` 带图调用实测单次 31 秒
+    （思维链吃掉 98.5% 的 completion token），按默认的 5 次算就是 155 秒，
+    必然撞上 `llm_timeout_seconds`（线上配的是 120 秒）——
+    等于"重试到超时为止"，白等两分半还得不到结果。
+
+    它是链上**最后一道防线**：给 2 次机会就够，失败说明这张图它确实处理不了。
+
+    非推理的视觉模型单次 1~2 秒，5 次也才十几秒，保持原样。
+    """
+    if model == getattr(settings, "backup_llm_model", None):
+        return BACKUP_JSON_ATTEMPTS
+    return JSON_ATTEMPTS_PER_MODEL
+
+
+async def explain_questions(
+    questions: Sequence[RawQuestion],
+    *,
+    client: LlmClient | None = None,
+) -> list[str]:
+    """给需要的题补写「诊断 + 解析」（**纯文本、每题一个请求、并行**）。
+
+    只给**判错的题**写：做对的题学生不需要解析，而解析正是输出里最长的字段。
+
+    失败不抛异常 —— 解析补不上不该让整页批改失败，`explanation` 留空即可，
+    前端本来就要处理它为 null 的情况。
+
+    返回告警列表。这一层**不调视觉模型**，也不参与判定，只补文字。
+    """
+    settings = get_settings()
+    llm = client or get_llm()
+    if not llm.configured:
+        return []
+
+    targets = [
+        question
+        for question in questions
+        if question.correctness in ("wrong", "partial") and question.correct_answer
+    ]
+    if not targets:
+        return []
+
+    model = settings.llm_model
+    warnings: list[str] = []
+    semaphore = asyncio.Semaphore(VERIFY_CONCURRENCY)
+
+    def render_options(question: RawQuestion) -> str:
+        return " ".join(f"{k}. {v}" for k, v in (question.options or {}).items())
+
+    async def one(question: RawQuestion) -> None:
+        verdict = (
+            "答错了" if question.correctness == "wrong" else "只对了一部分"
+        )
+        prompt = EXPLAIN_PROMPT.format(
+            stem=question.stem,
+            options=render_options(question),
+            answer=question.correct_answer,
+            student=question.student_answer or "（未作答）",
+            verdict=verdict,
+        )
+        async with semaphore:
+            try:
+                payload, _reply = await llm.complete_json(
+                    [{"role": "user", "content": prompt}],
+                    model=model,
+                    temperature=0.3,
+                    # 一道题的解析撑死几百 token，给 1500 绰绰有余
+                    max_tokens=1500,
+                    retries=0,
+                    attempts=2,
+                )
+            except LlmUnavailable as exc:
+                warnings.append(
+                    f"第 {question.question_number} 题的解析生成失败（{exc}），"
+                    f"该题仍按已确认的判定计分"
+                )
+                return
+
+        explanation = payload.get("explanation")
+        if isinstance(explanation, str) and explanation.strip():
+            question.explanation = explanation.strip()
+        diagnosis = payload.get("diagnosis")
+        if isinstance(diagnosis, str) and diagnosis.strip():
+            question.diagnosis = diagnosis.strip()
+
+    await asyncio.gather(*(one(question) for question in targets))
+    return warnings
+
 
 async def analyze_images(
     images: Sequence[tuple[bytes, str]],
@@ -706,10 +901,18 @@ async def analyze_images(
     识别链按质量降级；全都失败则抛 LlmUnavailable，
     由 homework_service 决定用哪种离线兜底。
 
-    `on_retry` 在**降级到下一个模型之前**被调用，参数形如
-    `{"image_index": 0, "failed_model": "…", "next_model": "…", "attempt": 1}`。
-    homework_service 用它把阶段标成 `retrying`，这样前端能显示
-    「主模型不可用，正在用备用模型重试」，而不是看起来卡住或直接失败。
+    `on_retry` 在**每次开始尝试一个模型时**被调用（包括链上第一个），参数形如：
+
+        {"image_index": 0, "model": "Qwen/Qwen3-VL-32B-Instruct",
+         "model_index": 0, "model_total": 3, "failed_model": None}
+
+    换过模型之后 `failed_model` 是上一个模型的名字。homework_service 用它
+    更新进度卡片：还在用第一个模型时显示「正在用 X 识别（模型 1/3）」，
+    降级之后显示「X 未成功，正在用 Y 重试」并把阶段标成 `retrying`。
+
+    **为什么第一次也要回调**：只在降级时回调的话，第一个模型的每次尝试
+    期间前端收不到任何东西 —— 线上实测一页 9 题的试卷，进度卡片在
+    369 秒里一直停着 25%，看起来像卡死。
     """
     settings = get_settings()
     llm = client or get_llm()
@@ -725,20 +928,27 @@ async def analyze_images(
     ) -> tuple[list[RawQuestion], str, list[str]]:
         """单张图片：按质量顺序逐个模型试，JSON 不合法就重试，用尽次数再换下一个。"""
         async with semaphore:
+            # 压缩放在这里而不是上传时：原图仍然完整留档，
+            # 只有真正送给模型的那一份是压过的。
+            raw, mime = prepare_image(raw, mime)
             payload: dict[str, Any] | None = None
             last_error: Exception | None = None
             used_model = models[0]
             notes: list[str] = []
 
             for position, model in enumerate(models):
-                if position > 0 and on_retry is not None:
+                # **每次尝试都回调**，包括第一个模型 —— 否则第一个模型
+                # 重试期间前端什么都收不到，进度卡片会看起来卡死。
+                if on_retry is not None:
                     on_retry(
                         {
                             "image_index": image_index,
-                            "failed_model": models[position - 1],
-                            "next_model": model,
-                            "attempt": position,
-                            "total_models": len(models),
+                            "model": model,
+                            "model_index": position,
+                            "model_total": len(models),
+                            "failed_model": (
+                                models[position - 1] if position > 0 else None
+                            ),
                         }
                     )
                 try:
@@ -746,12 +956,14 @@ async def analyze_images(
                         [build_user_message(prompt, [(raw, mime)])],
                         model=model,
                         temperature=0.1,
-                        # 一张试卷可能有十几道题，每题还要写 diagnosis + explanation。
-                        # 3000 会在中途截断（实测 9 道题就爆了），所以给足。
+                        # 输出只需要「题干 + 选项 + 判定 + 知识点/标签 + 一句话诊断」，
+                        # 解析已经拆到单独一步（纯文本、每题一个请求）——
+                        # 所以这里不再需要为十几道题的解题步骤留预算。
+                        # 一页 9 题实测远远够用。
                         max_tokens=8000,
                         vision=True,
                         retries=0,
-                        attempts=JSON_ATTEMPTS_PER_MODEL,
+                        attempts=attempts_for_model(model, settings),
                     )
                 except LlmUnavailable as exc:
                     last_error = exc
@@ -767,8 +979,9 @@ async def analyze_images(
             if payload is None:
                 raise LlmUnavailable(
                     f"第 {image_index + 1} 张图片识别失败"
-                    f"（已尝试 {', '.join(models)}，"
-                    f"每个模型最多 {JSON_ATTEMPTS_PER_MODEL} 次）: {last_error}"
+                    f"（已尝试 {', '.join(models)}"
+                    f"，每个模型最多 {JSON_ATTEMPTS_PER_MODEL} 次"
+                    f"，推理模型 {BACKUP_JSON_ATTEMPTS} 次）: {last_error}"
                 )
 
             parsed = raw_questions_from_payload(payload)
@@ -779,10 +992,12 @@ async def analyze_images(
             return parsed, used_model, notes
 
     # 多张图片并行处理：互不依赖，耗时取决于最慢的一张
+    recognition_started = time.perf_counter()
     results = await asyncio.gather(
         *(analyze_one(index, raw, mime) for index, (raw, mime) in enumerate(images)),
         return_exceptions=True,
     )
+    recognition_seconds = time.perf_counter() - recognition_started
 
     outcome = VlmOutcome(generated_by="vlm")
     failed = 0
@@ -809,12 +1024,36 @@ async def analyze_images(
 
     # 二次求解校验：没有题库背书的答案必须能被**另一个模型**独立复现。
     # 把识别时用过的模型排除掉，否则等于让同一个模型自己复核自己。
+    #
+    # 三个阶段分别计时并打日志 —— 前端要"分解耗时"才能知道该优化哪一段，
+    # 光有一个总数（218 秒）没法判断是识别慢还是校验慢。
     if outcome.questions:
+        t_verify = time.perf_counter()
         outcome.warnings.extend(
             await verify_answers(
                 outcome.questions, client=llm, exclude_models=used_models
             )
         )
+        verify_seconds = time.perf_counter() - t_verify
+
+        # 复核之后再补解析 —— 这样解析是建立在**已确认的答案**上的，
+        # 而且 unknown 的题（答案没确认）不会被写一篇可能错的解析。
+        t_explain = time.perf_counter()
+        outcome.warnings.extend(
+            await explain_questions(outcome.questions, client=llm)
+        )
+        explain_seconds = time.perf_counter() - t_explain
+
+        logger.info(
+            "耗时分解：识别 %.1fs（%d 张图 %d 题）| 二次校验 %.1fs | 解析补写 %.1fs",
+            recognition_seconds,
+            len(images),
+            len(outcome.questions),
+            verify_seconds,
+            explain_seconds,
+        )
+    else:
+        logger.info("耗时分解：识别 %.1fs（未识别出题目）", recognition_seconds)
 
     return outcome
 

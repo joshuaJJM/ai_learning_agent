@@ -1,4 +1,4 @@
-# 好学 Backend API Contract v1.0
+﻿# 好学 Backend API Contract v1.0
 
 > 后端是整个系统的 **Source of Truth**。iOS **不自行计算掌握度**——`43% → 51%` 这个变化
 > 只能由服务器算出来并返回，客户端只负责动画展示。
@@ -86,7 +86,7 @@ GET /api/v1/health       # 同上（等价别名）
 | 3 | 图片识别 | `Qwen/Qwen3-VL-8B-Instruct` | SiliconFlow |
 | — | 二次求解校验 | 与识别模型**不同**的那个（优先 DeepSeek） | — |
 
-- **识别链**：Qwen3-VL-32B → deepseek-flash → Qwen3-VL-8B。
+- **识别链**：Qwen3-VL-32B → Qwen3-VL-8B → deepseek-flash。
   全部失败才算失败，降级过程会在 `progress` 里以 `retrying` 状态暴露出来。
 
   > DeepSeek 本来排第一（"质量优先"），2026-10-03 实测后与第二层对换：
@@ -225,7 +225,9 @@ GET /openapi.json
 | `QUESTION_NOT_RECOGNIZED` | 422 | 没有从图片中识别出题目 |
 | `VALIDATION_ERROR` | 422 | 请求参数不合法 |
 | `INTERNAL_ERROR` | 500 | 服务端内部错误 |
+| `ANALYSIS_INTERRUPTED` | 503 | 服务在分析过程中重启，任务已中断，请重新上传 |
 | `SERVICE_UNAVAILABLE` | 503 | 依赖的服务暂时不可用 |
+| `ANALYSIS_TIMEOUT` | 504 | 分析超过最长处理时间仍未完成，已终止，请重试 |
 | `VLM_TIMEOUT` | 504 | 视觉模型超时或不可用 |
 
 ### 幂等（重要）

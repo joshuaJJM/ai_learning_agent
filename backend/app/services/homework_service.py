@@ -138,10 +138,16 @@ def _progress(
         "current_stage_label_zh": label_zh,
         "stages": stages,
     }
-    # 正在降级重试时给一句人话，前端可以直接显示
+    # 给一句人话，前端可以直接显示。
+    #
+    # 注意 `retry_note` 不再只在重试时才有 —— 还在用第一个模型时也要告诉
+    # 用户"正在用谁识别、第几个模型"，否则一页大试卷识别几分钟期间
+    # 进度卡片什么变化都没有。`retrying` 仍然只在真的换过模型后为 true。
+    if retry_note:
+        payload["retry_note"] = retry_note
     if retrying:
         payload["retrying"] = True
-        payload["retry_note"] = retry_note or "模型暂不可用，正在用备用模型重试"
+        payload.setdefault("retry_note", "模型暂不可用，正在用备用模型重试")
     return payload
 
 
@@ -307,6 +313,89 @@ def _update(doc: dict[str, Any], **changes: Any) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# 终止态保证：不让任务永久停在 processing
+# ---------------------------------------------------------------------------
+#
+# 线上事故：分析跑在**进程内**的后台任务里（FastAPI BackgroundTasks），
+# 服务一重启它就跟着死，而 analysis 记录停在 `processing` 永远不会动 ——
+# 前端只能一直转圈。实测 batch 5 就是这样卡死的（部署时杀掉了旧进程）。
+#
+# 两道防线，覆盖不同的死法：
+#   1. **启动时对账**：服务刚起来，不可能有任务在跑，所以所有
+#      非终态的分析都是上一世遗留的孤儿，直接判失败。
+#   2. **看门狗**：进程活着但任务卡死（模型吊住、死锁）时，
+#      靠 `updated_at` 超过阈值来判定。
+#
+# 两者都只保证"一定进终态"，不尝试续跑 —— 分析没法从中途恢复，
+# 重试的代价远低于让学生对着转圈等。
+
+#: 超过这么久没有任何进度更新，就认为任务已经卡死。
+STALE_ANALYSIS_SECONDS = 15 * 60
+
+
+def _fail_orphan(doc: dict[str, Any], code: str, message: str) -> None:
+    """把一个非终态的分析直接判失败。"""
+    progress = doc.get("progress") or {}
+    for stage in progress.get("stages") or []:
+        if stage.get("state") in ("active", "retrying"):
+            stage["state"] = "failed"
+            break
+    _update(
+        doc,
+        status="failed",
+        progress=progress,
+        error={"error_code": code, "message": message},
+    )
+
+
+def recover_interrupted_analyses() -> int:
+    """服务启动时对账：把上一世遗留的 `queued` / `processing` 判为失败。
+
+    进程刚起来，**不可能**有分析在跑，所以这些记录一定是孤儿。
+    返回处理条数。
+    """
+    recovered = 0
+    for doc in repositories.list_analyses_by_status(("queued", "processing")):
+        _fail_orphan(
+            doc,
+            "ANALYSIS_INTERRUPTED",
+            "服务在分析过程中重启，任务已中断，请重新上传",
+        )
+        recovered += 1
+    if recovered:
+        logger.warning(
+            "启动对账：%d 个分析因服务重启中断，已标记为 failed（可重试）", recovered
+        )
+    return recovered
+
+
+def reap_stale_analyses(
+    max_age_seconds: int = STALE_ANALYSIS_SECONDS,
+) -> int:
+    """看门狗：把太久没有进度更新的分析判为失败。
+
+    进程还活着但任务卡死时（模型吊住、死锁、忘记收尾）用这个兜底。
+    没有它，`processing` 就可能是永久的。
+    """
+    from datetime import timedelta
+
+    cutoff = db.to_iso(db.utcnow() - timedelta(seconds=max_age_seconds))
+    reaped = 0
+    for doc in repositories.list_analyses_by_status(("queued", "processing")):
+        if str(doc.get("updated_at") or "") >= cutoff:
+            continue
+        _fail_orphan(
+            doc,
+            "ANALYSIS_TIMEOUT",
+            f"分析超过 {max_age_seconds // 60} 分钟没有进展，已终止，请重试",
+        )
+        reaped += 1
+    if reaped:
+        logger.warning("看门狗：%d 个分析超时无进展，已标记为 failed", reaped)
+    return reaped
+
+
+# ---------------------------------------------------------------------------
 # 执行
 # ---------------------------------------------------------------------------
 
@@ -328,20 +417,36 @@ async def run_analysis(analysis_id: str) -> None:
         images = [(Path(i["path"]).read_bytes(), i["mime_type"]) for i in doc["images"]]
 
         def _on_retry(info: dict[str, Any]) -> None:
-            """降级到下一个模型时把阶段标成 `retrying`。
+            """每次**开始尝试一个模型**时更新进度。
 
-            这一步很关键：不标的话，模型降级期间任务看起来只是"卡在 25%"，
-            用户不知道是在重试还是已经死了。标了之后前端能显示
-            「主模型不可用，正在用备用模型重试（2/3）」。
+            以前只在"降级到下一个模型"时才触发，于是第一个模型的每一次尝试
+            期间回调一次都不发 —— 线上实测一页 9 题的试卷，进度卡片
+            在 369 秒里一直停着 25%，只有最后失败时才跳到 failed。
+            用户看到的就是一个卡死的进度条。
+
+            现在每次尝试都发：即使还在用第一个模型，也会显示
+            「正在用 Qwen3-VL-32B 识别（模型 1/3）」以及第几次尝试。
+            `retrying` 只在**真的换过模型**之后才为 true ——
+            用它区分"正常识别中"和"主模型不行了正在兜底"。
             """
-            note = (
-                f"第 {info['image_index'] + 1} 张：{info['failed_model']} 未成功，"
-                f"正在用 {info['next_model']} 重试"
-                f"（{info['attempt'] + 1}/{info['total_models']}）"
-            )
+            failed = info.get("failed_model")
+            position = info["model_index"] + 1
+            total = info["model_total"]
+            if failed:
+                note = (
+                    f"第 {info['image_index'] + 1} 张：{failed} 未成功，"
+                    f"正在用 {info['model']} 重试（模型 {position}/{total}）"
+                )
+            else:
+                note = (
+                    f"第 {info['image_index'] + 1} 张：正在用 {info['model']} 识别"
+                    f"（模型 {position}/{total}）"
+                )
             _update(
                 doc,
-                progress=_progress(1, 0.25, retrying=True, retry_note=note),
+                progress=_progress(
+                    1, 0.25, retrying=bool(failed), retry_note=note
+                ),
             )
 
         try:

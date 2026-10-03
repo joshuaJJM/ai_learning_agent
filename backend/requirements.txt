@@ -15,3 +15,4 @@ paramiko==5.0.0
 # 开发/测试
 pytest==9.1.1
 pytest-asyncio==1.4.0
+Pillow>=10.0

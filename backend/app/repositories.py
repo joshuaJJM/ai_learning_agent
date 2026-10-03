@@ -400,6 +400,25 @@ def list_analyses(user_id: str, limit: int = 20) -> list[dict[str, Any]]:
     )
 
 
+def list_analyses_by_status(statuses: tuple[str, ...]) -> list[dict[str, Any]]:
+    """按状态取**全部用户**的分析（跨用户）。
+
+    只给「终止态对账 / 看门狗」用 —— 它们要保证**任何**任务都不会
+    永久停在 processing，所以不能按用户过滤。
+    不做 LIMIT：漏掉一条就等于那条永远卡着。
+    """
+    if not statuses:
+        return []
+    placeholders = ", ".join("?" for _ in statuses)
+    return db.list_docs(
+        "analyses",
+        f"status IN ({placeholders})",
+        list(statuses),
+        order_by="updated_at ASC",
+        limit=None,
+    )
+
+
 def list_analysis_batches(user_id: str, limit: int = 50) -> list[dict[str, Any]]:
     """按批次号倒序取最近的若干批（最新的在前）。"""
     return db.list_docs(
