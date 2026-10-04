@@ -119,16 +119,42 @@ diagnose ──答错→ remedial（更简单的问题）→ 讲解
 
 多张图片**并行**识别（上限 4 并发 —— 打满模型配额反而会触发限流，比串行更慢），
 所以一整套试卷的耗时取决于最慢的那一张，而不是页数之和。
-实测 1 张约 21 秒、3 张同样约 **21 秒**。
 
 模型偶尔会返回不合法的 JSON —— 最常见的是在中文正文里把引号打成了 ASCII 的 `"`，
 导致字符串提前闭合。服务端会先尝试自动修复（归一中文引号定界符、转义正文里的裸引号、
-去尾逗号），修不好就重试，**识别链上每个模型各 5 次**。
-重试时会把它自己上一条坏输出连同具体要求一起回灌，比单纯重发同一个请求有效得多。
+去尾逗号），修不好就重试。
 如果输出是被 `max_tokens` 截断，则**放大预算**重发而不是原样重试 ——
 原样重试必然得到同样被截断的结果（实测一张 9 题的试卷曾白等 9 分钟）。
 **顶到最大预算还是被截断时立刻放弃**，不再试满次数：那已经是确定性的结果，
 再试 4 次只是把 30 秒变成 150 秒。
+
+#### 7. 分析**一定**会进入终态（不会永久 processing）
+
+分析跑在**进程内**的后台任务里。服务一重启它就跟着死 —— 而如果不管，
+记录会永远停在 `processing`，前端只能一直转圈。
+（线上真实事故：batch 5 卡死，根因就是部署时杀掉了旧进程。）
+
+两道防线：
+
+| 机制 | 触发 | 结果 |
+|---|---|---|
+| **启动对账** | 服务启动时 | 进程刚起来不可能有任务在跑 → 所有 `queued`/`processing` 都是孤儿 → 判 `failed`（`ANALYSIS_INTERRUPTED`） |
+| **看门狗** | 每 60 秒 | `updated_at` 超过 **15 分钟**没变 → 判 `failed`（`ANALYSIS_TIMEOUT`） |
+
+判失败时会同时把卡住那一步的 stage 标成 `failed`、写入 `finished_at`，
+所以批列表里直接能看到「失败 + 原因 + 用时」。
+
+> **不尝试续跑**：分析无法从中途恢复，给重试按钮远好过让学生干等。
+> 阈值远大于真实耗时（最慢一页 378 秒），不会误杀正在跑的任务。
+
+#### 8. 大图必须先压缩，否则识别慢一个数量级
+
+送进视觉模型前会把长边压到 **2000 px**、JPEG 质量 85（Pillow 是可选依赖，
+装不上就原样发送 + 告警）。原图仍完整留档。
+
+实测同一张 4548×7067 / 6.4 MB 的试卷，**识别阶段 162.6 秒 → 73.4 秒**；
+整次分析 207 秒 → 90 秒。视觉编码的代价随像素数增长，而印在纸上的题目
+根本不需要 4500 px 宽。
 
 ### 识别分两步：先认题，再写解析
 
@@ -177,15 +203,15 @@ diagnose ──答错→ remedial（更简单的问题）→ 讲解
 
 ---
 
-## 对外接口
+## 文档
 
-两份，互补：
-
-- **[docs/UPLOAD.md](docs/UPLOAD.md)** —— 上传接口的详细使用说明（含 Swift 示例、轮询、错误处理、常见坑）。
-- **[docs/API.md](docs/API.md)** —— 完整契约、逐字段说明与请求/响应示例。
-  纯文本，可以直接读，也可以整份喂给 agent —— 不必去翻代码。
-- **<http://121.43.137.176:17283/docs>** —— 交互式 Swagger，可以直接发请求试。
-  由 `app/schemas.py` 的 Pydantic 模型自动生成，永远与代码同步。
+| 文档 | 内容 | 读者 |
+|---|---|---|
+| **[docs/API.md](docs/API.md)** | 完整契约、逐字段说明与请求/响应示例。纯文本，可以直接读，也可以整份喂给 agent | 前端 / agent |
+| **[docs/UPLOAD.md](docs/UPLOAD.md)** | 上传接口的详细使用说明（含 Swift 示例、轮询、错误处理、常见坑） | 前端 |
+| **[docs/RUNBOOK.md](docs/RUNBOOK.md)** | 线上出问题了怎么办：排查顺序、常见故障签名、部署/重置流程、上线前验收 | 后端 / 值班 |
+| **[backend/README.md](backend/README.md)** | 开发者速查：本地起服务、工具、改哪个文件、必须守住的规则 | 后端 |
+| **<http://121.43.137.176:17283/docs>** | 交互式 Swagger，可以直接发请求试。由 `app/schemas.py` 自动生成，**永远与代码同步** | 所有人 |
 
 接口分八组：鉴权、首页聚合、作业分析、Knowledge State、错题库、AI Tutor、
 针对性练习、图书权限，另外有一个标准 AI 直连接口（发问题拿回答）和一组演示辅助接口。
@@ -434,6 +460,39 @@ cd backend && .venv/bin/python tools/probe_models.py --vision
 
 > ⚠️ `.env` 与 `api-key.txt` 都被 `.gitignore` 忽略，**任何情况下不要提交真实 key**。
 
+### 备用 provider（跨厂商兜底）
+
+除硅基流动外还接了 DeepSeek 作为**第二个厂商**，它同时承担两个角色：
+
+| 角色 | 说明 |
+|---|---|
+| 识别链的**最后一道防线** | 两个 Qwen 视觉模型都失败时才用它 |
+| 二次校验的**独立求解模型** | 与识别模型异构，避免"自己复核自己" |
+
+```ini
+BACKUP_LLM_BASE_URL=https://api.deepseek.com/v1
+BACKUP_LLM_API_KEY=sk-xxxxxx
+BACKUP_LLM_MODEL=deepseek-flash
+```
+
+### 超时与重试：三个数字互相牵制
+
+这几个值不能单独调 —— 一次整页识别实测 **60~160 秒**，叠上次数很容易
+把最坏情况推到几十分钟：
+
+| 常量 | 值 | 为什么是这个数 |
+|---|---|---|
+| `LLM_TIMEOUT_SECONDS` | **240** | httpx 的 read timeout 算的是"两次读到数据之间的间隔"，而模型写完之前一个字都不发 → **基本等于单次总耗时上限**。120 秒太紧，实测会随机超时并降级 |
+| `VLM_JSON_ATTEMPTS` | **2** | 一次 60~240 秒，5 次 × 240 = 20 分钟，光一个模型就能把整场 demo 耗光；而超时类的失败重试大概率还是超时 |
+| `BACKUP_JSON_ATTEMPTS` | **2** | 推理模型带图单次要 31 秒（思维链吃掉 98.5% 的 completion token） |
+| `MAX_OUTPUT_TOKENS` | **16000** | 输出被截断时向上翻倍的上限。**解析已经拆到单独一步**，所以这里只需要装下题干+选项+判定 |
+
+> 识别调用带 `retries=1`（HTTP 级重试）。以前是 0，于是一次**偶发**的
+> 429/500/502/503/504 就把整个模型判死、立刻降级到更弱的备选 ——
+> 实测抓到过一次 SiliconFlow 的 HTTP 500，
+> 9 道题全部因为降级后与独立求解分歧而被记成 `unknown`。
+> 5xx 返回很快，重试几乎不花时间；最坏情况被看门狗兜住。
+
 ---
 
 ## 存储
@@ -472,14 +531,34 @@ upsert 语法（`ON CONFLICT` / `ON DUPLICATE KEY UPDATE`）、索引写法
 ## 测试
 
 ```bash
-cd backend && .venv/bin/python -m pytest        # 29 passed
+cd backend && .venv/bin/python -m pytest        # 307 passed
 ```
 
 不依赖网络与模型（VLM 被替换成确定性假实现），覆盖：掌握度算法（先验、难度、时间衰减、
 趋势、错误模式、父节点聚合）、完整 Demo 闭环、幂等、统一错误格式、鉴权、
-练习不泄漏答案、图书兑换。
+练习不泄漏答案、图书兑换、标签统计、错题规范身份、复核流程、终止态保证、
+图片压缩、人工改判标准答案。
 
 真实链路（打真模型）用 `tools/e2e_live.py`，23 项检查覆盖线上环境。
+
+### 文档一致性检查
+
+文档是手写的，最大的风险是**悄悄过期**。两个脚本分别管「广度」和「深度」：
+
+```bash
+.venv/bin/python tools/check_docs.py     # 每个真实接口都被 docs/API.md 提到过吗
+.venv/bin/python tools/audit_docs.py     # 字段级：字段/参数/过期路径
+```
+
+| 脚本 | 查什么 | 查不出什么 |
+|---|---|---|
+| `check_docs.py` | 路径覆盖（快） | 字段、参数、过期内容 |
+| `audit_docs.py` | 响应字段是否都在文档里、必填查询参数、文档里写了但代码没有的路径 | 语义是否正确 |
+
+> **两个都要跑。** 只跑 `check_docs.py` 会得到假安全感 ——
+> 它曾经在「§8 整节只有三行路径、零个字段说明」的情况下报 exit 0。
+
+改了字段/接口后，还要同步错误码表：`tools/sync_error_codes.py`。
 
 ---
 
@@ -487,13 +566,40 @@ cd backend && .venv/bin/python -m pytest        # 29 passed
 
 ```bash
 cd backend
-.venv/bin/python tools/remote.py deploy --with-env     # 上传代码 + .env
+.venv/bin/python tools/remote.py deploy --prune --with-env \
+    --env-file .env.server --restart      # 上传代码 + 环境变量 + 删除远端多余文件 + 重启
 .venv/bin/python tools/remote.py bootstrap             # 首次：建 venv、装依赖、起服务
 .venv/bin/python tools/remote.py service status        # RUNNING / NOT_RUNNING
 .venv/bin/python tools/remote.py service logs
 .venv/bin/python tools/remote.py service restart
 .venv/bin/python tools/remote.py reset --yes           # 恢复到全新环境（见下）
 ```
+
+| 参数 | 作用 |
+|---|---|
+| `--prune` | 删掉远端已不存在的文件。**部署只上传不删除的话，删过的模块会留在服务器上继续被导入** |
+| `--with-env --env-file .env.server` | 把 `.env.server` 传成远端的 `.env`。本地 `.env` 不会被传上去 |
+| `--restart` | 上传完重启服务 |
+
+> ### ⚠️ 部署会杀掉正在跑的分析
+>
+> `--restart` 停掉 uvicorn，而分析是**进程内的后台任务**，跟着一起死。
+> 记录会停在 `processing` —— 直到**下一次启动对账**把它收成 `failed`
+> （见「分析一定会进入终态」）。
+>
+> 线上真实事故：演示前改一版代码部署，正好打断了一次在跑的作业分析，
+> 前端看到的就是「任务卡死 + 服务像崩溃重启」。
+>
+> **规则：部署前先确认没有分析在跑。**
+>
+> ```bash
+> # 有输出就说明还有任务在跑，等它结束再部署
+> .venv/bin/python tools/remote.py exec \
+>   "mysql ... -e \"SELECT analysis_id, status FROM analyses \
+>    WHERE status IN ('queued','processing')\""
+> ```
+>
+> 或者直接用 `GET /api/v1/homework/batches` 看有没有 `state=processing`。
 
 ### 重置线上数据
 
