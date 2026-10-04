@@ -1,4 +1,4 @@
-﻿# 好学 Backend API Contract v1.0
+# 好学 Backend API Contract v1.0
 
 > 后端是整个系统的 **Source of Truth**。iOS **不自行计算掌握度**——`43% → 51%` 这个变化
 > 只能由服务器算出来并返回，客户端只负责动画展示。
@@ -153,7 +153,7 @@ GET /api/v1/meta/knowledge-points   # 全部知识点（id + 名称 + 描述）
 
 ```
 GET /openapi.json
-  → components.schemas.ErrorCode.enum   # 18 个取值
+  → components.schemas.ErrorCode.enum   # 全部错误码（条数以 /api/v1/meta/error-codes 为准）
   → components.schemas.ErrorInfo.properties.error_code.$ref → ErrorCode
 ```
 
@@ -1695,7 +1695,31 @@ data: {"reply": "因为导数 f'(x) 表示……", "model": "deepseek-ai/DeepSee
 > 若后端未配置模型，流式也会回兜底文案，但同样走 SSE，
 > 前端只需维护一套渲染逻辑。
 
-`GET /api/v1/ai/models` 返回服务端当前配置的模型 id。
+`GET /api/v1/ai/models` 返回服务端当前配置的模型 id。前端"模型选择"用：
+
+```json
+{
+  "default_model": "deepseek-ai/DeepSeek-V3.2",
+  "default_vision_model": "Qwen/Qwen3-VL-32B-Instruct",
+  "models": [
+    { "id": "deepseek-ai/DeepSeek-V3.2", "label": "DeepSeek V3.2",
+      "kind": "text", "is_default": true },
+    { "id": "Qwen/Qwen3-VL-32B-Instruct", "label": "Qwen3-VL 32B",
+      "kind": "vision", "is_default": true }
+  ]
+}
+```
+
+| 字段 | 说明 |
+|---|---|
+| `default_model` | 不显式指定时服务端用的文本模型 |
+| `default_vision_model` | 识别图片用的视觉模型 |
+| `kind` | `text` / `vision`。**只有 `vision` 的模型能传图片** |
+| `is_default` | 该类别里的默认项。每个 `kind` 至多一个为 true |
+
+> 这只是**服务端当前配置的展示**，不是"可选清单"—— 传一个不在列表里的
+> 模型 id 不会报错，但可能因为该模型在你这条链路上不可用而失败。
+> 演示时建议不要覆盖默认值。
 
 ---
 
@@ -1715,11 +1739,81 @@ GET /api/v1/books
 
 ```http
 GET  /api/v1/books/{book_id}
-POST /api/v1/books/{book_id}/redeem     { "serial_number": "HAOXUE-ADVD-0002" }
-GET  /api/v1/entitlements
 ```
 
-Demo 可用的兑换码（`POST /books/book.derivative.advanced/redeem`）：
+在列表字段基础上追加：
+
+```json
+{
+  "book_id": "book.derivative.advanced",
+  "title": "高中数学·导数综合应用",
+  "owned": true,
+  "description": "面向导数综合题的进阶训练。",
+  "subject": "mathematics",
+  "bank_ids": ["math.derivative.comprehensive"],
+  "knowledge_point_ids": [
+    "math.derivative.tangent_count",
+    "math.derivative.extrema_parameter"
+  ]
+}
+```
+
+| 字段 | 说明 |
+|---|---|
+| `bank_ids` | 这本书覆盖的题库 id。客户端**不需要**用它挑题 —— 练习会话已经按知识点/标签选题了 |
+| `knowledge_point_ids` | 这本书涉及的知识点。适合做"这本书能练到什么"的展示 |
+
+```http
+POST /api/v1/books/{book_id}/redeem     { "serial_number": "HAOXUE-ADVD-0002" }
+```
+
+```json
+{
+  "book_id": "book.derivative.advanced",
+  "entitled": true,
+  "entitlement_id": "ent_9f3c2a",
+  "message": "兑换成功"
+}
+```
+
+| 字段 | 说明 |
+|---|---|
+| `entitled` | 现在是否拥有这本书。重复兑换同一本已拥有的书也是 `true` |
+| `entitlement_id` | 权限记录 id。**重复兑换不会新建**，返回的是同一条 |
+
+```http
+GET /api/v1/entitlements
+```
+
+```json
+{
+  "user_id": "user_ab12",
+  "owned_books": [
+    { "book_id": "book.derivative.basic", "title": "高中数学·导数基础训练",
+      "owned": true, "question_count": 22 }
+  ],
+  "owned_book_ids": ["book.derivative.basic", "book.derivative.advanced"],
+  "subscription_status": "none",
+  "subscription": {
+    "status": "none",
+    "plan_name": null,
+    "price_cents": 0,
+    "renews_at": null
+  }
+}
+```
+
+| 字段 | 说明 |
+|---|---|
+| `owned_books` | 已拥有的书（完整摘要对象） |
+| `owned_book_ids` | 只用判断"有没有"时的轻量形式，省得再遍历一遍 |
+| `subscription_status` | `none` / `active` / `trial`。**Hackathon 阶段恒为 `none`** |
+| `subscription` | 订阅详情。当前只有默认值，字段先放着 |
+
+> `subscription` / `subscription_status` 是**预留字段**：当前没有支付链路，
+> 永远是 `none`。前端可以直接忽略，不要因为看到它们就以为有付费功能。
+
+Demo 可用的兑换码（`POST /api/v1/books/{book_id}/redeem`）：
 
 | 图书 | 序列号 |
 |---|---|
@@ -1782,7 +1876,7 @@ GET  /api/v1/demo/status      # 当前数据概览
 ## 10. 完整 Demo 流程（客户端调用顺序）
 
 ```
-① GET  /api/v1/demo/seed                     （演示前准备）
+① POST /api/v1/demo/seed                     （演示前准备）
 ② GET  /api/v1/home                          → 「下一步：导数与函数性质综合应用」
 ③ POST /api/v1/homework/analyses             （上传试卷图片）→ analysis_id
 ④ GET  /api/v1/homework/analyses/{id}        （轮询，卡片显示 5 步进度）

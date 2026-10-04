@@ -1050,9 +1050,17 @@ class PracticeSessionResponse(BaseModel):
 
 
 class PracticeAnswerRequest(BaseModel):
+    """练习作答。
+
+    题库全是单选题，所以只接受选项字母。**没有自由文本作答** ——
+    以前这里有个 `answer_text` 字段，但它从签名一路传到 service 之后
+    被**静默丢弃**：客户端可以传，服务端收下什么也不做。
+    契约里留一个什么都不做的字段比没有更糟（前端会以为它生效了），
+    所以直接删掉。需要自由文本作答的是 Tutor，见 §5。
+    """
+
     question_id: str
     selected_key: str | None = None
-    answer_text: str | None = None
     client_request_id: str | None = None
 
 

@@ -1,4 +1,4 @@
-"""针对性练习（Practice Engine）。
+﻿"""针对性练习（Practice Engine）。
 
 契约 §14 的硬性要求：**不能把正确答案提前返回给客户端**。
 所以 PracticeQuestion 里没有 answer / explanation，
@@ -358,7 +358,6 @@ def submit_answer(
     *,
     question_id: str,
     selected_key: str | None = None,
-    answer_text: str | None = None,
 ) -> dict[str, Any]:
     session = repositories.get_practice_session(session_id)
     if session is None or session.get("user_id") != user_id:

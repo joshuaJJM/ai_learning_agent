@@ -142,7 +142,6 @@ async def submit_answer(
             session_id,
             question_id=payload.question_id,
             selected_key=payload.selected_key,
-            answer_text=payload.answer_text,
         )
     except PermissionError as exc:
         # 题目不属于本 Session —— 拒绝，避免凭空写 Evidence / 动标签
