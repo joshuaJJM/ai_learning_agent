@@ -309,6 +309,23 @@ def _update(doc: dict[str, Any], **changes: Any) -> dict[str, Any]:
     if doc.get("status") in ("completed", "failed") and not doc.get("finished_at"):
         doc["finished_at"] = now
     repositories.save_analysis(doc)
+
+    # **终态写入留一条审计记录。**
+    #
+    # 起因：线上出现过「analysis 文档被改回完成前的快照」——
+    # questions / evidence 表里数据都在，但文档变成 0 题、homework_id 为 null。
+    # 只靠事后查库分不清"写入丢了"还是"被后写的覆盖了"。
+    # 有了这行日志，任何一次终态写入都有迹可循，顺序一目了然。
+    if doc.get("status") in ("completed", "failed"):
+        logger.info(
+            "分析终态写入: %s status=%s 题数=%d homework_id=%s 证据=%d %s",
+            doc.get("analysis_id"),
+            doc.get("status"),
+            len(doc.get("question_results") or []),
+            doc.get("homework_id"),
+            len(doc.get("knowledge_changes") or []),
+            (doc.get("error") or {}).get("error_code") or "",
+        )
     return doc
 
 
@@ -333,19 +350,62 @@ def _update(doc: dict[str, Any], **changes: Any) -> dict[str, Any]:
 STALE_ANALYSIS_SECONDS = 15 * 60
 
 
-def _fail_orphan(doc: dict[str, Any], code: str, message: str) -> None:
-    """把一个非终态的分析直接判失败。"""
+def _fail_orphan(doc: dict[str, Any], code: str, message: str) -> bool:
+    """把一个非终态的分析判失败。返回**是否真的写了**。
+
+    ⚠️ **落笔前必须重新读一次。**
+
+    看门狗跑在 `asyncio.to_thread` 的另一个线程里，它的流程是
+    「读一批 → 逐个判断 → 写回」。而 `_update` 写的是**整份 doc** ——
+    如果某个分析在"被读出来"和"被写回"之间完成了，写回就等于
+    **把已经完成的结果覆盖成完成前的快照**：
+    题目清空、`homework_id` 变 null、状态退回 failed。
+
+    线上真实事故就长这样：两条分析明明写入了 9 道题和 5 条 Evidence
+    （`questions` / `evidence` 表里都还在），但 analysis 文档被改回
+    "0 题 / failed / percent 0.25"。
+
+    重读之后如果它已经进终态，就**跳过**并留一条日志 ——
+    这是 `_fail_orphan` 唯一有机会发现"自己迟到了"的地方。
+    """
+    fresh = repositories.get_analysis(doc["analysis_id"])
+    if fresh is None:
+        return False
+    if fresh.get("status") not in ("queued", "processing"):
+        logger.warning(
+            "跳过 %s：判断时状态是 %s（updated_at=%s），重新读时已经是 %s"
+            "（%d 题，homework_id=%s）—— 它在判断与写回之间完成了，不能覆盖",
+            doc["analysis_id"],
+            doc.get("status"),
+            doc.get("updated_at"),
+            fresh.get("status"),
+            len(fresh.get("question_results") or []),
+            fresh.get("homework_id"),
+        )
+        return False
+
+    doc = fresh
     progress = doc.get("progress") or {}
     for stage in progress.get("stages") or []:
         if stage.get("state") in ("active", "retrying"):
             stage["state"] = "failed"
             break
+    logger.warning(
+        "判定 %s 为 %s：状态 %s，updated_at=%s，%d 题，homework_id=%s",
+        doc["analysis_id"],
+        code,
+        doc.get("status"),
+        doc.get("updated_at"),
+        len(doc.get("question_results") or []),
+        doc.get("homework_id"),
+    )
     _update(
         doc,
         status="failed",
         progress=progress,
         error={"error_code": code, "message": message},
     )
+    return True
 
 
 def recover_interrupted_analyses() -> int:
@@ -356,12 +416,12 @@ def recover_interrupted_analyses() -> int:
     """
     recovered = 0
     for doc in repositories.list_analyses_by_status(("queued", "processing")):
-        _fail_orphan(
+        if _fail_orphan(
             doc,
             "ANALYSIS_INTERRUPTED",
             "服务在分析过程中重启，任务已中断，请重新上传",
-        )
-        recovered += 1
+        ):
+            recovered += 1
     if recovered:
         logger.warning(
             "启动对账：%d 个分析因服务重启中断，已标记为 failed（可重试）", recovered
@@ -384,12 +444,12 @@ def reap_stale_analyses(
     for doc in repositories.list_analyses_by_status(("queued", "processing")):
         if str(doc.get("updated_at") or "") >= cutoff:
             continue
-        _fail_orphan(
+        if _fail_orphan(
             doc,
             "ANALYSIS_TIMEOUT",
             f"分析超过 {max_age_seconds // 60} 分钟没有进展，已终止，请重试",
-        )
-        reaped += 1
+        ):
+            reaped += 1
     if reaped:
         logger.warning("看门狗：%d 个分析超时无进展，已标记为 failed", reaped)
     return reaped

@@ -130,6 +130,60 @@ WARNING haoxue: 启动对账：1 个分析因服务重启中断，已标记为 f
 
 ---
 
+## 3.5 ⚠️ 已完成的分析被改回 failed（已修，但值得记住）
+
+### 症状
+
+- `questions` / `evidence` 表里数据都在（9 道题、5 条证据）
+- 但 analysis 文档是 `failed` / `ANALYSIS_TIMEOUT` / **0 题** / `homework_id = null`
+- `progress.percent` 退回 0.25，`questions_detected` 标成 `failed`
+- **`finished_at` 等于 `updated_at`** —— 而 `_update` 只在 `finished_at` 为空时才写它，
+  说明看门狗读到的那份 doc 是**完成前的快照**
+
+### 根因：MySQL 读事务被永久钉住
+
+`db.py` 里 MySQL 连接是 `autocommit=False`，而：
+
+```python
+def query_all(sql, params):
+    return list(get_conn().execute(...).fetchall())   # ← 从不 commit / rollback
+```
+
+MySQL 默认 **REPEATABLE READ**：连接上第一次 SELECT 就开启事务并**钉住当时的数据快照**，
+只要不提交，这个连接之后读到的**永远是那份旧数据**。
+
+看门狗正是"长期只读"的线程（`asyncio.to_thread` 的线程池，连接按线程复用）：
+
+```
+22:14  看门狗首次扫描 → 钉住快照 S1（此时分析还在 processing）
+22:15  分析完成（另一个连接写入并提交）→ 库里已经是 completed
+22:15+ 看门狗每次扫描仍看到 S1 → "还在 processing，而且已经 15 分钟没动"
+22:29  按 S1 判超时，把 S1 整个写回去 → **覆盖掉已完成的结果**
+```
+
+**修复**：`autocommit=True`（`db.py` 的 `_connect`）。
+代码本来就是"每写必提交"，没有任何跨语句原子性依赖。
+
+### 为什么"加防护"挡不住它
+
+第一反应是给 `_fail_orphan` 加"落笔前重新读一次"。**没用** ——
+重读走的是**同一个连接、同一个快照**，看起来仍然"确实该收"。
+所以那个防护留着（防真正的读-改-写竞态），但**真正的修复是连接模式**。
+
+### 怎么认出来
+
+- 文档和 questions/evidence 对不上 → 先怀疑**连接层**，别只看业务代码
+- `finished_at == updated_at` 且题数为 0 → 写回的是**完成前的快照**
+- 集中出现在"服务重启后不久创建"的分析上 → 看门狗线程的快照正好钉在它们运行期间
+
+### 教训
+
+**读操作不留事务**应该是数据库层的不变量，而不是靠每个调用方自觉。
+一个 `autocommit=False` 加上一个忘记提交的 `query_all`，
+就能让"只读线程"活在一个永远不变的世界里 —— 而且它做出的判断在它自己看来完全合理。
+
+---
+
 ## 4. 分析很慢
 
 先看服务端的分阶段计时日志，不要猜：

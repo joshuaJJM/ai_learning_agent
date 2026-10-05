@@ -1,4 +1,4 @@
-﻿"""终止态保证：分析不会永久停在 processing。
+"""终止态保证：分析不会永久停在 processing。
 
 线上事故（前端 Phase 8B blocker）：分析跑在**进程内**的后台任务里，
 服务一重启它就跟着死，而 analysis 记录停在 `processing` 永远不动。
@@ -128,6 +128,63 @@ def test_watchdog_threshold_is_longer_than_a_real_analysis() -> None:
     """
     assert homework_service.STALE_ANALYSIS_SECONDS >= 600
     assert homework_service.STALE_ANALYSIS_SECONDS > 378 * 2
+
+
+def test_reaper_cannot_clobber_an_analysis_that_finished_in_between(
+    client: TestClient,
+) -> None:
+    """★ 最要命的那条：读完之后、写回之前，分析完成了。
+
+    看门狗跑在另一个线程里，流程是「读一批 → 判断 → 写回整份 doc」。
+    如果中间分析完成了，写回就等于把**已完成的结果覆盖成完成前的快照**：
+    题目清空、homework_id 变 null、状态退回 failed —— 而 `questions` 与
+    `evidence` 表里的数据还在，于是数据库看起来自相矛盾。
+
+    线上真实事故：两条分析明明写入了 9 道题和 5 条 Evidence，
+    analysis 文档却被改回「0 题 / failed / percent 0.25」。
+
+    所以 `_fail_orphan` 必须**落笔前重读**，发现已进终态就跳过。
+    """
+    _, uid = _guest(client, "stale-race")
+    doc = _make_analysis(uid, status="processing", age_seconds=3600)
+
+    # ① 看门狗读到了这一份（此时它确实卡住了）
+    stale_snapshot = repositories.get_analysis(doc["analysis_id"])
+    assert stale_snapshot["status"] == "processing"
+
+    # ② 在读出来之后、写回之前，分析完成了
+    finished = repositories.get_analysis(doc["analysis_id"])
+    finished["status"] = "completed"
+    finished["homework_id"] = "hw_race"
+    finished["question_results"] = [{"question_id": "q_race", "correctness": "correct"}]
+    finished["counts"] = {"correct": 1}
+    repositories.save_analysis(finished)
+
+    # ③ 看门狗拿旧快照来收 —— 必须被挡住
+    wrote = homework_service._fail_orphan(
+        stale_snapshot, "ANALYSIS_TIMEOUT", "测试：不应覆盖"
+    )
+    assert wrote is False, "已进终态的分析不该被看门狗覆盖"
+
+    after = repositories.get_analysis(doc["analysis_id"])
+    assert after["status"] == "completed", "完成状态被覆盖了"
+    assert after["homework_id"] == "hw_race", "homework_id 被打回 null 了"
+    assert len(after["question_results"]) == 1, "题目结果被清空了"
+    assert after.get("error") is None
+
+
+def test_reaper_still_works_on_a_genuinely_stuck_one(client: TestClient) -> None:
+    """加了防护之后，真正卡住的任务仍然要被收掉。"""
+    _, uid = _guest(client, "stale-still-works")
+    doc = _make_analysis(uid, status="processing", age_seconds=3600)
+
+    wrote = homework_service._fail_orphan(
+        doc, "ANALYSIS_TIMEOUT", "分析超过 15 分钟没有进展"
+    )
+    assert wrote is True
+    after = repositories.get_analysis(doc["analysis_id"])
+    assert after["status"] == "failed"
+    assert after["error"]["error_code"] == "ANALYSIS_TIMEOUT"
 
 
 def test_failed_by_recovery_can_be_retried(

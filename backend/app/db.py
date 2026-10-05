@@ -443,14 +443,35 @@ def _connect() -> Any:
             database=settings.mysql_database,
             charset="utf8mb4",
             cursorclass=DictCursor,
-            autocommit=False,
+            # ⚠️ **必须是 True。** 这里曾经是 False，配合"读操作不提交"，
+            # 造成过一个非常隐蔽的事故：
+            #
+            #   MySQL 默认 REPEATABLE READ。连接上第一次 SELECT 就会开启事务
+            #   并**钉住当时的数据快照**；只要不提交/回滚，这个连接之后读到的
+            #   永远是最初那份数据。
+            #
+            #   `query_all` / `query_one` 从来不提交，所以任何**长期只读**的线程
+            #   都会永远看到它第一次读时的世界。看门狗就是这样的线程：
+            #
+            #     22:14  看门狗首次扫描 → 钉住快照 S1（分析还在 processing）
+            #     22:15  分析完成（另一个连接写入并提交）→ 库里是 completed
+            #     22:15+ 看门狗每次扫描仍看到 S1 → "还在 processing，且很旧"
+            #     22:29  按 S1 判超时，把 S1 写回去 → **覆盖掉已完成的结果**
+            #
+            #   现象就是：analysis 文档被改回"0 题 / failed"，而 questions /
+            #   evidence 表里数据都在（它们写在主线程的连接上，提交了）。
+            #
+            # 打开 autocommit 后每条语句各自成事务，读到的永远是最新数据。
+            # 代价：失去了跨语句原子性 —— 但代码里本来就没有依赖它，
+            # 所有写入路径都是"写完立刻 commit"（见各处 conn.commit()）。
+            autocommit=True,
             connect_timeout=10,
         )
         return _MySqlConnection(raw)
 
     path = db_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(path), timeout=30.0)
+    conn = sqlite3.connect(str(path), timeout=30.0, isolation_level=None)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
